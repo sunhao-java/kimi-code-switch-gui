@@ -77,7 +77,7 @@ const ABOUT_TAB: { id: TabId; icon: typeof Info; labelKey: string } = {
 };
 
 const ABOUT_INFO = {
-  version: "0.1.0",
+  version: "1.0.0",
   author: "Codex",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",
@@ -1399,8 +1399,8 @@ function AboutPage(props: {
   ];
   const history = [
     {
-      version: "v0.1.0",
-      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v0.1.0`,
+      version: "v1.0.0",
+      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.0.0`,
       text: isZh
         ? "首个桌面版本，支持 Provider、Model、Profile 管理，配置预览、Diff、状态栏菜单和多显示器启动策略。"
         : "Initial desktop release with Provider, Model, Profile management, config preview, diff, tray menu, and multi-display launch behavior.",
