@@ -1,0 +1,94 @@
+{
+  "name": "kimi-code-switch-gui",
+  "version": "0.1.0",
+  "description": "Electron desktop app for managing kimi-code-cli providers, models, and profiles.",
+  "main": "out/main/index.js",
+  "author": "Codex",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:electron": "electron-vite dev",
+    "build": "tsc --noEmit && electron-vite build",
+    "preview": "vite preview",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip",
+    "dist:win": "npm run build && electron-builder --win nsis portable"
+  },
+  "dependencies": {
+    "@iarna/toml": "^2.2.5",
+    "lucide-react": "^0.511.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@electron-toolkit/utils": "^3.0.0",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.2.0",
+    "@types/node": "^22.15.3",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@vitest/coverage-v8": "^3.2.2",
+    "electron": "^35.2.0",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^3.1.0",
+    "jsdom": "^26.1.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.2"
+  },
+  "build": {
+    "appId": "cn.crazycoder.kimi-code-switch-gui",
+    "productName": "Kimi Code Switch GUI",
+    "artifactName": "kimi-code-switch-gui-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": ".",
+        "filter": ["**/*"]
+      }
+    ],
+    "mac": {
+      "icon": "resources/icon-light.png",
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "resources/icon-light.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}

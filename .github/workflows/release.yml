@@ -1,0 +1,102 @@
+name: Release Installers
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Ensure release exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          gh release view "${VERSION}" >/dev/null 2>&1 || gh release create "${VERSION}" --generate-notes
+
+  build:
+    name: Build ${{ matrix.os-name }}
+    runs-on: ${{ matrix.runner }}
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os-name: macos
+            runner: macos-latest
+            build-command: npm run dist:mac -- --x64 --arm64
+          - os-name: windows
+            runner: windows-latest
+            build-command: npm run dist:win
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build installers
+        run: ${{ matrix.build-command }}
+
+      - name: Generate checksums
+        env:
+          CHECKSUM_FILE: SHA256SUMS-${{ matrix.os-name }}.txt
+        shell: bash
+        run: |
+          node -e "const fs = require('fs'); const crypto = require('crypto'); const path = require('path'); const dir = 'release'; const files = fs.readdirSync(dir).filter((file) => /\.(dmg|zip|exe|blockmap|ya?ml)$/i.test(file)).sort(); const lines = files.map((file) => crypto.createHash('sha256').update(fs.readFileSync(path.join(dir, file))).digest('hex') + '  ' + file); fs.writeFileSync(path.join(dir, process.env.CHECKSUM_FILE), lines.join('\n') + '\n');"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os-name }}-installers
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.exe
+            release/*.blockmap
+            release/*.yml
+            release/*.yaml
+            release/SHA256SUMS-${{ matrix.os-name }}.txt
+          if-no-files-found: error
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          test -n "$(find release -maxdepth 1 -type f -print -quit)"
+          find release -maxdepth 1 -type f -exec gh release upload "${VERSION}" {} --clobber \;

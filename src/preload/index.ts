@@ -1,0 +1,27 @@
+import { contextBridge, ipcRenderer } from "electron";
+
+import type { AppState, FileDialogResult, PanelSettings, PreviewBundle, TrayCommand } from "@shared/types";
+
+const api = {
+  loadState: (paths?: {
+    configPath?: string;
+    profilesPath?: string;
+    panelSettingsPath?: string;
+  }): Promise<AppState> => ipcRenderer.invoke("app:load-state", paths),
+  saveState: (state: AppState): Promise<{ ok: true }> => ipcRenderer.invoke("app:save-state", state),
+  previewState: (state: AppState): Promise<PreviewBundle> => ipcRenderer.invoke("app:preview-state", state),
+  defaultSettings: (): Promise<PanelSettings> => ipcRenderer.invoke("app:default-settings"),
+  pickFile: (options?: Record<string, unknown>): Promise<FileDialogResult> =>
+    ipcRenderer.invoke("dialog:pick-file", options),
+  setTray: (enabled: boolean): Promise<{ ok: true }> => ipcRenderer.invoke("app:set-tray", enabled),
+  openExternal: (url: string): Promise<{ ok: true }> => ipcRenderer.invoke("app:open-external", url),
+  onTrayCommand: (callback: (command: TrayCommand) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, command: TrayCommand): void => callback(command);
+    ipcRenderer.on("tray:command", listener);
+    return () => ipcRenderer.removeListener("tray:command", listener);
+  },
+};
+
+contextBridge.exposeInMainWorld("kimiSwitch", api);
+
+export type KimiSwitchApi = typeof api;
