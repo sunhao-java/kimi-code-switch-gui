@@ -77,7 +77,7 @@ const ABOUT_TAB: { id: TabId; icon: typeof Info; labelKey: string } = {
 };
 
 const ABOUT_INFO = {
-  version: "1.0.0",
+  version: "1.0.1",
   author: "Codex",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",
@@ -1399,11 +1399,11 @@ function AboutPage(props: {
   ];
   const history = [
     {
-      version: "v1.0.0",
-      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.0.0`,
+      version: "v1.0.1",
+      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.0.1`,
       text: isZh
-        ? "首个桌面版本，支持 Provider、Model、Profile 管理，配置预览、Diff、状态栏菜单和多显示器启动策略。"
-        : "Initial desktop release with Provider, Model, Profile management, config preview, diff, tray menu, and multi-display launch behavior.",
+        ? "修复 GitHub Release 发布流程，避免 electron-builder 在 tag 构建时触发隐式发布导致安装包任务失败。"
+        : "Fixed the GitHub Release pipeline so electron-builder no longer fails installer jobs by triggering implicit publish during tag builds.",
     },
   ];
 

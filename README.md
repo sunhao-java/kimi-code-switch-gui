@@ -124,7 +124,7 @@ npm run dist:win
 
 仓库内置了 [`.github/workflows/release.yml`](.github/workflows/release.yml)。
 
-推送形如 `v1.0.0` 的 tag 后，工作流会执行：
+推送形如 `v1.0.1` 的 tag 后，工作流会执行：
 
 1. 在 Ubuntu 上安装依赖并运行测试
 2. 创建或复用同名 GitHub Release
@@ -158,7 +158,7 @@ npm run dist:win
 
 ## 当前版本
 
-- 应用版本：`1.0.0`
+- 应用版本：`1.0.1`
 - 变更记录见 [CHANGELOG.md](CHANGELOG.md)
 
 ## 许可证

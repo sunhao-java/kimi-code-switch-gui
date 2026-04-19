@@ -1,6 +1,6 @@
 {
   "name": "kimi-code-switch-gui",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Electron desktop app for managing kimi-code-cli providers, models, and profiles.",
   "main": "out/main/index.js",
   "author": "Codex",
@@ -14,9 +14,9 @@
     "preview": "vite preview",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
-    "dist": "npm run build && electron-builder",
-    "dist:mac": "npm run build && electron-builder --mac dmg zip",
-    "dist:win": "npm run build && electron-builder --win nsis portable"
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:mac": "npm run build && electron-builder --publish never --mac dmg zip",
+    "dist:win": "npm run build && electron-builder --publish never --win nsis portable"
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",

@@ -4,6 +4,13 @@
 
 格式参考 Keep a Changelog，当前项目采用 `major.minor.patch` 版本号方案。
 
+## [1.0.1] - 2026-04-20
+
+### 修复
+
+- 修复 GitHub Actions 发布流程中 `electron-builder` 因 tag 构建触发隐式发布而导致 macOS 和 Windows 安装包任务失败的问题。
+- 调整 Release 工作流中的 GitHub Release 认证与仓库定位方式，避免 `gh release` 依赖本地 `.git` 上下文。
+
 ## [1.0.0] - 2026-04-19
 
 ### 新增
