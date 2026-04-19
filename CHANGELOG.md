@@ -1,25 +1,25 @@
-# Changelog
+# 变更日志
 
-All notable changes to this project will be documented in this file.
+本文件记录项目的重要变更。
 
-The format is based on Keep a Changelog, and this project currently follows a simple `major.minor.patch` versioning scheme.
+格式参考 Keep a Changelog，当前项目采用 `major.minor.patch` 版本号方案。
 
 ## [0.1.0] - 2026-04-19
 
-### Added
+### 新增
 
-- Initial Electron desktop application for managing `kimi-code-cli` configuration files.
-- Editable Provider, Model, and Profile management workflow.
-- Profile activation flow that synchronizes active defaults back into `config.toml`.
-- Preview support for `config.toml`, `config.profiles.toml`, and `config.panel.toml`.
-- Diff preview to inspect configuration changes before saving.
-- Chinese and English interface support.
-- Tray / menu bar integration with direct Profile switching.
-- Window open strategy based on remembered display, active display, or random display.
-- About page with repository, issue tracker, and author links.
-- Electron Builder packaging for macOS and Windows installers.
-- GitHub Actions release pipeline triggered by `v*` tags.
+- 初始版本 Electron 桌面应用，用于管理 `kimi-code-cli` 配置文件。
+- Provider、Model、Profile 的可视化编辑与管理流程。
+- 激活 Profile 时自动将默认项同步回 `config.toml`。
+- 对 `config.toml`、`config.profiles.toml`、`config.panel.toml` 的预览支持。
+- 在保存前查看配置变更 Diff。
+- 中文和英文双语界面支持。
+- 状态栏 / 托盘集成，并可直接切换 Profile。
+- 基于记忆显示器、当前活动显示器或随机显示器的窗口打开策略。
+- 关于页中的仓库、Issue 和作者链接。
+- 面向 macOS 和 Windows 的 Electron Builder 安装包构建能力。
+- 基于 `v*` 标签触发的 GitHub Actions 发布流水线。
 
-### Testing
+### 测试
 
-- Added Vitest coverage for shared configuration store behavior.
+- 为共享配置存储逻辑补充了 Vitest 覆盖。
