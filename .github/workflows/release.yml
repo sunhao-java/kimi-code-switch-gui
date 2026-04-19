@@ -35,7 +35,7 @@ jobs:
     steps:
       - name: Ensure release exists
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
           VERSION: ${{ github.ref_name }}
         run: |
           gh release view "${VERSION}" >/dev/null 2>&1 || gh release create "${VERSION}" --generate-notes
@@ -94,7 +94,7 @@ jobs:
 
       - name: Publish release assets
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
           VERSION: ${{ github.ref_name }}
         shell: bash
         run: |
