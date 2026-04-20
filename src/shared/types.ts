@@ -59,6 +59,7 @@ export interface Profile {
 }
 
 export interface McpServerConfig {
+  enabled: boolean;
   transport: McpTransport;
   url: string;
   headers: Record<string, string>;
@@ -82,6 +83,7 @@ export interface PanelSettings {
   tray_icon: boolean;
   display_open_mode: DisplayOpenMode;
   close_behavior: CloseBehavior;
+  mcp_servers: Record<string, McpServerConfig>;
   last_display_id?: number;
 }
 

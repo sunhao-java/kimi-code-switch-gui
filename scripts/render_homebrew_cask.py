@@ -27,6 +27,14 @@ CASK_TEMPLATE = """cask "kimi-code-switch-gui" do
 
   app "Kimi Code Switch GUI.app"
 
+  caveats <<~EOS
+    If you encounter the "App is damaged" error, please run the following command:
+      sudo xattr -rd com.apple.quarantine "/Applications/Kimi Code Switch GUI.app"
+
+    Or install with the --no-quarantine flag:
+      brew install --cask --no-quarantine kimi-code-switch-gui
+  EOS
+
   zap trash: [
     "~/Library/Application Support/Kimi Code Switch GUI",
     "~/Library/Logs/Kimi Code Switch GUI",

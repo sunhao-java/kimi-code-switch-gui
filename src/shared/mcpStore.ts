@@ -22,24 +22,30 @@ export function parseMcpConfig(document: string | null): McpConfig {
   }
 
   try {
-    const parsed = JSON.parse(document) as unknown;
-    if (!isRecord(parsed) || !isRecord(parsed.mcpServers)) {
-      return createDefaultMcpConfig();
-    }
-
-    const mcpServers = Object.fromEntries(
-      Object.entries(parsed.mcpServers).map(([name, raw]) => [name, parseMcpServer(raw)]),
-    );
-
-    return { mcpServers };
+    return parseMcpConfigStrict(document);
   } catch {
     return createDefaultMcpConfig();
   }
 }
 
+export function parseMcpConfigStrict(document: string): McpConfig {
+  const parsed = JSON.parse(document) as unknown;
+  if (!isRecord(parsed) || !isRecord(parsed.mcpServers)) {
+    throw new Error("Invalid MCP config: expected an object with mcpServers.");
+  }
+
+  const mcpServers = Object.fromEntries(
+    Object.entries(parsed.mcpServers).map(([name, raw]) => [name, parseMcpServer(raw)]),
+  );
+
+  return { mcpServers };
+}
+
 export function buildMcpConfigDocument(config: McpConfig): string {
   const mcpServers = Object.fromEntries(
-    Object.entries(config.mcpServers).map(([name, server]) => [name, buildMcpServerDocument(server)]),
+    Object.entries(config.mcpServers)
+      .filter(([, server]) => server.enabled !== false)
+      .map(([name, server]) => [name, buildMcpServerDocument(server)]),
   );
   return `${JSON.stringify({ mcpServers }, null, 2)}\n`;
 }
@@ -52,15 +58,16 @@ function parseMcpServer(raw: unknown): McpServerConfig {
     ? data.args.filter((item): item is string => typeof item === "string")
     : [];
 
-  const knownKeys = new Set(["transport", "url", "auth", "headers", "command", "args", "env"]);
+  const knownKeys = new Set(["transport", "type", "url", "auth", "headers", "command", "args", "env"]);
   const extra = Object.fromEntries(
     Object.entries(data).filter(([key]) => !knownKeys.has(key)),
   );
 
-  const transport = normalizeMcpTransport(data.transport, data.url, data.command);
+  const transport = normalizeMcpTransport(data.transport ?? data.type, data.url, data.command);
 
   if (transport !== "stdio") {
     return {
+      enabled: true,
       transport,
       url: typeof data.url === "string" ? data.url : "",
       headers,
@@ -72,6 +79,7 @@ function parseMcpServer(raw: unknown): McpServerConfig {
   }
 
   return {
+    enabled: true,
     transport: "stdio",
     url: "",
     headers: {},

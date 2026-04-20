@@ -1,8 +1,8 @@
 import parse from "@iarna/toml/parse-string.js";
 import stringify from "@iarna/toml/stringify.js";
 
-import { buildMcpConfigDocument, DEFAULT_MCP_CONFIG_PATH, loadMcpConfig } from "./mcpStore";
-import type { AppState, MainConfig, PanelSettings, PreviewBundle, Profile } from "./types";
+import { buildMcpConfigDocument, DEFAULT_MCP_CONFIG_PATH, loadMcpConfig, parseMcpConfigStrict } from "./mcpStore";
+import type { AppState, MainConfig, McpServerConfig, PanelSettings, PreviewBundle, Profile } from "./types";
 
 export const PROFILE_VERSION = 1;
 export const PANEL_SETTINGS_VERSION = 1;
@@ -53,6 +53,7 @@ export function createDefaultPanelSettings(
     tray_icon: false,
     display_open_mode: "remember-last",
     close_behavior: "quit",
+    mcp_servers: {},
   };
 }
 
@@ -84,7 +85,8 @@ export async function loadAppState(
     defaultPanelSettingsPath(configPath),
   );
   const mainConfig = normalizeMainConfig(parseDocument(await files.readText(configPath)));
-  const mcpConfig = await loadMcpConfig(files, mcpConfigPath);
+  const fileMcpConfig = await loadMcpConfig(files, mcpConfigPath);
+  const mcpConfig = mergePanelMcpServers(panelSettings.mcp_servers, fileMcpConfig.mcpServers);
   const rawProfiles = parseDocument(await files.readText(profilesPath));
   const profiles = parseProfiles(mainConfig, rawProfiles);
   const activeProfile = ensureActiveProfile(
@@ -106,6 +108,7 @@ export async function loadAppState(
       ...panelSettings,
       config_path: configPath,
       profiles_path: panelSettings.follow_config_profiles ? "" : profilesPath,
+      mcp_servers: cloneMcpServers(mcpConfig.mcpServers),
     },
     mcpConfig,
   };
@@ -135,6 +138,7 @@ export async function loadPanelSettings(
     tray_icon: trayIcon,
     display_open_mode: parseDisplayOpenMode(data.display_open_mode, fallback.display_open_mode),
     close_behavior: trayIcon ? parseCloseBehavior(data.close_behavior, "keep-in-tray") : "quit",
+    mcp_servers: parsePanelMcpServers(data.mcp_servers),
     last_display_id: typeof data.last_display_id === "number" ? data.last_display_id : undefined,
   };
 }
@@ -444,9 +448,6 @@ function normalizeMainConfig(input: Record<string, unknown>): MainConfig {
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function asString(value: unknown, fallback: string): string {
   return typeof value === "string" ? value : fallback;
@@ -518,6 +519,7 @@ export function normalizeStatePaths(state: AppState): AppState {
       ? parseCloseBehavior(state.panelSettings.close_behavior, "keep-in-tray")
       : "quit",
     last_display_id: state.panelSettings.last_display_id,
+    mcp_servers: cloneMcpServers(state.mcpConfig.mcpServers),
     profiles_path: state.panelSettings.follow_config_profiles
       ? ""
       : sanitizePath(state.panelSettings.profiles_path, defaultProfilesPath(configPath)),
@@ -535,9 +537,68 @@ export function normalizeStatePaths(state: AppState): AppState {
     mcpConfigPath,
     panelSettings: {
       ...panelSettings,
+      mcp_servers: cloneMcpServers(state.mcpConfig.mcpServers),
       profiles_path: panelSettings.follow_config_profiles ? "" : profilesPath,
     },
   };
+}
+
+function parsePanelMcpServers(value: unknown): Record<string, McpServerConfig> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  try {
+    const config = parseMcpConfigStrict(JSON.stringify({ mcpServers: value }));
+    const disabledNames = Object.entries(value)
+      .filter(([, raw]) => isRecord(raw) && raw.enabled === false)
+      .map(([name]) => name);
+
+    for (const name of disabledNames) {
+      if (config.mcpServers[name]) {
+        config.mcpServers[name].enabled = false;
+      }
+    }
+
+    return config.mcpServers;
+  } catch {
+    return {};
+  }
+}
+
+function mergePanelMcpServers(
+  panelServers: Record<string, McpServerConfig>,
+  fileServers: Record<string, McpServerConfig>,
+): { mcpServers: Record<string, McpServerConfig> } {
+  const merged = cloneMcpServers(panelServers);
+
+  for (const [name, server] of Object.entries(fileServers)) {
+    merged[name] = {
+      ...server,
+      enabled: panelServers[name]?.enabled ?? true,
+    };
+  }
+
+  return { mcpServers: merged };
+}
+
+function cloneMcpServers(servers: Record<string, McpServerConfig>): Record<string, McpServerConfig> {
+  return Object.fromEntries(
+    Object.entries(servers).map(([name, server]) => [
+      name,
+      {
+        ...server,
+        headers: { ...server.headers },
+        args: [...server.args],
+        env: { ...server.env },
+        extra: server.extra ? { ...server.extra } : undefined,
+      },
+    ]),
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function dirnamePath(path: string): string {

@@ -98,6 +98,7 @@ function createState(): AppState {
     mcpConfig: {
       mcpServers: {
         context7: {
+          enabled: true,
           transport: "streamable-http",
           url: "https://mcp.context7.com/mcp",
           headers: {
@@ -108,6 +109,7 @@ function createState(): AppState {
           env: {},
         },
         chrome_devtools: {
+          enabled: true,
           transport: "stdio",
           url: "",
           headers: {},

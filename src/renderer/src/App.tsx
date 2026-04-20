@@ -8,23 +8,25 @@ import {
   Copy,
   ExternalLink,
   FileCog,
+  FileInput,
   Globe,
   Eye,
   EyeOff,
   Github,
   History,
   Info,
-  Languages,
   Layers3,
   Mail,
   MonitorCog,
   MoonStar,
   Plus,
+  Power,
   Save,
   Settings2,
   Sparkles,
   Star,
   SunMedium,
+  Trash2,
   X,
   Zap,
 } from "lucide-react";
@@ -52,6 +54,7 @@ import type {
   McpServerConfig,
   McpTransport,
 } from "@shared/types";
+import { parseMcpConfigStrict } from "@shared/mcpStore";
 
 import { t, translateError } from "./i18n";
 import logoLight from "./assets/logo-light.png";
@@ -85,7 +88,7 @@ const ABOUT_TAB: { id: TabId; icon: typeof Info; labelKey: string } = {
 };
 
 const ABOUT_INFO = {
-  version: "1.0.0",
+  version: "1.0.1",
   author: "Hulk Sun",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",
@@ -106,8 +109,8 @@ const emptyPreview: PreviewBundle = {
 };
 
 const LOCALE_OPTIONS: Array<{ value: Locale; shortLabel: string; longLabel: string }> = [
-  { value: "zh-CN", shortLabel: "中", longLabel: "中文" },
-  { value: "en-US", shortLabel: "EN", longLabel: "English" },
+  { value: "zh-CN", shortLabel: "🇨🇳", longLabel: "中文" },
+  { value: "en-US", shortLabel: "🇺🇸", longLabel: "English" },
 ];
 
 const THEME_OPTIONS: Array<{
@@ -300,6 +303,8 @@ export function App(): JSX.Element {
   const [preview, setPreview] = useState<PreviewBundle>(emptyPreview);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [isMcpImportOpen, setIsMcpImportOpen] = useState(false);
+  const [mcpImportDraft, setMcpImportDraft] = useState("");
   const [diagnostics, setDiagnostics] = useState<DiagnosticsState>({
     preload: "pending",
     loadState: "pending",
@@ -639,7 +644,17 @@ export function App(): JSX.Element {
             <SummaryCard label={t(locale, "summaryProfiles")} value={String(profileEntries.length)} />
             <SummaryCard label={t(locale, "summaryProviders")} value={String(providerEntries.length)} />
             <SummaryCard label={t(locale, "summaryModels")} value={String(modelEntries.length)} />
-            <SummaryCard label={t(locale, "summaryMcp")} value={String(mcpEntries.length)} />
+            <SummaryCard
+              label={t(locale, "summaryMcp")}
+              value={formatMessage(t(locale, "summaryMcpCompact"), {
+                total: mcpEntries.length,
+                enabled: mcpEntries.filter(([, server]) => server.enabled !== false).length,
+              })}
+              title={`${formatMessage(t(locale, "summaryMcpTotal"), { count: mcpEntries.length })} · ${formatMessage(
+                t(locale, "summaryMcpEnabled"),
+                { count: mcpEntries.filter(([, server]) => server.enabled !== false).length },
+              )}`}
+            />
             <SummaryCard label={t(locale, "summaryActive")} value={state.activeProfile || "-"} accent />
           </div>
           <div className="toolbar">
@@ -697,6 +712,9 @@ export function App(): JSX.Element {
               }, { persist: false })
             }
             addLabel={t(locale, "newProvider")}
+            addButtonClassName="action-button compact icon-only"
+            addButtonTitle={t(locale, "newProvider")}
+            addButtonContent={<Plus size={15} />}
             onAdd={() =>
               updateState((draft) => {
                 upsertProvider(draft, `provider_${Date.now()}`, {
@@ -764,6 +782,9 @@ export function App(): JSX.Element {
               }, { persist: false })
             }
             addLabel={t(locale, "newModel")}
+            addButtonClassName="action-button compact icon-only"
+            addButtonTitle={t(locale, "newModel")}
+            addButtonContent={<Plus size={15} />}
             onAdd={() =>
               updateState((draft) => {
                 const providerName = Object.keys(draft.mainConfig.providers)[0];
@@ -838,6 +859,9 @@ export function App(): JSX.Element {
               }, { persist: false })
             }
             addLabel={t(locale, "newProfile")}
+            addButtonClassName="action-button compact icon-only"
+            addButtonTitle={t(locale, "newProfile")}
+            addButtonContent={<Plus size={15} />}
             onAdd={() =>
               updateState((draft) => {
                 const firstModel = Object.keys(draft.mainConfig.models)[0];
@@ -936,16 +960,6 @@ export function App(): JSX.Element {
             dirtyLabel={t(locale, "editedBadge")}
             selectedItem={selectedMcpServer}
             onSelect={(item) => runAfterUnsavedHandled(() => setSelectedMcpServer(item))}
-            copyLabel={t(locale, "clone")}
-            onCopy={(name) =>
-              updateState((draft) => {
-                const server = draft.mcpConfig.mcpServers[name];
-                if (!server) return;
-                const copyName = createCopyName(name, draft.mcpConfig.mcpServers);
-                draft.mcpConfig.mcpServers[copyName] = { ...server };
-                setSelectedMcpServer(copyName);
-              }, { persist: false })
-            }
             addLabel={t(locale, "newMcpServer")}
             onAdd={() =>
               updateState((draft) => {
@@ -954,57 +968,159 @@ export function App(): JSX.Element {
                 setSelectedMcpServer(name);
               }, { persist: false })
             }
-          >
-            {selectedMcpServerData ? (
-              <McpServerForm
-                locale={locale}
-                name={selectedMcpServer || mcpEntries[0]?.[0] || ""}
-                value={selectedMcpServerData}
-                onRunAction={async (action, serverName) => {
-                  const api = getApi();
-                  const runAction = getMcpAction(api, action);
-                  if (!api) {
-                    setError("Electron preload API is unavailable. MCP command cannot continue.");
-                    return;
-                  }
-                  if (!runAction) {
-                    setNotice("");
-                    setError(t(locale, "mcpRuntimeOutdated"));
-                    return;
-                  }
-                  try {
-                    await persistState(state);
-                    await runAction(serverName);
-                    setError("");
-                    setNotice(getMcpActionNotice(locale, action));
-                  } catch (commandError) {
-                    const message = commandError instanceof Error ? commandError.message : String(commandError);
-                    setNotice("");
-                    setError(translateError(locale, message));
-                  }
+            headerActions={
+              <button
+                className="action-button compact icon-only"
+                type="button"
+                aria-label={t(locale, "importMcpJson")}
+                title={t(locale, "importMcpJson")}
+                onClick={() => {
+                  setIsMcpImportOpen((current) => !current);
+                  setMcpImportDraft((current) => current || t(locale, "mcpImportPlaceholder"));
                 }}
-                onChange={(name, nextServer) =>
-                  updateState((draft) => {
-                    const currentName = selectedMcpServer || mcpEntries[0]?.[0] || name;
-                    const nextServers = { ...draft.mcpConfig.mcpServers };
-                    delete nextServers[currentName];
-                    nextServers[name] = nextServer;
-                    draft.mcpConfig.mcpServers = nextServers;
-                    setSelectedMcpServer(name);
-                  }, { persist: false })
-                }
-                onSave={() => void onSave()}
-                onDelete={() =>
-                  updateState((draft) => {
-                    const currentName = selectedMcpServer || mcpEntries[0]?.[0] || "";
-                    delete draft.mcpConfig.mcpServers[currentName];
-                    setSelectedMcpServer(Object.keys(draft.mcpConfig.mcpServers)[0] ?? "");
-                  }, { persist: false })
-                }
-              />
-            ) : (
-              <EmptyState locale={locale} />
-            )}
+              >
+                <FileInput size={15} />
+              </button>
+            }
+            addButtonClassName="action-button compact icon-only"
+            addButtonTitle={t(locale, "newMcpServer")}
+            addButtonContent={<Plus size={15} />}
+            itemClassName={(name) =>
+              state.mcpConfig.mcpServers[name]?.enabled === false ? "disabled" : null
+            }
+            renderItemAction={(name) => {
+              const server = state.mcpConfig.mcpServers[name];
+              if (!server) {
+                return null;
+              }
+              return (
+                <>
+                  <button
+                    className={server.enabled ? "list-toggle-button" : "list-toggle-button disabled"}
+                    type="button"
+                    aria-label={server.enabled ? (locale === "zh-CN" ? "禁用 MCP" : "Disable MCP") : (locale === "zh-CN" ? "启用 MCP" : "Enable MCP")}
+                    title={server.enabled ? (locale === "zh-CN" ? "禁用 MCP" : "Disable MCP") : (locale === "zh-CN" ? "启用 MCP" : "Enable MCP")}
+                    onClick={() =>
+                      updateState((draft) => {
+                        const target = draft.mcpConfig.mcpServers[name];
+                        if (!target) return;
+                        target.enabled = !target.enabled;
+                      })
+                    }
+                  >
+                    <Power size={15} />
+                  </button>
+                  <button
+                    className="list-delete-button"
+                    type="button"
+                    aria-label={`${t(locale, "delete")} ${name}`}
+                    title={t(locale, "delete")}
+                    onClick={() =>
+                      updateState((draft) => {
+                        delete draft.mcpConfig.mcpServers[name];
+                        if (selectedMcpServer === name) {
+                          setSelectedMcpServer(Object.keys(draft.mcpConfig.mcpServers)[0] ?? "");
+                        }
+                      }, { persist: false })
+                    }
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </>
+              );
+            }}
+          >
+            <div className="mcp-workspace">
+              {isMcpImportOpen ? (
+                <McpImportPanel
+                  locale={locale}
+                  value={mcpImportDraft}
+                  onChange={setMcpImportDraft}
+                  onCancel={() => {
+                    setIsMcpImportOpen(false);
+                    setMcpImportDraft("");
+                  }}
+                  onImport={() => {
+                    try {
+                      const imported = parseMcpConfigStrict(mcpImportDraft);
+                      const importedNames = Object.keys(imported.mcpServers);
+                      if (!importedNames.length) {
+                        setNotice("");
+                        setError(t(locale, "mcpImportInvalid"));
+                        return;
+                      }
+
+                      updateState((draft) => {
+                        draft.mcpConfig.mcpServers = {
+                          ...draft.mcpConfig.mcpServers,
+                          ...imported.mcpServers,
+                        };
+                        setSelectedMcpServer(importedNames[0] ?? "");
+                      }, { persist: false });
+
+                      setIsMcpImportOpen(false);
+                      setMcpImportDraft("");
+                      setError("");
+                      setNotice(t(locale, "mcpImportSuccess"));
+                    } catch (importError) {
+                      const message = importError instanceof Error ? importError.message : String(importError);
+                      setNotice("");
+                      setError(`${t(locale, "mcpImportInvalid")} ${message}`);
+                    }
+                  }}
+                />
+              ) : null}
+              {selectedMcpServerData ? (
+                <McpServerForm
+                  locale={locale}
+                  name={selectedMcpServer || mcpEntries[0]?.[0] || ""}
+                  value={selectedMcpServerData}
+                  onRunAction={async (action, serverName) => {
+                    const api = getApi();
+                    const runAction = getMcpAction(api, action);
+                    if (!api) {
+                      setError("Electron preload API is unavailable. MCP command cannot continue.");
+                      return;
+                    }
+                    if (!runAction) {
+                      setNotice("");
+                      setError(t(locale, "mcpRuntimeOutdated"));
+                      return;
+                    }
+                    try {
+                      await persistState(state);
+                      await runAction(serverName);
+                      setError("");
+                      setNotice(getMcpActionNotice(locale, action));
+                    } catch (commandError) {
+                      const message = commandError instanceof Error ? commandError.message : String(commandError);
+                      setNotice("");
+                      setError(translateError(locale, message));
+                    }
+                  }}
+                  onChange={(name, nextServer) =>
+                    updateState((draft) => {
+                      const currentName = selectedMcpServer || mcpEntries[0]?.[0] || name;
+                      const nextServers = { ...draft.mcpConfig.mcpServers };
+                      delete nextServers[currentName];
+                      nextServers[name] = nextServer;
+                      draft.mcpConfig.mcpServers = nextServers;
+                      setSelectedMcpServer(name);
+                    }, { persist: false })
+                  }
+                  onSave={() => void onSave()}
+                  onDelete={() =>
+                    updateState((draft) => {
+                      const currentName = selectedMcpServer || mcpEntries[0]?.[0] || "";
+                      delete draft.mcpConfig.mcpServers[currentName];
+                      setSelectedMcpServer(Object.keys(draft.mcpConfig.mcpServers)[0] ?? "");
+                    }, { persist: false })
+                  }
+                />
+              ) : (
+                <EmptyState locale={locale} />
+              )}
+            </div>
           </SplitLayout>
         ) : null}
 
@@ -1022,114 +1138,130 @@ export function App(): JSX.Element {
         {activeTab === "settings" ? (
           <section className="glass-panel form-panel settings-grid">
             <div className="section-title">{t(locale, "settings")}</div>
-            <PathField
-              locale={locale}
-              label={t(locale, "configPath")}
-              value={state.configPath}
-              onChange={(value) =>
-                updateState((draft) => {
-                  draft.configPath = value;
-                  draft.panelSettings.config_path = value;
-                }, { persist: false })
-              }
-            />
-            <PathField
-              locale={locale}
-              label={t(locale, "profilesPath")}
-              value={state.profilesPath}
-              onChange={(value) =>
-                updateState((draft) => {
-                  draft.profilesPath = value;
-                  draft.panelSettings.profiles_path = value;
-                  draft.panelSettings.follow_config_profiles = false;
-                }, { persist: false })
-              }
-            />
-            <PathField
-              locale={locale}
-              label={t(locale, "panelSettingsPath")}
-              value={state.panelSettingsPath}
-              onChange={(value) =>
-                updateState((draft) => {
-                  draft.panelSettingsPath = value;
-                }, { persist: false })
-              }
-            />
-            <ReadOnlyField label={t(locale, "mcpConfigPathLabel")} value={state.mcpConfigPath} />
-            <label className="toggle-row">
-              <span>{t(locale, "followConfigProfiles")}</span>
-              <input
-                type="checkbox"
-                checked={state.panelSettings.follow_config_profiles}
-                onChange={(event) =>
-                  updateState((draft) => {
-                    draft.panelSettings.follow_config_profiles = event.target.checked;
-                  }, { persist: false })
-                }
-              />
-            </label>
-            <SelectField
-              label={t(locale, "theme")}
-              value={state.panelSettings.theme}
-              onChange={(value) =>
-                updateState((draft) => {
-                  draft.panelSettings.theme = value as AppearanceMode;
-                }, { persist: false })
-              }
-              options={[
-                { value: "auto", label: locale === "zh-CN" ? "自动" : "Auto" },
-                { value: "dark", label: locale === "zh-CN" ? "暗色" : "Dark" },
-                { value: "light", label: locale === "zh-CN" ? "明亮" : "Light" },
-              ]}
-            />
-            <SelectField
-              label={t(locale, "displayOpenMode")}
-              value={state.panelSettings.display_open_mode}
-              onChange={(value) =>
-                updateState((draft) => {
-                  draft.panelSettings.display_open_mode = value as DisplayOpenMode;
-                }, { persist: false })
-              }
-              options={DISPLAY_OPEN_OPTIONS.map((option) => ({
-                value: option.value,
-                label: option.label[locale],
-              }))}
-            />
-            <label className="toggle-row">
-              <span>{t(locale, "trayIcon")}</span>
-              <input
-                type="checkbox"
-                checked={state.panelSettings.tray_icon}
-                onChange={(event) => {
-                  const enabled = event.target.checked;
-                  updateState((draft) => {
-                    draft.panelSettings.tray_icon = enabled;
-                    draft.panelSettings.close_behavior = enabled ? "keep-in-tray" : "quit";
-                  }, { persist: false });
-                }}
-              />
-            </label>
-            {state.panelSettings.tray_icon ? (
-              <SelectField
-                label={t(locale, "closeBehavior")}
-                value={state.panelSettings.close_behavior}
+            <SettingsGroup title={t(locale, "settingsGroupPaths")}>
+              <PathField
+                locale={locale}
+                label={t(locale, "configPath")}
+                value={state.configPath}
                 onChange={(value) =>
                   updateState((draft) => {
-                    draft.panelSettings.close_behavior = value as CloseBehavior;
-                  }, { persist: false })
+                    draft.configPath = value;
+                    draft.panelSettings.config_path = value;
+                  })
                 }
-                options={CLOSE_BEHAVIOR_OPTIONS.map((option) => ({
+              />
+              <PathField
+                locale={locale}
+                label={t(locale, "profilesPath")}
+                value={state.profilesPath}
+                onChange={(value) =>
+                  updateState((draft) => {
+                    draft.profilesPath = value;
+                    draft.panelSettings.profiles_path = value;
+                    draft.panelSettings.follow_config_profiles = false;
+                  })
+                }
+              />
+              <PathField
+                locale={locale}
+                label={t(locale, "panelSettingsPath")}
+                value={state.panelSettingsPath}
+                onChange={(value) =>
+                  updateState((draft) => {
+                    draft.panelSettingsPath = value;
+                  })
+                }
+              />
+              <ReadOnlyField label={t(locale, "mcpConfigPathLabel")} value={state.mcpConfigPath} />
+            </SettingsGroup>
+            <SettingsGroup title={t(locale, "settingsGroupAppearance")}>
+              <SelectField
+                label={t(locale, "locale")}
+                value={state.panelSettings.locale}
+                onChange={(value) =>
+                  updateState((draft) => {
+                    draft.panelSettings.locale = value as Locale;
+                  })
+                }
+                options={LOCALE_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: option.longLabel,
+                  badge: option.shortLabel,
+                  badgeClassName: "flag",
+                }))}
+              />
+              <SelectField
+                label={t(locale, "theme")}
+                value={state.panelSettings.theme}
+                onChange={(value) =>
+                  updateState((draft) => {
+                    draft.panelSettings.theme = value as AppearanceMode;
+                  })
+                }
+                selectedIcon={(THEME_OPTIONS.find((option) => option.value === state.panelSettings.theme) ?? THEME_OPTIONS[0]).icon}
+                options={THEME_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: option.label[locale],
+                  icon: option.icon,
+                }))}
+              />
+              <SelectField
+                label={t(locale, "displayOpenMode")}
+                value={state.panelSettings.display_open_mode}
+                onChange={(value) =>
+                  updateState((draft) => {
+                    draft.panelSettings.display_open_mode = value as DisplayOpenMode;
+                  })
+                }
+                options={DISPLAY_OPEN_OPTIONS.map((option) => ({
                   value: option.value,
                   label: option.label[locale],
                 }))}
               />
-            ) : null}
-            <div className="button-row">
-              <button className="action-button action-button-primary" onClick={() => void onSave()}>
-                <Save size={16} />
-                <span>{t(locale, "save")}</span>
-              </button>
-            </div>
+            </SettingsGroup>
+            <SettingsGroup title={t(locale, "settingsGroupBehavior")}>
+              <label className="toggle-row">
+                <span>{t(locale, "trayIcon")}</span>
+                <input
+                  type="checkbox"
+                  checked={state.panelSettings.tray_icon}
+                  onChange={(event) => {
+                    const enabled = event.target.checked;
+                    updateState((draft) => {
+                      draft.panelSettings.tray_icon = enabled;
+                      draft.panelSettings.close_behavior = enabled ? "keep-in-tray" : "quit";
+                    });
+                  }}
+                />
+              </label>
+              {state.panelSettings.tray_icon ? (
+                <SelectField
+                  label={t(locale, "closeBehavior")}
+                  value={state.panelSettings.close_behavior}
+                  onChange={(value) =>
+                    updateState((draft) => {
+                      draft.panelSettings.close_behavior = value as CloseBehavior;
+                    })
+                  }
+                  options={CLOSE_BEHAVIOR_OPTIONS.map((option) => ({
+                    value: option.value,
+                    label: option.label[locale],
+                  }))}
+                />
+              ) : null}
+              <label className="toggle-row">
+                <span>{t(locale, "followConfigProfiles")}</span>
+                <input
+                  type="checkbox"
+                  checked={state.panelSettings.follow_config_profiles}
+                  onChange={(event) =>
+                    updateState((draft) => {
+                      draft.panelSettings.follow_config_profiles = event.target.checked;
+                    })
+                  }
+                />
+              </label>
+            </SettingsGroup>
           </section>
         ) : null}
 
@@ -1141,12 +1273,28 @@ export function App(): JSX.Element {
   );
 }
 
-function SummaryCard(props: { label: string; value: string; accent?: boolean }): JSX.Element {
+function SummaryCard(props: { label: string; value: string; note?: string; title?: string; accent?: boolean }): JSX.Element {
   return (
-    <div className={props.accent ? "summary-card accent" : "summary-card"}>
+    <div className={props.accent ? "summary-card accent" : "summary-card"} title={props.title}>
       <span>{props.label}</span>
       <strong>{props.value}</strong>
+      {props.note ? <small>{props.note}</small> : null}
     </div>
+  );
+}
+
+function SettingsGroup(props: { title: string; children: JSX.Element | JSX.Element[] }): JSX.Element {
+  return (
+    <section className="settings-group">
+      <div className="settings-group-header">
+        <div className="settings-group-title">
+          <span className="settings-group-dot" aria-hidden="true" />
+          <span>{props.title}</span>
+        </div>
+        <div className="settings-group-rule" aria-hidden="true" />
+      </div>
+      <div className="settings-group-body">{props.children}</div>
+    </section>
   );
 }
 
@@ -1158,11 +1306,16 @@ function SplitLayout(props: {
   selectedItem: string;
   highlightedItem?: string;
   onSelect: (item: string) => void;
-  copyLabel: string;
-  onCopy: (item: string) => void;
+  copyLabel?: string;
+  onCopy?: (item: string) => void;
   addLabel: string;
   onAdd: () => void;
+  addButtonContent?: JSX.Element;
+  addButtonTitle?: string;
+  addButtonClassName?: string;
+  itemClassName?: (item: string) => string | null;
   renderItemAction?: (item: string) => JSX.Element | null;
+  headerActions?: JSX.Element | null;
   children: JSX.Element;
 }): JSX.Element {
   return (
@@ -1170,9 +1323,18 @@ function SplitLayout(props: {
       <div className="glass-panel list-panel">
         <div className="list-header">
           <div className="section-title">{props.listTitle}</div>
-          <button className="action-button compact" onClick={props.onAdd}>
-            {props.addLabel}
-          </button>
+          <div className="list-header-actions">
+            {props.headerActions}
+            <button
+              className={props.addButtonClassName ?? "action-button compact"}
+              type="button"
+              aria-label={props.addButtonTitle ?? props.addLabel}
+              title={props.addButtonTitle ?? props.addLabel}
+              onClick={props.onAdd}
+            >
+              {props.addButtonContent ?? props.addLabel}
+            </button>
+          </div>
         </div>
         <div className="list-scroll">
           {props.listItems.map((item) => (
@@ -1182,6 +1344,7 @@ function SplitLayout(props: {
                 "list-row",
                 item === props.selectedItem ? "active" : "",
                 item === props.highlightedItem ? "current" : "",
+                props.itemClassName?.(item) ?? "",
               ]
                 .filter(Boolean)
                 .join(" ")}
@@ -1201,15 +1364,17 @@ function SplitLayout(props: {
                 </span>
               ) : null}
               <div className="list-row-actions">
-                <button
-                  className="list-copy-button"
-                  type="button"
-                  aria-label={`${props.copyLabel} ${item}`}
-                  title={props.copyLabel}
-                  onClick={() => props.onCopy(item)}
-                >
-                  <Copy size={15} />
-                </button>
+                {props.copyLabel && props.onCopy ? (
+                  <button
+                    className="list-copy-button"
+                    type="button"
+                    aria-label={`${props.copyLabel} ${item}`}
+                    title={props.copyLabel}
+                    onClick={() => props.onCopy?.(item)}
+                  >
+                    <Copy size={15} />
+                  </button>
+                ) : null}
                 {props.renderItemAction?.(item)}
               </div>
             </div>
@@ -1244,6 +1409,7 @@ function createCopyName(sourceName: string, existing: Record<string, unknown>): 
 
 function createDefaultMcpServer(): McpServerConfig {
   return {
+    enabled: true,
     transport: "streamable-http",
     url: "",
     headers: {},
@@ -1258,6 +1424,7 @@ function switchMcpTransport(server: McpServerConfig, transport: McpTransport): M
     return server;
   }
   return {
+    enabled: server.enabled,
     transport,
     url: "",
     headers: {},
@@ -1526,11 +1693,14 @@ function McpServerForm(props: {
             placeholder={t(props.locale, "formArgsPlaceholder")}
             onChange={(next) => props.onChange(props.name, { ...props.value, args: parseListLines(next) })}
           />
-          <TextAreaField
+          <KeyValueListField
+            locale={props.locale}
             label={t(props.locale, "formEnv")}
-            value={formatRecordLines(props.value.env)}
-            placeholder={t(props.locale, "formEnvPlaceholder")}
-            onChange={(next) => props.onChange(props.name, { ...props.value, env: parseRecordLines(next) })}
+            value={props.value.env}
+            addLabel={t(props.locale, "addEnv")}
+            keyPlaceholder={props.locale === "zh-CN" ? "变量名称" : "Variable name"}
+            valuePlaceholder={props.locale === "zh-CN" ? "变量值" : "Variable value"}
+            onChange={(next) => props.onChange(props.name, { ...props.value, env: next })}
           />
         </>
       )}
@@ -1543,6 +1713,39 @@ function McpServerForm(props: {
           {t(props.locale, "mcpTest")}
         </button>
         <button className="action-button danger" onClick={props.onDelete}>{t(props.locale, "delete")}</button>
+      </div>
+    </section>
+  );
+}
+
+function McpImportPanel(props: {
+  locale: Locale;
+  value: string;
+  onChange: (value: string) => void;
+  onImport: () => void;
+  onCancel: () => void;
+}): JSX.Element {
+  return (
+    <section className="glass-panel form-panel mcp-import-panel">
+      <div className="section-title">{t(props.locale, "importMcpJson")}</div>
+      <p className="mcp-import-hint">{t(props.locale, "mcpImportHint")}</p>
+      <label className="field">
+        <span>{t(props.locale, "pasteMcpJson")}</span>
+        <textarea
+          className="mcp-import-textarea"
+          rows={10}
+          value={props.value}
+          placeholder={t(props.locale, "mcpImportPlaceholder")}
+          onChange={(event) => props.onChange(event.target.value)}
+        />
+      </label>
+      <div className="button-row">
+        <button className="action-button action-button-primary" type="button" onClick={props.onImport}>
+          <span>{t(props.locale, "mcpImportApply")}</span>
+        </button>
+        <button className="action-button" type="button" onClick={props.onCancel}>
+          <span>{t(props.locale, "mcpImportCancel")}</span>
+        </button>
       </div>
     </section>
   );
@@ -1691,7 +1894,7 @@ function ReadOnlyField(props: { label: string; value: string }): JSX.Element {
   return (
     <label className="field">
       <span>{props.label}</span>
-      <input value={props.value} readOnly />
+      <input value={props.value} readOnly disabled className="field-input-disabled" />
     </label>
   );
 }
@@ -1700,12 +1903,14 @@ function SelectField(props: {
   label: string;
   value: string;
   onChange: (value: string) => void;
-  options: Array<{ value: string; label: string }>;
+  options: Array<{ value: string; label: string; icon?: typeof Globe; badge?: string; badgeClassName?: string }>;
+  selectedIcon?: typeof Globe;
   popoverClassName?: string;
 }): JSX.Element {
   const [isOpen, setIsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const selectedOption = props.options.find((option) => option.value === props.value) ?? props.options[0];
+  const SelectedIcon = props.selectedIcon ?? selectedOption?.icon;
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent): void {
@@ -1739,6 +1944,15 @@ function SelectField(props: {
           aria-expanded={isOpen}
           onClick={() => setIsOpen((current) => !current)}
         >
+          {SelectedIcon ? (
+            <span className="field-select-leading icon" aria-hidden="true">
+              <SelectedIcon size={15} />
+            </span>
+          ) : selectedOption?.badge ? (
+            <span className={["field-select-leading", "badge", selectedOption.badgeClassName].filter(Boolean).join(" ")} aria-hidden="true">
+              {selectedOption.badge}
+            </span>
+          ) : null}
           <span className="field-select-value">{selectedOption?.label ?? props.value}</span>
           <span className="field-select-icon" aria-hidden="true">
             <ChevronDown size={16} />
@@ -1761,6 +1975,15 @@ function SelectField(props: {
                 setIsOpen(false);
               }}
             >
+              {option.icon ? (
+                <span className="field-select-option-leading icon" aria-hidden="true">
+                  <option.icon size={15} />
+                </span>
+              ) : option.badge ? (
+                <span className={["field-select-option-leading", "badge", option.badgeClassName].filter(Boolean).join(" ")} aria-hidden="true">
+                  {option.badge}
+                </span>
+              ) : null}
               <span className="field-select-option-copy">{option.label}</span>
               {option.value === props.value ? <Check size={16} /> : null}
             </button>
@@ -1898,6 +2121,7 @@ function createFallbackState(): AppState {
     tray_icon: false,
     display_open_mode: "remember-last" as DisplayOpenMode,
     close_behavior: "quit" as CloseBehavior,
+    mcp_servers: {},
   };
 
   return {
@@ -1964,6 +2188,10 @@ function applyAppearanceMode(mode: AppearanceMode): void {
   document.documentElement.dataset.theme = resolvedMode;
 }
 
+function formatMessage(template: string, values: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ""));
+}
+
 function TopbarControls(props: {
   locale: Locale;
   theme: AppearanceMode;
@@ -1998,9 +2226,7 @@ function TopbarControls(props: {
           aria-expanded={openPanel === "locale"}
           onClick={() => setOpenPanel((current) => (current === "locale" ? null : "locale"))}
         >
-          <span className="toolbar-icon-badge">
-            <Languages size={16} />
-          </span>
+          <span className="toolbar-icon-badge flag">{activeLocale.shortLabel}</span>
           <span className="toolbar-icon-copy">
             <strong>{activeLocale.longLabel}</strong>
             <small>{t(props.locale, "locale")}</small>
@@ -2017,7 +2243,7 @@ function TopbarControls(props: {
                 setOpenPanel(null);
               }}
             >
-              <span className="toolbar-option-leading">{option.shortLabel}</span>
+              <span className="toolbar-option-leading flag">{option.shortLabel}</span>
               <span className="toolbar-option-copy">
                 <strong>{option.longLabel}</strong>
                 <small>{option.value}</small>
@@ -2265,6 +2491,13 @@ function AboutPage(props: {
   ];
   const history = [
     {
+      version: "v1.0.1",
+      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.0.1`,
+      text: isZh
+        ? "集中优化设置页、首页总览和 MCP 管理交互，并更新整套透明品牌 Logo 与 macOS 图标资源。"
+        : "Polished settings, overview, and MCP management flows, and refreshed the transparent brand logo and macOS icon assets.",
+    },
+    {
       version: "v1.0.0",
       url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.0.0`,
       text: isZh
@@ -2361,6 +2594,9 @@ function OverviewDashboard(props: {
   const providerEntries = Object.entries(state.mainConfig.providers);
   const modelEntries = Object.entries(state.mainConfig.models);
   const profileEntries = Object.entries(state.profiles);
+  const visibleProviders = providerEntries.slice(0, 3);
+  const visibleModels = modelEntries.slice(0, 3);
+  const visibleProfiles = profileEntries.slice(0, 4);
 
   const boolLabel = (v: boolean) => t(locale, v ? "overviewOn" : "overviewOff");
 
@@ -2400,14 +2636,19 @@ function OverviewDashboard(props: {
 
       {/* Right column: Provider + Model stacked */}
       <div className="overview-right-col">
-        <section className="glass-panel overview-card overview-card-clickable" onClick={() => onNavigate("providers")} role="button" tabIndex={0}>
+        <section className="glass-panel overview-card">
           <div className="section-title">
             <Globe size={16} />
             <span>{t(locale, "overviewProviderList")}</span>
             <span className="overview-badge">{providerEntries.length}</span>
+            {providerEntries.length > 3 ? (
+              <button className="overview-more-link" type="button" onClick={() => onNavigate("providers")}>
+                {t(locale, "overviewShowMore")}
+              </button>
+            ) : null}
           </div>
           <div className="overview-list">
-            {providerEntries.map(([name, provider]) => (
+            {visibleProviders.map(([name, provider]) => (
               <div key={name} className="overview-list-item">
                 <span className="overview-list-name">{name}</span>
                 <span className="overview-list-meta">{provider.type}</span>
@@ -2417,14 +2658,19 @@ function OverviewDashboard(props: {
           </div>
         </section>
 
-        <section className="glass-panel overview-card overview-card-clickable" onClick={() => onNavigate("models")} role="button" tabIndex={0}>
+        <section className="glass-panel overview-card">
           <div className="section-title">
             <Boxes size={16} />
             <span>{t(locale, "overviewModelList")}</span>
             <span className="overview-badge">{modelEntries.length}</span>
+            {modelEntries.length > 3 ? (
+              <button className="overview-more-link" type="button" onClick={() => onNavigate("models")}>
+                {t(locale, "overviewShowMore")}
+              </button>
+            ) : null}
           </div>
           <div className="overview-list">
-            {modelEntries.map(([name, model]) => (
+            {visibleModels.map(([name, model]) => (
               <div key={name} className="overview-list-item">
                 <span className="overview-list-name">{name}</span>
                 <span className="overview-list-meta">{model.capabilities.join(", ") || "-"}</span>
@@ -2441,9 +2687,14 @@ function OverviewDashboard(props: {
           <Layers3 size={16} />
           <span>{t(locale, "overviewProfileList")}</span>
           <span className="overview-badge">{profileEntries.length}</span>
+          {profileEntries.length > 4 ? (
+            <button className="overview-more-link" type="button" onClick={() => onNavigate("profiles")}>
+              {t(locale, "overviewShowMore")}
+            </button>
+          ) : null}
         </div>
         <div className="overview-profile-grid">
-          {profileEntries.map(([name, profile]) => {
+          {visibleProfiles.map(([name, profile]) => {
             const isActive = name === state.activeProfile;
             return (
               <div key={name} className={isActive ? "overview-profile-chip active" : "overview-profile-chip"}>
