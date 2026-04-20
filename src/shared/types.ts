@@ -1,10 +1,17 @@
-export type ProviderType = "kimi" | "openai" | "anthropic" | "azure" | "custom";
+export type ProviderType =
+  | "kimi"
+  | "openai_legacy"
+  | "openai_responses"
+  | "anthropic"
+  | "gemini"
+  | "vertexai";
 
 export type Locale = "zh-CN" | "en-US";
 export type AppearanceMode = "auto" | "dark" | "light";
 export type DisplayOpenMode = "random" | "remember-last" | "active-display";
 export type CloseBehavior = "quit" | "keep-in-tray";
 export type TrayCommand = "reload";
+export type McpTransport = "sse" | "stdio" | "streamable-http";
 
 export interface ProviderConfig {
   type: string;
@@ -51,6 +58,20 @@ export interface Profile {
   merge_all_available_skills: boolean;
 }
 
+export interface McpServerConfig {
+  transport: McpTransport;
+  url: string;
+  headers: Record<string, string>;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  extra?: Record<string, unknown>;
+}
+
+export interface McpConfig {
+  mcpServers: Record<string, McpServerConfig>;
+}
+
 export interface PanelSettings {
   version: number;
   config_path: string;
@@ -68,19 +89,23 @@ export interface AppState {
   configPath: string;
   profilesPath: string;
   panelSettingsPath: string;
+  mcpConfigPath: string;
   mainConfig: MainConfig;
   profiles: Record<string, Profile>;
   activeProfile: string;
   panelSettings: PanelSettings;
+  mcpConfig: McpConfig;
 }
 
 export interface PreviewBundle {
   configDocument: string;
   profilesDocument: string;
   panelSettingsDocument: string;
+  mcpDocument: string;
   configDiff: string;
   profilesDiff: string;
   panelDiff: string;
+  mcpDiff: string;
 }
 
 export interface FileDialogResult {

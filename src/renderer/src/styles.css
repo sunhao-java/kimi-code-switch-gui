@@ -249,6 +249,21 @@ textarea {
   cursor: pointer;
 }
 
+.nav-dirty-badge {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 196, 91, 0.14);
+  color: #ffd27d;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+:root[data-theme="light"] .nav-dirty-badge {
+  background: rgba(196, 126, 16, 0.12);
+  color: #9a5d00;
+}
+
 .nav-item:hover,
 .nav-item.active {
   color: var(--text);
@@ -314,7 +329,7 @@ textarea {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 14px;
   flex: 1;
 }
@@ -544,9 +559,61 @@ textarea {
   outline: none;
 }
 
+.field textarea {
+  width: 100%;
+  min-height: 108px;
+  padding: 13px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(124, 179, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  outline: none;
+  resize: vertical;
+}
+
 :root[data-theme="light"] .field input {
   border-color: rgba(40, 92, 160, 0.22);
   background: rgba(255, 255, 255, 0.75);
+}
+
+:root[data-theme="light"] .field textarea {
+  border-color: rgba(40, 92, 160, 0.22);
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.key-value-list {
+  display: grid;
+  gap: 10px;
+}
+
+.key-value-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.key-value-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.key-value-remove:hover,
+.key-value-remove:focus-visible {
+  border-color: rgba(255, 107, 139, 0.3);
+  color: var(--danger);
+  outline: none;
+}
+
+.key-value-add {
+  justify-self: flex-start;
 }
 
 .secret-field {
@@ -668,6 +735,10 @@ textarea {
   white-space: nowrap;
 }
 
+.field-select-placeholder {
+  color: var(--muted);
+}
+
 .field-select-icon {
   position: absolute;
   top: 50%;
@@ -725,6 +796,11 @@ textarea {
   pointer-events: none;
   max-height: 240px;
   overflow: auto;
+}
+
+.field-select-popover-full {
+  max-height: none;
+  overflow: visible;
 }
 
 :root[data-theme="light"] .field-select-popover {
@@ -850,6 +926,12 @@ textarea {
   border-color: rgba(255, 107, 139, 0.26);
 }
 
+.banner.success {
+  color: #d8fff0;
+  background: rgba(132, 247, 211, 0.12);
+  border-color: rgba(132, 247, 211, 0.24);
+}
+
 :root[data-theme="light"] .banner.info {
   color: #0a4d8c;
   background: rgba(23, 110, 220, 0.07);
@@ -860,6 +942,12 @@ textarea {
   color: #8b1a2e;
   background: rgba(210, 63, 100, 0.07);
   border-color: rgba(210, 63, 100, 0.2);
+}
+
+:root[data-theme="light"] .banner.success {
+  color: #0f6d55;
+  background: rgba(20, 155, 116, 0.08);
+  border-color: rgba(20, 155, 116, 0.18);
 }
 
 .feature-card,
@@ -1405,7 +1493,7 @@ textarea {
 
 .list-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -1413,6 +1501,11 @@ textarea {
   border-radius: 16px;
   border: 1px solid transparent;
   background: rgba(255, 255, 255, 0.02);
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .list-item {
@@ -1429,26 +1522,91 @@ textarea {
   white-space: nowrap;
 }
 
+.list-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.list-dirty-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
+  border-radius: 999px;
+  background: rgba(255, 196, 91, 0.14);
+  color: #ffd27d;
+}
+
+:root[data-theme="light"] .list-dirty-badge {
+  background: rgba(196, 126, 16, 0.12);
+  color: #9a5d00;
+}
+
+.list-current-badge,
+.list-activate-button,
 .list-copy-button {
   display: inline-grid;
   place-items: center;
-  width: 34px;
+  min-width: 34px;
   height: 34px;
+  padding: 0 10px;
   border: 1px solid transparent;
   border-radius: 12px;
   background: transparent;
   color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.list-current-badge {
+  background: rgba(132, 247, 211, 0.18);
+  color: var(--primary-2);
+}
+
+:root[data-theme="light"] .list-current-badge {
+  background: rgba(20, 155, 116, 0.12);
+  color: #0d7a5f;
+}
+
+.list-activate-button,
+.list-copy-button {
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
+  transition:
+    opacity 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.list-activate-button {
+  background:
+    linear-gradient(135deg, rgba(87, 177, 255, 0.14), rgba(132, 247, 211, 0.14)),
+    rgba(255, 255, 255, 0.03);
+  color: var(--primary);
+}
+
+.list-copy-button {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
 }
 
 .list-row:hover .list-copy-button,
-.list-row:focus-within .list-copy-button {
+.list-row:focus-within .list-copy-button,
+.list-row:hover .list-activate-button,
+.list-row:focus-within .list-activate-button {
   opacity: 1;
   pointer-events: auto;
 }
 
+.list-activate-button:hover,
+.list-activate-button:focus-visible,
 .list-copy-button:hover,
 .list-copy-button:focus-visible {
   border-color: var(--line);
@@ -1460,12 +1618,73 @@ textarea {
 .list-row.active {
   background: rgba(87, 177, 255, 0.12);
   border-color: var(--line-strong);
+  box-shadow: 0 10px 24px rgba(40, 92, 160, 0.08);
+}
+
+:root[data-theme="light"] .list-row.active {
+  background: linear-gradient(135deg, rgba(23, 110, 220, 0.11), rgba(87, 177, 255, 0.06));
+  border-color: rgba(23, 110, 220, 0.22);
+  box-shadow: 0 12px 26px rgba(41, 73, 114, 0.08);
+}
+
+.list-row.current {
+  background: linear-gradient(135deg, rgba(87, 177, 255, 0.16), rgba(132, 247, 211, 0.12));
+  border-color: rgba(132, 247, 211, 0.34);
+  box-shadow: 0 12px 26px rgba(12, 28, 50, 0.12);
+}
+
+.list-row.current .list-item {
+  font-weight: 700;
+}
+
+:root[data-theme="light"] .list-row.current {
+  background: linear-gradient(135deg, rgba(23, 110, 220, 0.12), rgba(20, 155, 116, 0.09));
+  border-color: rgba(20, 155, 116, 0.22);
+  box-shadow: 0 14px 28px rgba(41, 73, 114, 0.08);
+}
+
+.list-row.active.current {
+  background: linear-gradient(135deg, rgba(87, 177, 255, 0.2), rgba(132, 247, 211, 0.18));
+  border-color: rgba(132, 247, 211, 0.42);
+  box-shadow:
+    0 0 0 1px rgba(87, 177, 255, 0.12),
+    0 14px 30px rgba(12, 28, 50, 0.16);
+}
+
+:root[data-theme="light"] .list-row.active.current {
+  background: linear-gradient(135deg, rgba(23, 110, 220, 0.14), rgba(20, 155, 116, 0.12));
+  border-color: rgba(20, 155, 116, 0.28);
+  box-shadow:
+    0 0 0 1px rgba(23, 110, 220, 0.08),
+    0 14px 30px rgba(41, 73, 114, 0.1);
 }
 
 .form-panel {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.form-hint {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(124, 179, 255, 0.1);
+}
+
+.form-hint span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.form-hint code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
 }
 
 
@@ -1611,6 +1830,55 @@ textarea {
 .preview-grid {
   display: grid;
   gap: 18px;
+}
+
+.preview-workspace {
+  display: grid;
+  gap: 18px;
+  border-radius: 28px;
+  padding: 22px;
+}
+
+.preview-tabs {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.preview-tab {
+  min-height: 42px;
+  padding: 10px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.preview-tab:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.preview-tab.active {
+  border-color: rgba(132, 247, 211, 0.24);
+  background:
+    linear-gradient(135deg, rgba(87, 177, 255, 0.16), rgba(132, 247, 211, 0.14)),
+    rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="light"] .preview-tab {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+:root[data-theme="light"] .preview-tab.active {
+  border-color: rgba(20, 155, 116, 0.22);
+  background:
+    linear-gradient(135deg, rgba(23, 110, 220, 0.1), rgba(20, 155, 116, 0.08)),
+    rgba(255, 255, 255, 0.92);
 }
 
 .preview-columns {

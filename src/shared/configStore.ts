@@ -1,6 +1,7 @@
 import parse from "@iarna/toml/parse-string.js";
 import stringify from "@iarna/toml/stringify.js";
 
+import { buildMcpConfigDocument, DEFAULT_MCP_CONFIG_PATH, loadMcpConfig } from "./mcpStore";
 import type { AppState, MainConfig, PanelSettings, PreviewBundle, Profile } from "./types";
 
 export const PROFILE_VERSION = 1;
@@ -65,10 +66,12 @@ export async function loadAppState(
     configPath?: string;
     profilesPath?: string;
     panelSettingsPath?: string;
+    mcpConfigPath?: string;
   },
 ): Promise<AppState> {
   const panelSettingsPath =
     paths?.panelSettingsPath ?? DEFAULT_CONFIG_PATH.replace("config.toml", PANEL_SETTINGS_FILENAME);
+  const mcpConfigPath = sanitizePath(paths?.mcpConfigPath, DEFAULT_MCP_CONFIG_PATH);
   const panelSettings = await loadPanelSettings(files, panelSettingsPath);
   const configPath = sanitizePath(paths?.configPath ?? panelSettings.config_path, DEFAULT_CONFIG_PATH);
   const profilesPath = resolveProfilesPath({
@@ -81,6 +84,7 @@ export async function loadAppState(
     defaultPanelSettingsPath(configPath),
   );
   const mainConfig = normalizeMainConfig(parseDocument(await files.readText(configPath)));
+  const mcpConfig = await loadMcpConfig(files, mcpConfigPath);
   const rawProfiles = parseDocument(await files.readText(profilesPath));
   const profiles = parseProfiles(mainConfig, rawProfiles);
   const activeProfile = ensureActiveProfile(
@@ -94,6 +98,7 @@ export async function loadAppState(
     configPath,
     profilesPath,
     panelSettingsPath: resolvedPanelSettingsPath,
+    mcpConfigPath,
     mainConfig,
     profiles,
     activeProfile,
@@ -102,6 +107,7 @@ export async function loadAppState(
       config_path: configPath,
       profiles_path: panelSettings.follow_config_profiles ? "" : profilesPath,
     },
+    mcpConfig,
   };
 }
 
@@ -141,12 +147,14 @@ export async function saveAppState(files: FileAccess, state: AppState): Promise<
   await files.ensureDir(dirnamePath(normalizedState.configPath));
   await files.ensureDir(dirnamePath(normalizedState.profilesPath));
   await files.ensureDir(dirnamePath(normalizedState.panelSettingsPath));
+  await files.ensureDir(dirnamePath(normalizedState.mcpConfigPath));
   await files.writeText(normalizedState.configPath, buildConfigDocument(normalizedState));
   await files.writeText(normalizedState.profilesPath, buildProfilesDocument(normalizedState));
   await files.writeText(
     normalizedState.panelSettingsPath,
     buildPanelSettingsDocument(normalizedState.panelSettings),
   );
+  await files.writeText(normalizedState.mcpConfigPath, buildMcpConfigDocument(normalizedState.mcpConfig));
 }
 
 export function buildConfigDocument(state: AppState): string {
@@ -290,19 +298,23 @@ export function buildPreviewBundle(state: AppState, disk: {
   configDocument?: string | null;
   profilesDocument?: string | null;
   panelSettingsDocument?: string | null;
+  mcpDocument?: string | null;
 }): PreviewBundle {
   const normalizedState = normalizeStatePaths(state);
   const configDocument = buildConfigDocument(normalizedState);
   const profilesDocument = buildProfilesDocument(normalizedState);
   const panelSettingsDocument = buildPanelSettingsDocument(normalizedState.panelSettings);
+  const mcpDocument = buildMcpConfigDocument(normalizedState.mcpConfig);
 
   return {
     configDocument,
     profilesDocument,
     panelSettingsDocument,
+    mcpDocument,
     configDiff: createLineDiff(disk.configDocument ?? "", configDocument),
     profilesDiff: createLineDiff(disk.profilesDocument ?? "", profilesDocument),
     panelDiff: createLineDiff(disk.panelSettingsDocument ?? "", panelSettingsDocument),
+    mcpDiff: createLineDiff(disk.mcpDocument ?? "", mcpDocument),
   };
 }
 
@@ -496,6 +508,7 @@ export function normalizeStatePaths(state: AppState): AppState {
     state.panelSettingsPath,
     defaultPanelSettingsPath(configPath),
   );
+  const mcpConfigPath = sanitizePath(state.mcpConfigPath, DEFAULT_MCP_CONFIG_PATH);
   const panelSettings: PanelSettings = {
     ...state.panelSettings,
     config_path: configPath,
@@ -519,6 +532,7 @@ export function normalizeStatePaths(state: AppState): AppState {
     configPath,
     profilesPath,
     panelSettingsPath,
+    mcpConfigPath,
     panelSettings: {
       ...panelSettings,
       profiles_path: panelSettings.follow_config_profiles ? "" : profilesPath,

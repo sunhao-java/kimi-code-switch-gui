@@ -19,10 +19,13 @@ import {
   Mail,
   MonitorCog,
   MoonStar,
+  Plus,
   Save,
   Settings2,
   Sparkles,
+  Star,
   SunMedium,
+  X,
   Zap,
 } from "lucide-react";
 
@@ -46,14 +49,17 @@ import type {
   AppearanceMode,
   DisplayOpenMode,
   CloseBehavior,
+  McpServerConfig,
+  McpTransport,
 } from "@shared/types";
 
 import { t, translateError } from "./i18n";
 import logoLight from "./assets/logo-light.png";
 import logoDark from "./assets/logo-dark.png";
 
-type TabId = "overview" | "profiles" | "providers" | "models" | "preview" | "settings" | "about";
+type TabId = "overview" | "profiles" | "providers" | "models" | "mcp" | "preview" | "settings" | "about";
 type DiagnosticLevel = "ok" | "failed" | "pending" | "unavailable";
+type PreviewFileId = "config" | "profiles" | "panel" | "mcp";
 
 interface DiagnosticsState {
   preload: DiagnosticLevel;
@@ -67,6 +73,7 @@ const TAB_ITEMS: Array<{ id: TabId; icon: typeof Layers3; labelKey: string }> = 
   { id: "profiles", icon: Layers3, labelKey: "profiles" },
   { id: "providers", icon: Globe, labelKey: "providers" },
   { id: "models", icon: Boxes, labelKey: "models" },
+  { id: "mcp", icon: Zap, labelKey: "mcp" },
   { id: "preview", icon: FileCog, labelKey: "preview" },
   { id: "settings", icon: Settings2, labelKey: "settings" },
 ];
@@ -91,9 +98,11 @@ const emptyPreview: PreviewBundle = {
   configDocument: "",
   profilesDocument: "",
   panelSettingsDocument: "",
+  mcpDocument: "",
   configDiff: "",
   profilesDiff: "",
   panelDiff: "",
+  mcpDiff: "",
 };
 
 const LOCALE_OPTIONS: Array<{ value: Locale; shortLabel: string; longLabel: string }> = [
@@ -124,6 +133,82 @@ const THEME_OPTIONS: Array<{
     icon: MoonStar,
     shortLabel: "D",
     label: { "zh-CN": "暗色", "en-US": "Dark" },
+  },
+];
+
+const PROVIDER_TYPE_OPTIONS: Array<{
+  value: string;
+  label: Record<Locale, string>;
+}> = [
+  {
+    value: "kimi",
+    label: { "zh-CN": "Kimi API（kimi）", "en-US": "Kimi API (kimi)" },
+  },
+  {
+    value: "openai_legacy",
+    label: {
+      "zh-CN": "OpenAI Chat Completions（openai_legacy）",
+      "en-US": "OpenAI Chat Completions (openai_legacy)",
+    },
+  },
+  {
+    value: "openai_responses",
+    label: {
+      "zh-CN": "OpenAI Responses（openai_responses）",
+      "en-US": "OpenAI Responses (openai_responses)",
+    },
+  },
+  {
+    value: "anthropic",
+    label: { "zh-CN": "Anthropic Claude（anthropic）", "en-US": "Anthropic Claude (anthropic)" },
+  },
+  {
+    value: "gemini",
+    label: { "zh-CN": "Google Gemini（gemini）", "en-US": "Google Gemini (gemini)" },
+  },
+  {
+    value: "vertexai",
+    label: { "zh-CN": "Google Vertex AI（vertexai）", "en-US": "Google Vertex AI (vertexai)" },
+  },
+];
+
+const MODEL_CAPABILITY_OPTIONS: Array<{
+  value: string;
+  label: Record<Locale, string>;
+}> = [
+  {
+    value: "thinking",
+    label: { "zh-CN": "Thinking（thinking）", "en-US": "Thinking (thinking)" },
+  },
+  {
+    value: "always_thinking",
+    label: { "zh-CN": "始终 Thinking（always_thinking）", "en-US": "Always Thinking (always_thinking)" },
+  },
+  {
+    value: "image_in",
+    label: { "zh-CN": "图片输入（image_in）", "en-US": "Image Input (image_in)" },
+  },
+  {
+    value: "video_in",
+    label: { "zh-CN": "视频输入（video_in）", "en-US": "Video Input (video_in)" },
+  },
+];
+
+const MCP_TRANSPORT_OPTIONS: Array<{
+  value: McpTransport;
+  label: Record<Locale, string>;
+}> = [
+  {
+    value: "streamable-http",
+    label: { "zh-CN": "Streaming HTTP", "en-US": "Streaming HTTP" },
+  },
+  {
+    value: "sse",
+    label: { "zh-CN": "SSE", "en-US": "SSE" },
+  },
+  {
+    value: "stdio",
+    label: { "zh-CN": "stdio（本地进程）", "en-US": "stdio (Local Process)" },
   },
 ];
 
@@ -163,20 +248,65 @@ function getApi() {
   return typeof window !== "undefined" ? window.kimiSwitch : undefined;
 }
 
+function getMcpAction(
+  api: ReturnType<typeof getApi>,
+  action: "test" | "auth" | "reset-auth",
+): ((name: string) => Promise<{ ok: true; stdout: string; stderr: string }>) | null {
+  if (!api) {
+    return null;
+  }
+  if (action === "test") {
+    return typeof api.testMcpServer === "function" ? api.testMcpServer : null;
+  }
+  if (action === "auth") {
+    return typeof api.authMcpServer === "function" ? api.authMcpServer : null;
+  }
+  return typeof api.resetMcpServerAuth === "function" ? api.resetMcpServerAuth : null;
+}
+
+function getMcpActionNotice(locale: Locale, action: "test" | "auth" | "reset-auth"): string {
+  if (action === "test") {
+    return t(locale, "mcpTestSuccess");
+  }
+  if (action === "auth") {
+    return t(locale, "mcpAuthStarted");
+  }
+  return t(locale, "mcpResetSuccess");
+}
+
+function isEqualValue(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function collectDirtyKeys<T>(
+  current: Record<string, T>,
+  saved: Record<string, T>,
+): Set<string> {
+  const keys = new Set([...Object.keys(current), ...Object.keys(saved)]);
+  return new Set(
+    [...keys].filter((key) => !isEqualValue(current[key] ?? null, saved[key] ?? null)),
+  );
+}
+
 export function App(): JSX.Element {
   const [state, setState] = useState<AppState | null>(null);
+  const [savedState, setSavedState] = useState<AppState | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [selectedProvider, setSelectedProvider] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [selectedProfile, setSelectedProfile] = useState("");
+  const [selectedMcpServer, setSelectedMcpServer] = useState("");
+  const [selectedPreviewFile, setSelectedPreviewFile] = useState<PreviewFileId>("config");
   const [preview, setPreview] = useState<PreviewBundle>(emptyPreview);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [diagnostics, setDiagnostics] = useState<DiagnosticsState>({
     preload: "pending",
     loadState: "pending",
     previewState: "pending",
     lastError: "",
   });
+  const unsavedResolutionRef = useRef(false);
 
   useEffect(() => {
     void loadState();
@@ -194,6 +324,12 @@ export function App(): JSX.Element {
     const timer = setTimeout(() => setError(""), 5000);
     return () => clearTimeout(timer);
   }, [error]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(""), 5000);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   useEffect(() => {
     const api = getApi();
@@ -232,13 +368,16 @@ export function App(): JSX.Element {
       const next = await api.loadState();
       const normalized = normalizeStatePaths(next);
       setState(normalized);
+      setSavedState(normalized);
       applyAppearanceMode(normalized.panelSettings.theme);
       setSelectedProvider(Object.keys(normalized.mainConfig.providers)[0] ?? "");
       setSelectedModel(Object.keys(normalized.mainConfig.models)[0] ?? "");
       setSelectedProfile(normalized.activeProfile);
+      setSelectedMcpServer(Object.keys(normalized.mcpConfig.mcpServers)[0] ?? "");
       const nextPreview = await api.previewState(normalized);
       setPreview(nextPreview);
       setError("");
+      setNotice("");
       setDiagnostics({
         preload: "ok",
         loadState: "ok",
@@ -248,6 +387,7 @@ export function App(): JSX.Element {
     } catch (loadError) {
       const fallback = createFallbackState();
       setState(fallback);
+      setSavedState(fallback);
       applyAppearanceMode(fallback.panelSettings.theme);
       const message = loadError instanceof Error ? loadError.message : String(loadError);
       setError(message);
@@ -258,10 +398,6 @@ export function App(): JSX.Element {
         lastError: message,
       }));
     }
-  }
-
-  if (!state) {
-    return <div className="boot-screen">Loading…</div>;
   }
 
   const title = t(locale, "appTitle");
@@ -277,19 +413,46 @@ export function App(): JSX.Element {
     try {
       const normalized = normalizeStatePaths(nextState);
       await api.saveState(normalized);
+      if (savedState?.panelSettings.tray_icon !== normalized.panelSettings.tray_icon) {
+        await api.setTray(normalized.panelSettings.tray_icon);
+      }
       const nextPreview = await api.previewState(normalized);
       setState(normalized);
+      setSavedState(normalized);
       setPreview(nextPreview);
       setError("");
+      setNotice("");
     } catch (saveError) {
       const message = saveError instanceof Error ? saveError.message : String(saveError);
       setError(translateError(locale, message));
+      setNotice("");
       setDiagnostics((current) => ({ ...current, lastError: message }));
     }
   };
 
   const onSave = async (): Promise<void> => {
     await persistState(state);
+  };
+
+  const restoreSavedState = (nextSavedState: AppState): void => {
+    const restored = normalizeStatePaths(cloneState(nextSavedState));
+    setState(restored);
+    applyAppearanceMode(restored.panelSettings.theme);
+    setSelectedProvider((current) =>
+      restored.mainConfig.providers[current] ? current : Object.keys(restored.mainConfig.providers)[0] ?? "",
+    );
+    setSelectedModel((current) =>
+      restored.mainConfig.models[current] ? current : Object.keys(restored.mainConfig.models)[0] ?? "",
+    );
+    setSelectedProfile((current) =>
+      restored.profiles[current] ? current : (restored.activeProfile || Object.keys(restored.profiles)[0] || ""),
+    );
+    setSelectedMcpServer((current) =>
+      restored.mcpConfig.mcpServers[current] ? current : Object.keys(restored.mcpConfig.mcpServers)[0] ?? "",
+    );
+    void refreshPreview(restored);
+    setError("");
+    setNotice("");
   };
 
   const refreshPreview = async (draft = state): Promise<void> => {
@@ -325,16 +488,88 @@ export function App(): JSX.Element {
         void persistState(normalized);
       }
       setError("");
+      setNotice("");
     } catch (updateError) {
       const message = updateError instanceof Error ? updateError.message : String(updateError);
       setError(translateError(locale, message));
+      setNotice("");
       setDiagnostics((current) => ({ ...current, lastError: message }));
     }
   };
 
+  const hasUnsavedChanges = Boolean(savedState) && !isEqualValue(state, savedState);
+  const dirtyProviders = savedState
+    ? collectDirtyKeys(state.mainConfig.providers, savedState.mainConfig.providers)
+    : new Set<string>();
+  const dirtyModels = savedState
+    ? collectDirtyKeys(state.mainConfig.models, savedState.mainConfig.models)
+    : new Set<string>();
+  const dirtyProfiles = savedState
+    ? collectDirtyKeys(state.profiles, savedState.profiles)
+    : new Set<string>();
+  const dirtyMcpServers = savedState
+    ? collectDirtyKeys(state.mcpConfig.mcpServers, savedState.mcpConfig.mcpServers)
+    : new Set<string>();
+  const settingsDirty = savedState
+    ? !isEqualValue(
+        {
+          configPath: state.configPath,
+          profilesPath: state.profilesPath,
+          panelSettingsPath: state.panelSettingsPath,
+          panelSettings: state.panelSettings,
+        },
+        {
+          configPath: savedState.configPath,
+          profilesPath: savedState.profilesPath,
+          panelSettingsPath: savedState.panelSettingsPath,
+          panelSettings: savedState.panelSettings,
+        },
+      )
+    : false;
+
+  const resolveUnsavedChanges = async (): Promise<void> => {
+    if (!hasUnsavedChanges || !savedState || unsavedResolutionRef.current) {
+      return;
+    }
+    unsavedResolutionRef.current = true;
+    try {
+      const shouldSave = window.confirm(t(locale, "unsavedChangesConfirm"));
+      if (shouldSave) {
+        await persistState(state);
+      } else {
+        restoreSavedState(savedState);
+      }
+    } finally {
+      unsavedResolutionRef.current = false;
+    }
+  };
+
+  const runAfterUnsavedHandled = (action: () => void | Promise<void>): void => {
+    void (async () => {
+      await resolveUnsavedChanges();
+      await action();
+    })();
+  };
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) {
+      return;
+    }
+    const handleBlur = (): void => {
+      void resolveUnsavedChanges();
+    };
+    window.addEventListener("blur", handleBlur);
+    return () => window.removeEventListener("blur", handleBlur);
+  }, [hasUnsavedChanges, locale, state, savedState]);
+
+  if (!state) {
+    return <div className="boot-screen">Loading…</div>;
+  }
+
   const providerEntries = Object.entries(state.mainConfig.providers);
   const modelEntries = Object.entries(state.mainConfig.models);
   const profileEntries = Object.entries(state.profiles);
+  const mcpEntries = Object.entries(state.mcpConfig.mcpServers);
 
   const selectedProviderData =
     (selectedProvider && state.mainConfig.providers[selectedProvider]) ||
@@ -344,6 +579,8 @@ export function App(): JSX.Element {
     (selectedModel && state.mainConfig.models[selectedModel]) || modelEntries[0]?.[1] || null;
   const selectedProfileData =
     (selectedProfile && state.profiles[selectedProfile]) || profileEntries[0]?.[1] || null;
+  const selectedMcpServerData =
+    (selectedMcpServer && state.mcpConfig.mcpServers[selectedMcpServer]) || mcpEntries[0]?.[1] || null;
 
   return (
     <div className="shell">
@@ -367,17 +604,28 @@ export function App(): JSX.Element {
             <button
               key={id}
               className={id === activeTab ? "nav-item active" : "nav-item"}
-              onClick={() => setActiveTab(id)}
+              onClick={() => {
+                if (id === activeTab) return;
+                runAfterUnsavedHandled(() => setActiveTab(id));
+              }}
             >
               <Icon size={18} />
               <span>{t(locale, labelKey)}</span>
+              {id === "settings" && settingsDirty ? (
+                <span className="nav-dirty-badge" title={t(locale, "editedBadge")} aria-label={t(locale, "editedBadge")}>
+                  <Star size={14} fill="currentColor" />
+                </span>
+              ) : null}
             </button>
           ))}
         </nav>
         <nav className="nav nav-bottom">
           <button
             className={ABOUT_TAB.id === activeTab ? "nav-item active" : "nav-item"}
-            onClick={() => setActiveTab(ABOUT_TAB.id)}
+            onClick={() => {
+              if (ABOUT_TAB.id === activeTab) return;
+              runAfterUnsavedHandled(() => setActiveTab(ABOUT_TAB.id));
+            }}
           >
             <ABOUT_TAB.icon size={18} />
             <span>{t(locale, ABOUT_TAB.labelKey)}</span>
@@ -391,6 +639,7 @@ export function App(): JSX.Element {
             <SummaryCard label={t(locale, "summaryProfiles")} value={String(profileEntries.length)} />
             <SummaryCard label={t(locale, "summaryProviders")} value={String(providerEntries.length)} />
             <SummaryCard label={t(locale, "summaryModels")} value={String(modelEntries.length)} />
+            <SummaryCard label={t(locale, "summaryMcp")} value={String(mcpEntries.length)} />
             <SummaryCard label={t(locale, "summaryActive")} value={state.activeProfile || "-"} accent />
           </div>
           <div className="toolbar">
@@ -400,18 +649,19 @@ export function App(): JSX.Element {
               onLocaleChange={(value) =>
                 updateState((draft) => {
                   draft.panelSettings.locale = value;
-                })
+                }, { persist: false })
               }
               onThemeChange={(value) =>
                 updateState((draft) => {
                   draft.panelSettings.theme = value;
-                })
+                }, { persist: false })
               }
             />
           </div>
         </header>
 
         {error ? <div className="banner error">{error}</div> : null}
+        {!error && notice ? <div className="banner success">{notice}</div> : null}
 
         {activeTab === "overview" ? (
           <OverviewDashboard
@@ -422,9 +672,9 @@ export function App(): JSX.Element {
             onActivateProfile={(name) =>
               updateState((draft) => {
                 applyProfile(draft, name);
-              })
+              }, { persist: true })
             }
-            onNavigate={setActiveTab}
+            onNavigate={(tab) => runAfterUnsavedHandled(() => setActiveTab(tab))}
           />
         ) : null}
 
@@ -432,8 +682,10 @@ export function App(): JSX.Element {
           <SplitLayout
             listTitle={t(locale, "providers")}
             listItems={providerEntries.map(([name]) => name)}
+            dirtyItems={dirtyProviders}
+            dirtyLabel={t(locale, "editedBadge")}
             selectedItem={selectedProvider}
-            onSelect={setSelectedProvider}
+            onSelect={(item) => runAfterUnsavedHandled(() => setSelectedProvider(item))}
             copyLabel={t(locale, "clone")}
             onCopy={(name) =>
               updateState((draft) => {
@@ -442,18 +694,18 @@ export function App(): JSX.Element {
                 const copyName = createCopyName(name, draft.mainConfig.providers);
                 draft.mainConfig.providers[copyName] = { ...provider };
                 setSelectedProvider(copyName);
-              })
+              }, { persist: false })
             }
             addLabel={t(locale, "newProvider")}
             onAdd={() =>
               updateState((draft) => {
                 upsertProvider(draft, `provider_${Date.now()}`, {
-                  type: "openai",
+                  type: "kimi",
                   base_url: "https://api.example.com/v1",
                   api_key: "",
                 });
                 setSelectedProvider(Object.keys(draft.mainConfig.providers).at(-1) ?? "");
-              })
+              }, { persist: false })
             }
           >
             {selectedProviderData ? (
@@ -481,7 +733,7 @@ export function App(): JSX.Element {
                   updateState((draft) => {
                     deleteProvider(draft, selectedProvider || providerEntries[0]?.[0] || "");
                     setSelectedProvider(Object.keys(draft.mainConfig.providers)[0] ?? "");
-                  })
+                  }, { persist: false })
                 }
               />
             ) : (
@@ -494,8 +746,10 @@ export function App(): JSX.Element {
           <SplitLayout
             listTitle={t(locale, "models")}
             listItems={modelEntries.map(([name]) => name)}
+            dirtyItems={dirtyModels}
+            dirtyLabel={t(locale, "editedBadge")}
             selectedItem={selectedModel}
-            onSelect={setSelectedModel}
+            onSelect={(item) => runAfterUnsavedHandled(() => setSelectedModel(item))}
             copyLabel={t(locale, "clone")}
             onCopy={(name) =>
               updateState((draft) => {
@@ -507,7 +761,7 @@ export function App(): JSX.Element {
                   capabilities: [...model.capabilities],
                 };
                 setSelectedModel(copyName);
-              })
+              }, { persist: false })
             }
             addLabel={t(locale, "newModel")}
             onAdd={() =>
@@ -523,7 +777,7 @@ export function App(): JSX.Element {
                   capabilities: [],
                 });
                 setSelectedModel(Object.keys(draft.mainConfig.models).at(-1) ?? "");
-              })
+              }, { persist: false })
             }
           >
             {selectedModelData ? (
@@ -555,7 +809,7 @@ export function App(): JSX.Element {
                   updateState((draft) => {
                     deleteModel(draft, selectedModel || modelEntries[0]?.[0] || "");
                     setSelectedModel(Object.keys(draft.mainConfig.models)[0] ?? "");
-                  })
+                  }, { persist: false })
                 }
               />
             ) : (
@@ -568,8 +822,11 @@ export function App(): JSX.Element {
           <SplitLayout
             listTitle={t(locale, "profiles")}
             listItems={profileEntries.map(([name]) => name)}
+            dirtyItems={dirtyProfiles}
+            dirtyLabel={t(locale, "editedBadge")}
             selectedItem={selectedProfile}
-            onSelect={setSelectedProfile}
+            highlightedItem={state.activeProfile}
+            onSelect={(item) => runAfterUnsavedHandled(() => setSelectedProfile(item))}
             copyLabel={t(locale, "clone")}
             onCopy={(name) =>
               updateState((draft) => {
@@ -578,7 +835,7 @@ export function App(): JSX.Element {
                 const copyName = createCopyName(name, draft.profiles);
                 cloneProfile(draft, name, copyName, `${profile.label} Copy`);
                 setSelectedProfile(copyName);
-              })
+              }, { persist: false })
             }
             addLabel={t(locale, "newProfile")}
             onAdd={() =>
@@ -600,7 +857,29 @@ export function App(): JSX.Element {
                   merge_all_available_skills: false,
                 });
                 setSelectedProfile(Object.keys(draft.profiles).at(-1) ?? "");
-              })
+              }, { persist: false })
+            }
+            renderItemAction={(name) =>
+              name === state.activeProfile ? (
+                <span className="list-current-badge" aria-label={t(locale, "summaryActive")} title={t(locale, "summaryActive")}>
+                  {locale === "zh-CN" ? "已激活" : "Active"}
+                </span>
+              ) : (
+                <button
+                  className="list-activate-button"
+                  type="button"
+                  aria-label={`${t(locale, "activate")} ${name}`}
+                  title={t(locale, "activate")}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    updateState((draft) => {
+                      applyProfile(draft, name);
+                    });
+                  }}
+                >
+                  {t(locale, "activate")}
+                </button>
+              )
             }
           >
             {selectedProfileData ? (
@@ -634,13 +913,93 @@ export function App(): JSX.Element {
                     const source = selectedProfile || profileEntries[0]?.[0] || "";
                     cloneProfile(draft, source, `${source}-copy`, `${selectedProfileData.label} Copy`);
                     setSelectedProfile(`${source}-copy`);
-                  })
+                  }, { persist: false })
                 }
                 onDelete={() =>
                   updateState((draft) => {
                     deleteProfile(draft, selectedProfile || profileEntries[0]?.[0] || "");
                     setSelectedProfile(Object.keys(draft.profiles)[0] ?? "");
-                  })
+                  }, { persist: false })
+                }
+              />
+            ) : (
+              <EmptyState locale={locale} />
+            )}
+          </SplitLayout>
+        ) : null}
+
+        {activeTab === "mcp" ? (
+          <SplitLayout
+            listTitle={t(locale, "mcpServers")}
+            listItems={mcpEntries.map(([name]) => name)}
+            dirtyItems={dirtyMcpServers}
+            dirtyLabel={t(locale, "editedBadge")}
+            selectedItem={selectedMcpServer}
+            onSelect={(item) => runAfterUnsavedHandled(() => setSelectedMcpServer(item))}
+            copyLabel={t(locale, "clone")}
+            onCopy={(name) =>
+              updateState((draft) => {
+                const server = draft.mcpConfig.mcpServers[name];
+                if (!server) return;
+                const copyName = createCopyName(name, draft.mcpConfig.mcpServers);
+                draft.mcpConfig.mcpServers[copyName] = { ...server };
+                setSelectedMcpServer(copyName);
+              }, { persist: false })
+            }
+            addLabel={t(locale, "newMcpServer")}
+            onAdd={() =>
+              updateState((draft) => {
+                const name = `mcp_${Date.now()}`;
+                draft.mcpConfig.mcpServers[name] = createDefaultMcpServer();
+                setSelectedMcpServer(name);
+              }, { persist: false })
+            }
+          >
+            {selectedMcpServerData ? (
+              <McpServerForm
+                locale={locale}
+                name={selectedMcpServer || mcpEntries[0]?.[0] || ""}
+                value={selectedMcpServerData}
+                onRunAction={async (action, serverName) => {
+                  const api = getApi();
+                  const runAction = getMcpAction(api, action);
+                  if (!api) {
+                    setError("Electron preload API is unavailable. MCP command cannot continue.");
+                    return;
+                  }
+                  if (!runAction) {
+                    setNotice("");
+                    setError(t(locale, "mcpRuntimeOutdated"));
+                    return;
+                  }
+                  try {
+                    await persistState(state);
+                    await runAction(serverName);
+                    setError("");
+                    setNotice(getMcpActionNotice(locale, action));
+                  } catch (commandError) {
+                    const message = commandError instanceof Error ? commandError.message : String(commandError);
+                    setNotice("");
+                    setError(translateError(locale, message));
+                  }
+                }}
+                onChange={(name, nextServer) =>
+                  updateState((draft) => {
+                    const currentName = selectedMcpServer || mcpEntries[0]?.[0] || name;
+                    const nextServers = { ...draft.mcpConfig.mcpServers };
+                    delete nextServers[currentName];
+                    nextServers[name] = nextServer;
+                    draft.mcpConfig.mcpServers = nextServers;
+                    setSelectedMcpServer(name);
+                  }, { persist: false })
+                }
+                onSave={() => void onSave()}
+                onDelete={() =>
+                  updateState((draft) => {
+                    const currentName = selectedMcpServer || mcpEntries[0]?.[0] || "";
+                    delete draft.mcpConfig.mcpServers[currentName];
+                    setSelectedMcpServer(Object.keys(draft.mcpConfig.mcpServers)[0] ?? "");
+                  }, { persist: false })
                 }
               />
             ) : (
@@ -651,9 +1010,12 @@ export function App(): JSX.Element {
 
         {activeTab === "preview" ? (
           <section className="preview-grid">
-            <PreviewCard title={t(locale, "previewConfig")} document={preview.configDocument} diff={preview.configDiff} locale={locale} />
-            <PreviewCard title={t(locale, "previewProfiles")} document={preview.profilesDocument} diff={preview.profilesDiff} locale={locale} />
-            <PreviewCard title={t(locale, "previewPanel")} document={preview.panelSettingsDocument} diff={preview.panelDiff} locale={locale} />
+            <PreviewWorkspace
+              locale={locale}
+              preview={preview}
+              selectedFile={selectedPreviewFile}
+              onSelectFile={setSelectedPreviewFile}
+            />
           </section>
         ) : null}
 
@@ -668,7 +1030,7 @@ export function App(): JSX.Element {
                 updateState((draft) => {
                   draft.configPath = value;
                   draft.panelSettings.config_path = value;
-                })
+                }, { persist: false })
               }
             />
             <PathField
@@ -680,7 +1042,7 @@ export function App(): JSX.Element {
                   draft.profilesPath = value;
                   draft.panelSettings.profiles_path = value;
                   draft.panelSettings.follow_config_profiles = false;
-                })
+                }, { persist: false })
               }
             />
             <PathField
@@ -690,9 +1052,10 @@ export function App(): JSX.Element {
               onChange={(value) =>
                 updateState((draft) => {
                   draft.panelSettingsPath = value;
-                })
+                }, { persist: false })
               }
             />
+            <ReadOnlyField label={t(locale, "mcpConfigPathLabel")} value={state.mcpConfigPath} />
             <label className="toggle-row">
               <span>{t(locale, "followConfigProfiles")}</span>
               <input
@@ -701,7 +1064,7 @@ export function App(): JSX.Element {
                 onChange={(event) =>
                   updateState((draft) => {
                     draft.panelSettings.follow_config_profiles = event.target.checked;
-                  })
+                  }, { persist: false })
                 }
               />
             </label>
@@ -711,7 +1074,7 @@ export function App(): JSX.Element {
               onChange={(value) =>
                 updateState((draft) => {
                   draft.panelSettings.theme = value as AppearanceMode;
-                })
+                }, { persist: false })
               }
               options={[
                 { value: "auto", label: locale === "zh-CN" ? "自动" : "Auto" },
@@ -725,7 +1088,7 @@ export function App(): JSX.Element {
               onChange={(value) =>
                 updateState((draft) => {
                   draft.panelSettings.display_open_mode = value as DisplayOpenMode;
-                })
+                }, { persist: false })
               }
               options={DISPLAY_OPEN_OPTIONS.map((option) => ({
                 value: option.value,
@@ -742,8 +1105,7 @@ export function App(): JSX.Element {
                   updateState((draft) => {
                     draft.panelSettings.tray_icon = enabled;
                     draft.panelSettings.close_behavior = enabled ? "keep-in-tray" : "quit";
-                  });
-                  window.kimiSwitch.setTray(enabled);
+                  }, { persist: false });
                 }}
               />
             </label>
@@ -754,7 +1116,7 @@ export function App(): JSX.Element {
                 onChange={(value) =>
                   updateState((draft) => {
                     draft.panelSettings.close_behavior = value as CloseBehavior;
-                  })
+                  }, { persist: false })
                 }
                 options={CLOSE_BEHAVIOR_OPTIONS.map((option) => ({
                   value: option.value,
@@ -762,6 +1124,12 @@ export function App(): JSX.Element {
                 }))}
               />
             ) : null}
+            <div className="button-row">
+              <button className="action-button action-button-primary" onClick={() => void onSave()}>
+                <Save size={16} />
+                <span>{t(locale, "save")}</span>
+              </button>
+            </div>
           </section>
         ) : null}
 
@@ -785,12 +1153,16 @@ function SummaryCard(props: { label: string; value: string; accent?: boolean }):
 function SplitLayout(props: {
   listTitle: string;
   listItems: string[];
+  dirtyItems?: Set<string>;
+  dirtyLabel?: string;
   selectedItem: string;
+  highlightedItem?: string;
   onSelect: (item: string) => void;
   copyLabel: string;
   onCopy: (item: string) => void;
   addLabel: string;
   onAdd: () => void;
+  renderItemAction?: (item: string) => JSX.Element | null;
   children: JSX.Element;
 }): JSX.Element {
   return (
@@ -804,19 +1176,42 @@ function SplitLayout(props: {
         </div>
         <div className="list-scroll">
           {props.listItems.map((item) => (
-            <div key={item} className={item === props.selectedItem ? "list-row active" : "list-row"}>
-              <button className="list-item" onClick={() => props.onSelect(item)}>
+            <div
+              key={item}
+              className={[
+                "list-row",
+                item === props.selectedItem ? "active" : "",
+                item === props.highlightedItem ? "current" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              <button
+                className="list-item"
+                onClick={() => {
+                  if (item === props.selectedItem) return;
+                  props.onSelect(item);
+                }}
+              >
                 {item}
               </button>
-              <button
-                className="list-copy-button"
-                type="button"
-                aria-label={`${props.copyLabel} ${item}`}
-                title={props.copyLabel}
-                onClick={() => props.onCopy(item)}
-              >
-                <Copy size={15} />
-              </button>
+              {props.dirtyItems?.has(item) ? (
+                <span className="list-dirty-badge" title={props.dirtyLabel} aria-label={props.dirtyLabel}>
+                  <Star size={14} fill="currentColor" />
+                </span>
+              ) : null}
+              <div className="list-row-actions">
+                <button
+                  className="list-copy-button"
+                  type="button"
+                  aria-label={`${props.copyLabel} ${item}`}
+                  title={props.copyLabel}
+                  onClick={() => props.onCopy(item)}
+                >
+                  <Copy size={15} />
+                </button>
+                {props.renderItemAction?.(item)}
+              </div>
             </div>
           ))}
         </div>
@@ -847,6 +1242,91 @@ function createCopyName(sourceName: string, existing: Record<string, unknown>): 
   return `${baseName}${index}`;
 }
 
+function createDefaultMcpServer(): McpServerConfig {
+  return {
+    transport: "streamable-http",
+    url: "",
+    headers: {},
+    command: "",
+    args: [],
+    env: {},
+  };
+}
+
+function switchMcpTransport(server: McpServerConfig, transport: McpTransport): McpServerConfig {
+  if (transport === server.transport) {
+    return server;
+  }
+  return {
+    transport,
+    url: "",
+    headers: {},
+    command: "",
+    args: [],
+    env: {},
+    extra: server.extra,
+  };
+}
+
+function parseListLines(value: string): string[] {
+  return value
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function formatListLines(value: string[]): string {
+  return value.join("\n");
+}
+
+function isRemoteMcpTransport(transport: McpTransport): boolean {
+  return transport !== "stdio";
+}
+
+function parseRecordLines(value: string): Record<string, string> {
+  const pairs = value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const separatorIndex = line.includes("=") ? line.indexOf("=") : line.indexOf(":");
+      if (separatorIndex === -1) {
+        return null;
+      }
+      const key = line.slice(0, separatorIndex).trim();
+      const entryValue = line.slice(separatorIndex + 1).trim();
+      if (!key) {
+        return null;
+      }
+      return [key, entryValue] as const;
+    })
+    .filter((entry): entry is readonly [string, string] => entry !== null);
+  return Object.fromEntries(pairs);
+}
+
+function formatRecordLines(value: Record<string, string>): string {
+  return Object.entries(value)
+    .map(([key, entryValue]) => `${key}=${entryValue}`)
+    .join("\n");
+}
+
+function toRecordEntries(value: Record<string, string>): Array<{ id: string; key: string; value: string }> {
+  const entries = Object.entries(value).map(([entryKey, entryValue], index) => ({
+    id: `${entryKey}-${index}`,
+    key: entryKey,
+    value: entryValue,
+  }));
+  return entries.length ? entries : [{ id: "new-0", key: "", value: "" }];
+}
+
+function fromRecordEntries(entries: Array<{ key: string; value: string }>): Record<string, string> {
+  return Object.fromEntries(
+    entries
+      .map((entry) => [entry.key.trim(), entry.value] as const)
+      .filter(([entryKey]) => Boolean(entryKey)),
+  );
+}
+
 function ProviderForm(props: {
   locale: Locale;
   name: string;
@@ -856,12 +1336,26 @@ function ProviderForm(props: {
   onDelete: () => void;
 }): JSX.Element {
   const [isApiKeyVisible, setIsApiKeyVisible] = useState(false);
+  const providerTypeOptions = ensureEnumOptions(
+    PROVIDER_TYPE_OPTIONS.map((option) => ({
+      value: option.value,
+      label: option.label[props.locale],
+    })),
+    props.value.type,
+    props.locale,
+  );
 
   return (
     <section className="glass-panel form-panel">
       <div className="section-title">{props.locale === "zh-CN" ? "Provider 编辑" : "Provider Editor"}</div>
       <Field label={t(props.locale, "formName")} value={props.name} onChange={(value) => props.onChange(value, {})} />
-      <Field label={t(props.locale, "formType")} value={props.value.type} onChange={(value) => props.onChange(props.name, { type: value })} />
+      <SelectField
+        label={t(props.locale, "formType")}
+        value={props.value.type}
+        onChange={(value) => props.onChange(props.name, { type: value })}
+        options={providerTypeOptions}
+        popoverClassName="field-select-popover-full"
+      />
       <Field label={t(props.locale, "formBaseUrl")} value={props.value.base_url} onChange={(value) => props.onChange(props.name, { base_url: value })} />
       <SecretField
         label={t(props.locale, "formApiKey")}
@@ -933,6 +1427,15 @@ function ModelForm(props: {
   onSave: () => void;
   onDelete: () => void;
 }): JSX.Element {
+  const capabilityOptions = ensureEnumOptions(
+    MODEL_CAPABILITY_OPTIONS.map((option) => ({
+      value: option.value,
+      label: option.label[props.locale],
+    })),
+    props.value.capabilities,
+    props.locale,
+  );
+
   return (
     <section className="glass-panel form-panel">
       <div className="section-title">{props.locale === "zh-CN" ? "Model 编辑" : "Model Editor"}</div>
@@ -949,22 +1452,95 @@ function ModelForm(props: {
         value={String(props.value.max_context_size)}
         onChange={(value) => props.onChange(props.name, { max_context_size: Number(value) || 0 })}
       />
-      <Field
+      <MultiSelectField
         label={t(props.locale, "formCapabilities")}
-        value={props.value.capabilities.join(", ")}
-        onChange={(value) =>
-          props.onChange(props.name, {
-            capabilities: value
-              .split(",")
-              .map((item) => item.trim())
-              .filter(Boolean),
-          })
-        }
+        value={props.value.capabilities}
+        onChange={(value) => props.onChange(props.name, { capabilities: value })}
+        options={capabilityOptions}
+        emptyLabel={t(props.locale, "formCapabilitiesEmpty")}
+        popoverClassName="field-select-popover-full"
       />
       <div className="button-row">
         <button className="action-button action-button-primary" onClick={props.onSave}>
           <Save size={16} />
           <span>{t(props.locale, "saveModel")}</span>
+        </button>
+        <button className="action-button danger" onClick={props.onDelete}>{t(props.locale, "delete")}</button>
+      </div>
+    </section>
+  );
+}
+
+function McpServerForm(props: {
+  locale: Locale;
+  name: string;
+  value: McpServerConfig;
+  onRunAction: (action: "test" | "auth" | "reset-auth", name: string) => Promise<void>;
+  onChange: (name: string, value: McpServerConfig) => void;
+  onSave: () => void;
+  onDelete: () => void;
+}): JSX.Element {
+  const transportOptions = MCP_TRANSPORT_OPTIONS.map((option) => ({
+    value: option.value,
+    label: option.label[props.locale],
+  }));
+
+  return (
+    <section className="glass-panel form-panel">
+      <div className="section-title">{props.locale === "zh-CN" ? "MCP 编辑" : "MCP Editor"}</div>
+      <Field label={t(props.locale, "formName")} value={props.name} onChange={(next) => props.onChange(next, { ...props.value })} />
+      <SelectField
+        label={t(props.locale, "formTransport")}
+        value={props.value.transport}
+        onChange={(next) => props.onChange(props.name, switchMcpTransport(props.value, next as McpTransport))}
+        options={transportOptions}
+        popoverClassName="field-select-popover-full"
+      />
+      {isRemoteMcpTransport(props.value.transport) ? (
+        <>
+          <Field
+            label={t(props.locale, "formUrl")}
+            value={props.value.url}
+            onChange={(next) => props.onChange(props.name, { ...props.value, url: next })}
+          />
+          <KeyValueListField
+            locale={props.locale}
+            label={t(props.locale, "formHeaders")}
+            value={props.value.headers}
+            addLabel={t(props.locale, "addHeader")}
+            keyPlaceholder={props.locale === "zh-CN" ? "Header 名称" : "Header name"}
+            valuePlaceholder={props.locale === "zh-CN" ? "Header 值" : "Header value"}
+            onChange={(next) => props.onChange(props.name, { ...props.value, headers: next })}
+          />
+        </>
+      ) : (
+        <>
+          <Field
+            label={t(props.locale, "formCommand")}
+            value={props.value.command}
+            onChange={(next) => props.onChange(props.name, { ...props.value, command: next })}
+          />
+          <TextAreaField
+            label={t(props.locale, "formArgs")}
+            value={formatListLines(props.value.args)}
+            placeholder={t(props.locale, "formArgsPlaceholder")}
+            onChange={(next) => props.onChange(props.name, { ...props.value, args: parseListLines(next) })}
+          />
+          <TextAreaField
+            label={t(props.locale, "formEnv")}
+            value={formatRecordLines(props.value.env)}
+            placeholder={t(props.locale, "formEnvPlaceholder")}
+            onChange={(next) => props.onChange(props.name, { ...props.value, env: parseRecordLines(next) })}
+          />
+        </>
+      )}
+      <div className="button-row">
+        <button className="action-button action-button-primary" onClick={props.onSave}>
+          <Save size={16} />
+          <span>{t(props.locale, "saveMcpServer")}</span>
+        </button>
+        <button className="action-button" onClick={() => void props.onRunAction("test", props.name)}>
+          {t(props.locale, "mcpTest")}
         </button>
         <button className="action-button danger" onClick={props.onDelete}>{t(props.locale, "delete")}</button>
       </div>
@@ -1024,11 +1600,108 @@ function Field(props: { label: string; value: string; onChange: (value: string) 
   );
 }
 
+function TextAreaField(props: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+}): JSX.Element {
+  return (
+    <label className="field">
+      <span>{props.label}</span>
+      <textarea
+        rows={4}
+        value={props.value}
+        placeholder={props.placeholder}
+        onChange={(event) => props.onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
+function KeyValueListField(props: {
+  locale: Locale;
+  label: string;
+  value: Record<string, string>;
+  addLabel: string;
+  keyPlaceholder: string;
+  valuePlaceholder: string;
+  onChange: (value: Record<string, string>) => void;
+}): JSX.Element {
+  const [rows, setRows] = useState(() => toRecordEntries(props.value));
+  const serializedValue = JSON.stringify(props.value);
+
+  useEffect(() => {
+    setRows(toRecordEntries(props.value));
+  }, [serializedValue]);
+
+  const updateRow = (rowId: string, patch: Partial<{ key: string; value: string }>): void => {
+    const nextRows = rows.map((row) => (row.id === rowId ? { ...row, ...patch } : row));
+    setRows(nextRows);
+    props.onChange(fromRecordEntries(nextRows));
+  };
+
+  const removeRow = (rowId: string): void => {
+    const nextRows = rows.filter((row) => row.id !== rowId);
+    setRows(nextRows.length ? nextRows : [{ id: `new-${Date.now()}`, key: "", value: "" }]);
+    props.onChange(fromRecordEntries(nextRows));
+  };
+
+  const addRow = (): void => {
+    setRows([...rows, { id: `new-${Date.now()}`, key: "", value: "" }]);
+  };
+
+  return (
+    <div className="field">
+      <span>{props.label}</span>
+      <div className="key-value-list">
+        {rows.map((row) => (
+          <div key={row.id} className="key-value-row">
+            <input
+              value={row.key}
+              placeholder={props.keyPlaceholder}
+              onChange={(event) => updateRow(row.id, { key: event.target.value })}
+            />
+            <input
+              value={row.value}
+              placeholder={props.valuePlaceholder}
+              onChange={(event) => updateRow(row.id, { value: event.target.value })}
+            />
+            <button
+              className="key-value-remove"
+              type="button"
+              aria-label={t(props.locale, "delete")}
+              title={t(props.locale, "delete")}
+              onClick={() => removeRow(row.id)}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+        <button className="action-button compact key-value-add" type="button" onClick={addRow}>
+          <Plus size={14} />
+          <span>{props.addLabel}</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ReadOnlyField(props: { label: string; value: string }): JSX.Element {
+  return (
+    <label className="field">
+      <span>{props.label}</span>
+      <input value={props.value} readOnly />
+    </label>
+  );
+}
+
 function SelectField(props: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   options: Array<{ value: string; label: string }>;
+  popoverClassName?: string;
 }): JSX.Element {
   const [isOpen, setIsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -1071,7 +1744,11 @@ function SelectField(props: {
             <ChevronDown size={16} />
           </span>
         </button>
-        <div className="field-select-popover" role="listbox" aria-label={props.label}>
+        <div
+          className={["field-select-popover", props.popoverClassName].filter(Boolean).join(" ")}
+          role="listbox"
+          aria-label={props.label}
+        >
           {props.options.map((option) => (
             <button
               key={option.value}
@@ -1088,6 +1765,93 @@ function SelectField(props: {
               {option.value === props.value ? <Check size={16} /> : null}
             </button>
           ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MultiSelectField(props: {
+  label: string;
+  value: string[];
+  onChange: (value: string[]) => void;
+  options: Array<{ value: string; label: string }>;
+  emptyLabel: string;
+  popoverClassName?: string;
+}): JSX.Element {
+  const [isOpen, setIsOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const selectedValues = props.options.filter((option) => props.value.includes(option.value));
+  const summary = selectedValues.length
+    ? selectedValues.map((option) => option.label).join(", ")
+    : props.emptyLabel;
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent): void {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  return (
+    <div className="field" ref={rootRef}>
+      <span>{props.label}</span>
+      <div className={isOpen ? "field-select-shell is-open" : "field-select-shell"}>
+        <button
+          className="field-select-trigger"
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={isOpen}
+          onClick={() => setIsOpen((current) => !current)}
+        >
+          <span className={selectedValues.length ? "field-select-value" : "field-select-value field-select-placeholder"}>
+            {summary}
+          </span>
+          <span className="field-select-icon" aria-hidden="true">
+            <ChevronDown size={16} />
+          </span>
+        </button>
+        <div
+          className={["field-select-popover", props.popoverClassName].filter(Boolean).join(" ")}
+          role="listbox"
+          aria-label={props.label}
+          aria-multiselectable="true"
+        >
+          {props.options.map((option) => {
+            const isSelected = props.value.includes(option.value);
+            return (
+              <button
+                key={option.value}
+                className={isSelected ? "field-select-option active" : "field-select-option"}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                onClick={() => {
+                  const nextValues = isSelected
+                    ? props.value.filter((value) => value !== option.value)
+                    : [...props.value, option.value];
+                  props.onChange(nextValues);
+                }}
+              >
+                <span className="field-select-option-copy">{option.label}</span>
+                {isSelected ? <Check size={16} /> : null}
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -1140,6 +1904,7 @@ function createFallbackState(): AppState {
     configPath: panelSettings.config_path,
     profilesPath: "~/.kimi/config.profiles.toml",
     panelSettingsPath: "~/.kimi/config.panel.toml",
+    mcpConfigPath: "~/.kimi/mcp.json",
     mainConfig: {
       default_model: "",
       default_thinking: true,
@@ -1161,7 +1926,29 @@ function createFallbackState(): AppState {
     profiles: {},
     activeProfile: "",
     panelSettings,
+    mcpConfig: {
+      mcpServers: {},
+    },
   };
+}
+
+function ensureEnumOptions(
+  options: Array<{ value: string; label: string }>,
+  currentValue: string | string[],
+  locale: Locale,
+): Array<{ value: string; label: string }> {
+  const values = Array.isArray(currentValue) ? currentValue : [currentValue];
+  const merged = [...options];
+  for (const value of values) {
+    if (!value || merged.some((option) => option.value === value)) {
+      continue;
+    }
+    merged.push({
+      value,
+      label: locale === "zh-CN" ? `未知值（${value}）` : `Unknown Value (${value})`,
+    });
+  }
+  return merged;
 }
 
 function applyAppearanceMode(mode: AppearanceMode): void {
@@ -1296,12 +2083,83 @@ function Toggle(props: { label: string; checked: boolean; onChange: (checked: bo
   );
 }
 
-function PreviewCard(props: { title: string; document: string; diff: string; locale: Locale }): JSX.Element {
+function PreviewWorkspace(props: {
+  locale: Locale;
+  preview: PreviewBundle;
+  selectedFile: PreviewFileId;
+  onSelectFile: (file: PreviewFileId) => void;
+}): JSX.Element {
+  const previewItems: Array<{
+    id: PreviewFileId;
+    title: string;
+    format: "TOML" | "JSON";
+    document: string;
+    diff: string;
+  }> = [
+    {
+      id: "config",
+      title: t(props.locale, "previewConfig"),
+      format: "TOML",
+      document: props.preview.configDocument,
+      diff: props.preview.configDiff,
+    },
+    {
+      id: "profiles",
+      title: t(props.locale, "previewProfiles"),
+      format: "TOML",
+      document: props.preview.profilesDocument,
+      diff: props.preview.profilesDiff,
+    },
+    {
+      id: "panel",
+      title: t(props.locale, "previewPanel"),
+      format: "TOML",
+      document: props.preview.panelSettingsDocument,
+      diff: props.preview.panelDiff,
+    },
+    {
+      id: "mcp",
+      title: t(props.locale, "previewMcp"),
+      format: "JSON",
+      document: props.preview.mcpDocument,
+      diff: props.preview.mcpDiff,
+    },
+  ];
+  const selectedItem = previewItems.find((item) => item.id === props.selectedFile) ?? previewItems[0];
+
   return (
-    <section className="glass-panel preview-card">
+    <section className="glass-panel preview-workspace">
+      <div className="preview-tabs" role="tablist" aria-label={t(props.locale, "preview")}>
+        {previewItems.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={item.id === selectedItem.id}
+            className={item.id === selectedItem.id ? "preview-tab active" : "preview-tab"}
+            onClick={() => props.onSelectFile(item.id)}
+          >
+            {item.title}
+          </button>
+        ))}
+      </div>
+      <PreviewCard
+        title={selectedItem.title}
+        document={selectedItem.document}
+        diff={selectedItem.diff}
+        locale={props.locale}
+        format={selectedItem.format}
+      />
+    </section>
+  );
+}
+
+function PreviewCard(props: { title: string; document: string; diff: string; locale: Locale; format: "TOML" | "JSON" }): JSX.Element {
+  return (
+    <section className="preview-card">
       <div className="section-title">{props.title}</div>
       <div className="preview-columns">
-        <CodePanel title="TOML" content={props.document} />
+        <CodePanel title={props.format} content={props.document} />
         <DiffPanel title={t(props.locale, "diff")} content={props.diff} />
       </div>
     </section>
@@ -1617,6 +2475,7 @@ function OverviewDashboard(props: {
             <code>{state.configPath}</code>
             <code>{state.profilesPath}</code>
             <code>{state.panelSettingsPath}</code>
+            <code>{state.mcpConfigPath}</code>
           </div>
         </section>
         <DiagnosticsPanel locale={locale} diagnostics={diagnostics} state={state} />
@@ -1642,7 +2501,7 @@ function DiagnosticsPanel(props: {
       </div>
       <div className="diagnostics-block">
         <div className="code-head">{t(locale, "diagPaths")}</div>
-        <pre>{[state.configPath, state.profilesPath, state.panelSettingsPath].join("\n")}</pre>
+        <pre>{[state.configPath, state.profilesPath, state.panelSettingsPath, state.mcpConfigPath].join("\n")}</pre>
       </div>
       <div className="diagnostics-block">
         <div className="code-head">{t(locale, "diagLastError")}</div>

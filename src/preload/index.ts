@@ -7,6 +7,7 @@ const api = {
     configPath?: string;
     profilesPath?: string;
     panelSettingsPath?: string;
+    mcpConfigPath?: string;
   }): Promise<AppState> => ipcRenderer.invoke("app:load-state", paths),
   saveState: (state: AppState): Promise<{ ok: true }> => ipcRenderer.invoke("app:save-state", state),
   previewState: (state: AppState): Promise<PreviewBundle> => ipcRenderer.invoke("app:preview-state", state),
@@ -15,6 +16,12 @@ const api = {
     ipcRenderer.invoke("dialog:pick-file", options),
   setTray: (enabled: boolean): Promise<{ ok: true }> => ipcRenderer.invoke("app:set-tray", enabled),
   openExternal: (url: string): Promise<{ ok: true }> => ipcRenderer.invoke("app:open-external", url),
+  testMcpServer: (name: string): Promise<{ ok: true; stdout: string; stderr: string }> =>
+    ipcRenderer.invoke("mcp:test-server", name),
+  authMcpServer: (name: string): Promise<{ ok: true; stdout: string; stderr: string }> =>
+    ipcRenderer.invoke("mcp:auth-server", name),
+  resetMcpServerAuth: (name: string): Promise<{ ok: true; stdout: string; stderr: string }> =>
+    ipcRenderer.invoke("mcp:reset-auth", name),
   onTrayCommand: (callback: (command: TrayCommand) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, command: TrayCommand): void => callback(command);
     ipcRenderer.on("tray:command", listener);

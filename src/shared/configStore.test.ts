@@ -22,6 +22,7 @@ import {
   upsertProfile,
   upsertProvider,
 } from "./configStore";
+import { buildMcpConfigDocument } from "./mcpStore";
 import type { AppState } from "./types";
 
 function createState(): AppState {
@@ -29,6 +30,7 @@ function createState(): AppState {
     configPath: "/tmp/config.toml",
     profilesPath: "/tmp/config.profiles.toml",
     panelSettingsPath: "/tmp/config.panel.toml",
+    mcpConfigPath: "/tmp/mcp.json",
     mainConfig: {
       default_model: "kimi_gateway/kimi-k2.5",
       default_thinking: true,
@@ -93,6 +95,30 @@ function createState(): AppState {
     }),
     activeProfile: DEFAULT_PROFILE_NAME,
     panelSettings: createDefaultPanelSettings("/tmp/config.toml", "/tmp/config.panel.toml"),
+    mcpConfig: {
+      mcpServers: {
+        context7: {
+          transport: "streamable-http",
+          url: "https://mcp.context7.com/mcp",
+          headers: {
+            CONTEXT7_API_KEY: "ctx-test",
+          },
+          command: "",
+          args: [],
+          env: {},
+        },
+        chrome_devtools: {
+          transport: "stdio",
+          url: "",
+          headers: {},
+          command: "npx",
+          args: ["chrome-devtools-mcp@latest"],
+          env: {
+            DEBUG: "1",
+          },
+        },
+      },
+    },
   };
 }
 
@@ -184,6 +210,8 @@ describe("configStore", () => {
     });
     expect(preview.configDocument).toContain("default_model");
     expect(preview.configDiff).toContain("+ default_model");
+    expect(preview.mcpDocument).toContain("\"mcpServers\"");
+    expect(preview.mcpDiff).toContain("+   \"mcpServers\": {");
   });
 
   it("creates simple line diff", () => {
@@ -205,16 +233,20 @@ describe("configStore", () => {
         createDefaultPanelSettings("/tmp/config.toml", "/tmp/config.panel.toml"),
       ),
       "/tmp/config.profiles.toml": buildProfilesDocument(createState()),
+      "/tmp/mcp.json": buildMcpConfigDocument(createState().mcpConfig),
     });
 
     const loaded = await loadAppState(files, {
       configPath: "/tmp/config.toml",
       profilesPath: "/tmp/config.profiles.toml",
       panelSettingsPath: "/tmp/config.panel.toml",
+      mcpConfigPath: "/tmp/mcp.json",
     });
 
     expect(loaded.activeProfile).toBe("default");
     expect(loaded.mainConfig.providers.kimi_gateway.type).toBe("kimi");
+    expect(loaded.mcpConfig.mcpServers.context7.url).toBe("https://mcp.context7.com/mcp");
+    expect(loaded.mcpConfig.mcpServers.chrome_devtools.command).toBe("npx");
   });
 
   it("loads panel settings with defaults", async () => {
@@ -249,7 +281,7 @@ describe("configStore", () => {
     expect(loaded.close_behavior).toBe("quit");
   });
 
-  it("saves app state into three files", async () => {
+  it("saves app state into four files", async () => {
     const state = createState();
     const files = createMemoryFs({});
 
@@ -258,6 +290,7 @@ describe("configStore", () => {
     expect(files.store["/tmp/config.toml"]).toContain("default_model");
     expect(files.store["/tmp/config.profiles.toml"]).toContain("active_profile");
     expect(files.store["/tmp/config.panel.toml"]).toContain("follow_config_profiles");
+    expect(files.store["/tmp/mcp.json"]).toContain("\"mcpServers\"");
   });
 
   it("rejects saving when config and profiles paths match", async () => {
@@ -314,6 +347,7 @@ describe("configStore", () => {
 
     expect(normalized.profilesPath).toBe("/tmp/config.profiles.toml");
     expect(normalized.panelSettingsPath).toBe("/tmp/config.panel.toml");
+    expect(normalized.mcpConfigPath).toBe("/tmp/mcp.json");
   });
 
   it("saves with derived profile path when explicit path is blank", async () => {

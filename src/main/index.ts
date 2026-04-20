@@ -2,6 +2,8 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, sc
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 
@@ -26,6 +28,7 @@ let isQuitting = false;
 const WINDOW_WIDTH = 1500;
 const WINDOW_HEIGHT = 980;
 const DEFAULT_PANEL_SETTINGS_PATH = DEFAULT_CONFIG_PATH.replace("config.toml", PANEL_SETTINGS_FILENAME);
+const execFileAsync = promisify(execFile);
 
 const resolveHome = (value: string): string =>
   value.startsWith("~/") ? join(homedir(), value.slice(2)) : value;
@@ -45,6 +48,17 @@ const fileAccess = {
     await mkdir(resolveHome(path), { recursive: true });
   },
 };
+
+async function runKimiMcpCommand(args: string[]): Promise<{ ok: true; stdout: string; stderr: string }> {
+  const { stdout, stderr } = await execFileAsync("kimi", ["mcp", ...args], {
+    windowsHide: true,
+  });
+  return {
+    ok: true,
+    stdout: stdout.trim(),
+    stderr: stderr.trim(),
+  };
+}
 
 function getResourcePath(filename: string): string {
   if (is.dev) {
@@ -357,6 +371,7 @@ app.whenReady().then(() => {
       configDocument: await fileAccess.readText(state.configPath),
       profilesDocument: await fileAccess.readText(state.profilesPath),
       panelSettingsDocument: await fileAccess.readText(state.panelSettingsPath),
+      mcpDocument: await fileAccess.readText(state.mcpConfigPath),
     });
   });
 
@@ -394,6 +409,18 @@ app.whenReady().then(() => {
       destroyTray();
     }
     return { ok: true };
+  });
+
+  ipcMain.handle("mcp:test-server", async (_, name: string) => {
+    return runKimiMcpCommand(["test", name]);
+  });
+
+  ipcMain.handle("mcp:auth-server", async (_, name: string) => {
+    return runKimiMcpCommand(["auth", name]);
+  });
+
+  ipcMain.handle("mcp:reset-auth", async (_, name: string) => {
+    return runKimiMcpCommand(["reset-auth", name]);
   });
 
   void createWindow();
