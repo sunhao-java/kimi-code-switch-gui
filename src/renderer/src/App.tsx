@@ -16,6 +16,7 @@ import {
   Info,
   Languages,
   Layers3,
+  Mail,
   MonitorCog,
   MoonStar,
   Save,
@@ -78,11 +79,12 @@ const ABOUT_TAB: { id: TabId; icon: typeof Info; labelKey: string } = {
 
 const ABOUT_INFO = {
   version: "1.0.0",
-  author: "Codex",
+  author: "Hulk Sun",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",
   issuesUrl: "https://github.com/sunhao-java/kimi-code-switch-gui/issues",
   authorBlogUrl: "https://www.crazy-coder.cn",
+  contactEmail: "sunhao.java@gmail.com",
 };
 
 const emptyPreview: PreviewBundle = {
@@ -1396,6 +1398,12 @@ function AboutPage(props: {
       label: isZh ? "作者博客" : "Author Blog",
       value: ABOUT_INFO.authorBlogUrl,
     },
+    {
+      icon: Mail,
+      label: isZh ? "联系邮箱" : "Contact Email",
+      value: `mailto:${ABOUT_INFO.contactEmail}`,
+      displayValue: ABOUT_INFO.contactEmail,
+    },
   ];
   const history = [
     {
@@ -1422,6 +1430,11 @@ function AboutPage(props: {
               ? "用于管理 kimi-code-cli 配置的桌面工具。"
               : "Desktop app for managing kimi-code-cli configuration."}
           </p>
+          <p className="about-meta-summary">
+            {isZh
+              ? `作者：${ABOUT_INFO.author} · 许可证：${ABOUT_INFO.license}`
+              : `Author: ${ABOUT_INFO.author} · License: ${ABOUT_INFO.license}`}
+          </p>
         </div>
         <span className="about-version">v{ABOUT_INFO.version}</span>
       </div>
@@ -1433,7 +1446,7 @@ function AboutPage(props: {
             <span>{isZh ? "项目链接" : "Project Links"}</span>
           </div>
           <div className="about-link-list">
-            {links.map(({ icon: Icon, label, value }) => (
+            {links.map(({ icon: Icon, label, value, displayValue }) => (
               <button
                 key={label}
                 className="about-link-item"
@@ -1442,7 +1455,7 @@ function AboutPage(props: {
               >
                 <span className="about-link-icon"><Icon size={16} /></span>
                 <span>{label}</span>
-                <code>{value}</code>
+                <code>{displayValue ?? value}</code>
               </button>
             ))}
           </div>

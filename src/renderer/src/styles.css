@@ -614,6 +614,7 @@ textarea {
 
 .field-select-shell.is-open,
 .field-select-shell:focus-within {
+  z-index: 40;
   border-color: rgba(132, 247, 211, 0.42);
   box-shadow:
     0 0 0 4px rgba(87, 177, 255, 0.12),
@@ -1661,6 +1662,11 @@ textarea {
 .about-hero p {
   margin: 0;
   color: var(--muted);
+}
+
+.about-meta-summary {
+  margin-top: 8px !important;
+  font-size: 0.92rem;
 }
 
 .about-eyebrow {
