@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Boxes,
   Bug,
@@ -49,6 +49,7 @@ import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shar
 import type {
   AppState,
   BackupDestinationType,
+  BackupRecord,
   Locale,
   PreviewBundle,
   Profile,
@@ -93,6 +94,15 @@ interface DocumentViewerState {
   title: string;
   format: "TOML" | "JSON";
   content: string;
+}
+
+interface BackupRecordsDialogState {
+  destinationType: BackupDestinationType;
+  records: BackupRecord[];
+  isLoading: boolean;
+  errorMessage: string;
+  deletingName?: string;
+  restoringName?: string;
 }
 
 const TAB_ITEMS: Array<{ id: TabId; icon: typeof Layers3; labelKey: string }> = [
@@ -474,6 +484,42 @@ function getResourceLabel(
   return "MCP";
 }
 
+function parseBackupDisplayDate(value: string): Date | null {
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed;
+  }
+
+  const match = /^backup-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-(\d{3})$/.exec(value);
+  if (!match) {
+    return null;
+  }
+
+  const [, year, month, day, hour, minute, second, millisecond] = match;
+  return new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hour),
+    Number(minute),
+    Number(second),
+    Number(millisecond),
+  );
+}
+
+function formatBackupDisplayDate(locale: Locale, value: string): string {
+  const parsed = parseBackupDisplayDate(value);
+  if (!parsed) {
+    return value;
+  }
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const hour = String(parsed.getHours()).padStart(2, "0");
+  const minute = String(parsed.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hour}:${minute}`;
+}
+
 export function App(): JSX.Element {
   const [state, setState] = useState<AppState | null>(null);
   const [savedState, setSavedState] = useState<AppState | null>(null);
@@ -484,10 +530,12 @@ export function App(): JSX.Element {
   const [selectedMcpServer, setSelectedMcpServer] = useState("");
   const [preview, setPreview] = useState<PreviewBundle>(emptyPreview);
   const [documentViewer, setDocumentViewer] = useState<DocumentViewerState | null>(null);
+  const [backupRecordsDialog, setBackupRecordsDialog] = useState<BackupRecordsDialogState | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isMcpImportOpen, setIsMcpImportOpen] = useState(false);
   const [mcpImportDraft, setMcpImportDraft] = useState("");
+  const [mcpImportInitialDraft, setMcpImportInitialDraft] = useState("");
   const [mcpTestingName, setMcpTestingName] = useState("");
   const [profileTestingName, setProfileTestingName] = useState("");
   const [isBackupRunning, setIsBackupRunning] = useState(false);
@@ -699,6 +747,34 @@ export function App(): JSX.Element {
       tone: "danger",
       kind: "delete",
     });
+
+  const closeMcpImportDialog = useCallback((): void => {
+    setIsMcpImportOpen(false);
+    setMcpImportDraft("");
+    setMcpImportInitialDraft("");
+  }, []);
+
+  const requestCloseMcpImportDialog = useCallback((): void => {
+    void (async () => {
+      if (mcpImportDraft === mcpImportInitialDraft) {
+        closeMcpImportDialog();
+        return;
+      }
+
+      const shouldDiscard = await requestConfirm({
+        title: t(locale, "mcpImportUnsavedTitle"),
+        description: t(locale, "mcpImportUnsavedDescription"),
+        confirmLabel: t(locale, "discardChanges"),
+        cancelLabel: t(locale, "cancel"),
+        tone: "danger",
+        kind: "delete",
+      });
+
+      if (shouldDiscard) {
+        closeMcpImportDialog();
+      }
+    })();
+  }, [closeMcpImportDialog, locale, mcpImportDraft, mcpImportInitialDraft]);
 
   const restoreSavedState = (nextSavedState: AppState): void => {
     const restored = normalizeStatePaths(cloneState(nextSavedState));
@@ -946,6 +1022,183 @@ export function App(): JSX.Element {
     })();
   };
 
+  const loadBackupRecords = async (
+    destinationType: BackupDestinationType,
+    deletingName?: string,
+  ): Promise<void> => {
+    const api = getApi();
+    if (!api) {
+      setNotice("");
+      setError("Electron preload API is unavailable. Backup records cannot be loaded.");
+      return;
+    }
+    if (typeof api.listBackups !== "function") {
+      setNotice("");
+      setError(t(locale, "backupRuntimeOutdated"));
+      return;
+    }
+    setBackupRecordsDialog({
+      destinationType,
+      records: [],
+      isLoading: true,
+      errorMessage: "",
+      deletingName,
+    });
+
+    try {
+      const records = await api.listBackups(state);
+      setBackupRecordsDialog({
+        destinationType,
+        records,
+        isLoading: false,
+        errorMessage: "",
+        deletingName,
+      });
+    } catch (listError) {
+      const message = listError instanceof Error ? listError.message : String(listError);
+      setBackupRecordsDialog({
+        destinationType,
+        records: [],
+        isLoading: false,
+        errorMessage: translateError(locale, message),
+        deletingName,
+      });
+    }
+  };
+
+  const openBackupRecords = (): void => {
+    void loadBackupRecords(state.panelSettings.backup_destination_type);
+  };
+
+  const deleteBackupRecord = (record: BackupRecord): void => {
+    const api = getApi();
+    if (!api) {
+      setNotice("");
+      setError("Electron preload API is unavailable. Backup deletion cannot continue.");
+      return;
+    }
+    if (typeof api.deleteBackup !== "function") {
+      setNotice("");
+      setError(t(locale, "backupRuntimeOutdated"));
+      return;
+    }
+
+    void (async () => {
+      const resourceLabel = locale === "zh-CN" ? "备份" : "backup";
+      const confirmed = await confirmDeleteResource(resourceLabel, record.name);
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        setBackupRecordsDialog((current) =>
+          current
+            ? {
+                ...current,
+                deletingName: record.name,
+              }
+            : current,
+        );
+        await api.deleteBackup(state, record.name);
+        setError("");
+        setNotice(formatMessage(t(locale, "backupDeleteSuccess"), { name: record.name }));
+        await loadBackupRecords(state.panelSettings.backup_destination_type);
+      } catch (deleteError) {
+        const message = deleteError instanceof Error ? deleteError.message : String(deleteError);
+        setNotice("");
+        setError(translateError(locale, message));
+        setBackupRecordsDialog((current) =>
+          current
+            ? {
+                ...current,
+                deletingName: undefined,
+              }
+            : current,
+        );
+      }
+    })();
+  };
+
+  const restoreBackupRecord = (record: BackupRecord): void => {
+    const api = getApi();
+    if (!api) {
+      setNotice("");
+      setError("Electron preload API is unavailable. Backup restore cannot continue.");
+      return;
+    }
+    if (typeof api.restoreBackup !== "function") {
+      setNotice("");
+      setError(t(locale, "backupRuntimeOutdated"));
+      return;
+    }
+
+    void (async () => {
+      const confirmed = await requestConfirm({
+        title: formatMessage(t(locale, "backupRestoreConfirmTitle"), { name: record.name }),
+        description: t(locale, "backupRestoreConfirmDescription"),
+        confirmLabel: t(locale, "restore"),
+        cancelLabel: t(locale, "cancel"),
+        tone: "primary",
+        kind: "save",
+      });
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        setBackupRecordsDialog((current) =>
+          current
+            ? {
+                ...current,
+                restoringName: record.name,
+              }
+            : current,
+        );
+        const restored = await api.restoreBackup(state, record.name);
+        const normalized = normalizeStatePaths(restored);
+        setState(normalized);
+        setSavedState(normalized);
+        applyAppearanceMode(normalized.panelSettings.theme);
+        setSelectedProvider((current) =>
+          normalized.mainConfig.providers[current]
+            ? current
+            : Object.keys(normalized.mainConfig.providers)[0] ?? "",
+        );
+        setSelectedModel((current) =>
+          normalized.mainConfig.models[current]
+            ? current
+            : Object.keys(normalized.mainConfig.models)[0] ?? "",
+        );
+        setSelectedProfile((current) =>
+          normalized.profiles[current]
+            ? current
+            : normalized.activeProfile || Object.keys(normalized.profiles)[0] || "",
+        );
+        setSelectedMcpServer((current) =>
+          normalized.mcpConfig.mcpServers[current]
+            ? current
+            : Object.keys(normalized.mcpConfig.mcpServers)[0] ?? "",
+        );
+        void refreshPreview(normalized);
+        setError("");
+        setNotice(formatMessage(t(locale, "backupRestoreSuccess"), { name: record.name }));
+        setBackupRecordsDialog(null);
+      } catch (restoreError) {
+        const message = restoreError instanceof Error ? restoreError.message : String(restoreError);
+        setNotice("");
+        setError(translateError(locale, message));
+        setBackupRecordsDialog((current) =>
+          current
+            ? {
+                ...current,
+                restoringName: undefined,
+              }
+            : current,
+        );
+      }
+    })();
+  };
+
   return (
     <div className="shell">
       <div className="window-titlebar drag-region" aria-hidden="true">
@@ -953,12 +1206,32 @@ export function App(): JSX.Element {
       </div>
       {error ? (
         <div className="app-tip-layer" role="status" aria-live="polite">
-          <div className="app-tip app-tip-error">{error}</div>
+          <div className="app-tip app-tip-error">
+            <span className="app-tip-message">{error}</span>
+            <button
+              type="button"
+              className="app-tip-close"
+              aria-label={t(locale, "close")}
+              onClick={() => setError("")}
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
       ) : null}
       {!error && notice ? (
         <div className="app-tip-layer" role="status" aria-live="polite">
-          <div className="app-tip app-tip-success">{notice}</div>
+          <div className="app-tip app-tip-success">
+            <span className="app-tip-message">{notice}</span>
+            <button
+              type="button"
+              className="app-tip-close"
+              aria-label={t(locale, "close")}
+              onClick={() => setNotice("")}
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
       ) : null}
       <div className="background-grid" />
@@ -1391,8 +1664,10 @@ export function App(): JSX.Element {
                 aria-label={t(locale, "importMcpJson")}
                 title={t(locale, "importMcpJson")}
                 onClick={() => {
+                  const initialDraft = t(locale, "mcpImportPlaceholder");
                   setIsMcpImportOpen(true);
-                  setMcpImportDraft((current) => current || t(locale, "mcpImportPlaceholder"));
+                  setMcpImportDraft(initialDraft);
+                  setMcpImportInitialDraft(initialDraft);
                 }}
               >
                 <FileInput size={15} />
@@ -1781,6 +2056,17 @@ export function App(): JSX.Element {
                   {isBackupRunning ? <LoaderCircle size={16} className="button-spinner" /> : <History size={16} />}
                   <span>{isBackupRunning ? t(locale, "backupRunning") : t(locale, "backupNow")}</span>
                 </button>
+                <button
+                  className={
+                    backupRecordsDialog?.isLoading ? "action-button is-loading" : "action-button"
+                  }
+                  type="button"
+                  disabled={backupRecordsDialog?.isLoading}
+                  onClick={openBackupRecords}
+                >
+                  {backupRecordsDialog?.isLoading ? <LoaderCircle size={16} className="button-spinner" /> : <FolderOpen size={16} />}
+                  <span>{t(locale, "backupViewRecords")}</span>
+                </button>
                 {state.panelSettings.backup_destination_type === "webdav" ? (
                   <button
                     className={isWebDavTesting ? "action-button is-loading" : "action-button"}
@@ -1810,8 +2096,18 @@ export function App(): JSX.Element {
       ) : null}
       {documentViewer ? (
         <DocumentViewerDialog
+          locale={locale}
           {...documentViewer}
           onClose={() => setDocumentViewer(null)}
+        />
+      ) : null}
+      {backupRecordsDialog ? (
+        <BackupRecordsDialog
+          locale={locale}
+          {...backupRecordsDialog}
+          onDelete={deleteBackupRecord}
+          onRestore={restoreBackupRecord}
+          onClose={() => setBackupRecordsDialog(null)}
         />
       ) : null}
       {isMcpImportOpen ? (
@@ -1819,10 +2115,7 @@ export function App(): JSX.Element {
           locale={locale}
           value={mcpImportDraft}
           onChange={setMcpImportDraft}
-          onCancel={() => {
-            setIsMcpImportOpen(false);
-            setMcpImportDraft("");
-          }}
+          onCancel={requestCloseMcpImportDialog}
           onImport={() => {
             try {
               const imported = parseMcpConfigStrict(mcpImportDraft);
@@ -1841,8 +2134,7 @@ export function App(): JSX.Element {
                 setSelectedMcpServer(importedNames[0] ?? "");
               }, { persist: false });
 
-              setIsMcpImportOpen(false);
-              setMcpImportDraft("");
+              closeMcpImportDialog();
               setError("");
               setNotice(t(locale, "mcpImportSuccess"));
             } catch (importError) {
@@ -1910,9 +2202,21 @@ function ConfirmDialog(
 
 function DocumentViewerDialog(
   props: DocumentViewerState & {
+    locale: Locale;
     onClose: () => void;
   },
 ): JSX.Element {
+  const [copied, setCopied] = useState(false);
+
+  useDialogEscape(props.onClose);
+
+  const handleCopy = (): void => {
+    void navigator.clipboard.writeText(props.content).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    });
+  };
+
   return (
     <div className="document-viewer-backdrop" role="presentation">
       <section className="document-viewer glass-panel" role="dialog" aria-modal="true" aria-labelledby="document-viewer-title">
@@ -1926,11 +2230,123 @@ function DocumentViewerDialog(
               <p>{props.format}</p>
             </div>
           </div>
-          <button className="action-button compact icon-only" type="button" aria-label="Close" onClick={props.onClose}>
+          <div className="document-viewer-actions">
+            <button className="action-button compact icon-only" type="button" aria-label="Close" onClick={props.onClose}>
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+        <CodePanel
+          title={props.format}
+          content={props.content}
+          onCopy={handleCopy}
+          copied={copied}
+        />
+      </section>
+    </div>
+  );
+}
+
+function BackupRecordsDialog(
+  props: BackupRecordsDialogState & {
+    locale: Locale;
+    onDelete: (record: BackupRecord) => void;
+    onRestore: (record: BackupRecord) => void;
+    onClose: () => void;
+  },
+): JSX.Element {
+  const sourceLabel =
+    props.destinationType === "webdav"
+      ? t(props.locale, "backupRecordsSourceWebdav")
+      : t(props.locale, "backupRecordsSourceLocal");
+
+  return (
+    <div className="backup-records-backdrop" role="presentation">
+      <section className="backup-records-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="backup-records-title">
+        <div className="backup-records-header">
+          <div className="backup-records-title">
+            <div className="backup-records-icon">
+              <History size={18} />
+            </div>
+            <div>
+              <h3 id="backup-records-title">{t(props.locale, "backupRecordsTitle")}</h3>
+              <p>{sourceLabel}</p>
+            </div>
+          </div>
+          <button className="action-button compact icon-only" type="button" aria-label={t(props.locale, "cancel")} onClick={props.onClose}>
             <X size={16} />
           </button>
         </div>
-        <CodePanel title={props.format} content={props.content} />
+        {props.isLoading ? (
+          <div className="backup-records-empty">
+            <LoaderCircle size={18} className="button-spinner" />
+            <span>{t(props.locale, "backupRecordsLoading")}</span>
+          </div>
+        ) : props.errorMessage ? (
+          <div className="backup-records-empty is-error">
+            <span>{props.errorMessage}</span>
+          </div>
+        ) : props.records.length ? (
+          <div className="backup-records-list">
+            <div className="backup-records-table-head">
+              <span>{t(props.locale, "backupRecordsPath")}</span>
+              <span>{t(props.locale, "backupRecordsCreatedAt")}</span>
+              <span>{t(props.locale, "backupRecordsItems")}</span>
+            </div>
+            {props.records.map((record) => (
+              <article key={`${record.name}-${record.path}`} className="backup-record-card">
+                <div className="backup-record-meta">
+                  <div>
+                    <span>{record.name}</span>
+                  </div>
+                  <div>
+                    <span>{formatBackupDisplayDate(props.locale, record.createdAt)}</span>
+                  </div>
+                  <div className="backup-record-action-cell">
+                    <div className="backup-record-actions">
+                      <button
+                        className={
+                          props.restoringName === record.name
+                            ? "action-button compact is-loading"
+                            : "action-button compact"
+                        }
+                        type="button"
+                        disabled={
+                          props.restoringName === record.name || props.deletingName === record.name
+                        }
+                        onClick={() => props.onRestore(record)}
+                      >
+                        {props.restoringName === record.name ? (
+                          <LoaderCircle size={16} className="button-spinner" />
+                        ) : null}
+                        <span>
+                          {props.restoringName === record.name
+                            ? t(props.locale, "backupRestoring")
+                            : t(props.locale, "restore")}
+                        </span>
+                      </button>
+                      <button
+                        className={props.deletingName === record.name ? "action-button compact danger is-loading" : "action-button compact danger"}
+                        type="button"
+                        disabled={
+                          props.deletingName === record.name || props.restoringName === record.name
+                        }
+                        onClick={() => props.onDelete(record)}
+                      >
+                        {props.deletingName === record.name ? <LoaderCircle size={16} className="button-spinner" /> : null}
+                        <span>{t(props.locale, "delete")}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="backup-records-empty">
+            <span>{t(props.locale, "backupRecordsEmpty")}</span>
+          </div>
+        )}
       </section>
     </div>
   );
@@ -2401,6 +2817,8 @@ function McpImportDialog(props: {
   onImport: () => void;
   onCancel: () => void;
 }): JSX.Element {
+  useDialogEscape(props.onCancel);
+
   return (
     <div className="mcp-import-backdrop" role="presentation">
       <section className="glass-panel form-panel mcp-import-dialog" role="dialog" aria-modal="true" aria-labelledby="mcp-import-title">
@@ -2434,6 +2852,21 @@ function McpImportDialog(props: {
       </section>
     </div>
   );
+}
+
+function useDialogEscape(onClose: () => void): void {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      event.preventDefault();
+      onClose();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 }
 
 function ProfileForm(props: {
@@ -2815,6 +3248,7 @@ function PathField(props: {
       props.onChange(result.filePath);
     }
   };
+
   return (
     <div className="field">
       <span>{props.label}</span>
@@ -3063,10 +3497,10 @@ function Toggle(props: { label: string; checked: boolean; onChange: (checked: bo
   );
 }
 
-function CodePanel(props: { title: string; content: string }): JSX.Element {
+function CodePanel(props: { title: string; content: string; onCopy?: () => void; copied?: boolean }): JSX.Element {
   return (
     <div className="code-panel">
-      <CodePanelHeader title={props.title} />
+      <CodePanelHeader title={props.title} onCopy={props.onCopy} copied={props.copied} />
       <div className="code-window" role="region" aria-label={props.title}>
         <ol className="code-lines">
           {toDisplayLines(props.content).map((line, index) => (
@@ -3081,15 +3515,28 @@ function CodePanel(props: { title: string; content: string }): JSX.Element {
   );
 }
 
-function CodePanelHeader(props: { title: string }): JSX.Element {
+function CodePanelHeader(props: { title: string; onCopy?: () => void; copied?: boolean }): JSX.Element {
   return (
     <div className="code-head">
-      <span className="code-head-dots" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </span>
-      <span>{props.title}</span>
+      <div className="code-head-main">
+        <span className="code-head-dots" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
+        <span>{props.title}</span>
+      </div>
+      {props.onCopy ? (
+        <button
+          className="code-head-copy"
+          type="button"
+          aria-label="Copy content"
+          title={props.copied ? "Copied" : "Copy content"}
+          onClick={props.onCopy}
+        >
+          {props.copied ? <Check size={15} /> : <Copy size={15} />}
+        </button>
+      ) : null}
     </div>
   );
 }

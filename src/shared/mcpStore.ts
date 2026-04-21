@@ -57,17 +57,23 @@ function parseMcpServer(raw: unknown): McpServerConfig {
   const args = Array.isArray(data.args)
     ? data.args.filter((item): item is string => typeof item === "string")
     : [];
+  const enabled = typeof data.enabled === "boolean" ? data.enabled : true;
 
-  const knownKeys = new Set(["transport", "type", "url", "auth", "headers", "command", "args", "env"]);
-  const extra = Object.fromEntries(
+  const knownKeys = new Set(["transport", "type", "url", "auth", "headers", "command", "args", "env", "enabled", "extra"]);
+  const derivedExtra = Object.fromEntries(
     Object.entries(data).filter(([key]) => !knownKeys.has(key)),
   );
+  const explicitExtra = isRecord(data.extra) ? data.extra : {};
+  const extra = {
+    ...explicitExtra,
+    ...derivedExtra,
+  };
 
   const transport = normalizeMcpTransport(data.transport ?? data.type, data.url, data.command);
 
   if (transport !== "stdio") {
     return {
-      enabled: true,
+      enabled,
       transport,
       url: typeof data.url === "string" ? data.url : "",
       headers,
@@ -79,7 +85,7 @@ function parseMcpServer(raw: unknown): McpServerConfig {
   }
 
   return {
-    enabled: true,
+    enabled,
     transport: "stdio",
     url: "",
     headers: {},
@@ -107,6 +113,7 @@ function buildMcpServerDocument(server: McpServerConfig): Record<string, unknown
 
   return {
     ...base,
+    ...(server.enabled === false ? { enabled: false } : {}),
     ...(server.extra ?? {}),
   };
 }

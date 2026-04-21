@@ -228,7 +228,7 @@ export function buildProfilesDocument(state: AppState): string {
 }
 
 export function buildPanelSettingsDocument(settings: PanelSettings): string {
-  return stringify(settings as unknown as Record<string, unknown>);
+  return normalizePanelTomlIndentation(stringify(settings as unknown as Record<string, unknown>));
 }
 
 export function bootstrapProfiles(mainConfig: MainConfig): Record<string, Profile> {
@@ -693,10 +693,28 @@ function cloneMcpServers(servers: Record<string, McpServerConfig>): Record<strin
         headers: { ...server.headers },
         args: [...server.args],
         env: { ...server.env },
-        extra: server.extra ? { ...server.extra } : undefined,
+        extra: server.extra ? cloneUnknownRecord(server.extra) : undefined,
       },
     ]),
   );
+}
+
+function cloneUnknownRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).map(([key, entry]) => {
+      if (Array.isArray(entry)) {
+        return [key, [...entry]];
+      }
+      if (isRecord(entry)) {
+        return [key, cloneUnknownRecord(entry)];
+      }
+      return [key, entry];
+    }),
+  );
+}
+
+function normalizePanelTomlIndentation(document: string): string {
+  return document.replace(/^[ \t]+(?=(\[|[A-Za-z0-9_.-]+\s*=))/gm, "");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

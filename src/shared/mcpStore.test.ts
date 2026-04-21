@@ -90,4 +90,28 @@ describe("mcpStore", () => {
     expect(document).toContain('"transport": "stdio"');
     expect(document).not.toContain('"transport": "http"');
   });
+
+  it("preserves enabled and explicit extra fields without nesting them into extra", () => {
+    const config = parseMcpConfigStrict(`{
+      "mcpServers": {
+        "context7": {
+          "transport": "streamable-http",
+          "url": "https://mcp.context7.com/mcp",
+          "enabled": false,
+          "extra": {
+            "oauth": {
+              "audience": "ctx"
+            }
+          }
+        }
+      }
+    }`);
+
+    expect(config.mcpServers.context7.enabled).toBe(false);
+    expect(config.mcpServers.context7.extra).toEqual({
+      oauth: {
+        audience: "ctx",
+      },
+    });
+  });
 });

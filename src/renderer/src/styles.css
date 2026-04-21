@@ -1122,11 +1122,59 @@ textarea {
 }
 
 .app-tip {
-  padding: 13px 18px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 13px 14px 13px 18px;
   border-radius: 16px;
   border: 1px solid var(--line);
   box-shadow: 0 14px 30px rgba(1, 9, 18, 0.22);
   backdrop-filter: blur(18px);
+  pointer-events: auto;
+}
+
+.app-tip-message {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.app-tip-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin-top: 1px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: currentColor;
+  opacity: 0.7;
+  cursor: pointer;
+  transition:
+    opacity 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+.app-tip-close:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border-color: currentColor;
+}
+
+.app-tip-close:focus-visible {
+  outline: none;
+  opacity: 1;
+  border-color: currentColor;
+  box-shadow: 0 0 0 2px rgba(132, 247, 211, 0.35);
+}
+
+:root[data-theme="light"] .app-tip-close:hover {
+  background: rgba(29, 54, 81, 0.08);
 }
 
 .app-tip-error {
@@ -2396,10 +2444,47 @@ textarea {
 .code-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   margin-bottom: 10px;
   text-transform: uppercase;
   letter-spacing: 0;
+}
+
+.code-head-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.code-head-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease,
+    transform 160ms ease;
+}
+
+.code-head-copy:hover,
+.code-head-copy:focus-visible {
+  color: var(--primary);
+  border-color: var(--line-strong);
+  background: rgba(87, 177, 255, 0.08);
+  transform: translateY(-1px);
+  outline: none;
 }
 
 .code-head-dots {
@@ -2523,6 +2608,12 @@ textarea {
   gap: 16px;
 }
 
+.document-viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .document-viewer-title {
   display: flex;
   align-items: center;
@@ -2560,6 +2651,177 @@ textarea {
   min-height: 0;
   max-height: calc(100vh - 190px);
   overflow: auto;
+}
+
+.backup-records-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 116;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(2, 8, 18, 0.18);
+  backdrop-filter: blur(5px) saturate(1.02);
+}
+
+:root[data-theme="light"] .backup-records-backdrop {
+  background: rgba(225, 235, 247, 0.18);
+}
+
+.backup-records-dialog {
+  width: min(920px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  padding: 24px;
+  border-radius: 30px;
+  display: grid;
+  gap: 18px;
+  overflow: hidden;
+}
+
+.backup-records-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.backup-records-title {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.backup-records-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(87, 177, 255, 0.18), rgba(132, 247, 211, 0.14));
+  color: var(--primary);
+}
+
+.backup-records-title h3 {
+  margin: 0;
+  font-size: 1.04rem;
+}
+
+.backup-records-title p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+}
+
+.backup-records-list {
+  display: grid;
+  overflow: auto;
+  min-height: 0;
+  padding-right: 4px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.backup-records-table-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(200px, 0.85fr) minmax(220px, max-content);
+  gap: 12px;
+  padding: 14px 16px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.backup-records-table-head span {
+  white-space: nowrap;
+}
+
+.backup-record-card {
+  display: grid;
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+}
+
+:root[data-theme="light"] .backup-records-list {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.backup-record-card:last-child {
+  border-bottom: 0;
+}
+
+.backup-record-meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(200px, 0.85fr) minmax(220px, max-content);
+  gap: 12px;
+  align-items: center;
+}
+
+.backup-record-meta > div {
+  display: grid;
+  min-width: 0;
+}
+
+.backup-record-action-cell {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.backup-record-meta span {
+  min-width: 0;
+  color: var(--text);
+  font-size: 0.86rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.backup-record-actions {
+  display: inline-flex;
+  gap: 8px;
+  justify-content: flex-start;
+  align-items: center;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.backup-record-actions .action-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.backup-record-actions .action-button span {
+  white-space: nowrap;
+}
+
+.backup-records-empty {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 20px;
+  color: var(--muted);
+  text-align: center;
+  padding: 24px;
+}
+
+.backup-records-empty.is-error {
+  color: #ffd7e1;
+  border-color: rgba(255, 107, 139, 0.3);
+}
+
+:root[data-theme="light"] .backup-records-empty.is-error {
+  color: var(--danger);
 }
 
 .settings-group {
@@ -2634,6 +2896,13 @@ textarea {
 
 .settings-action-row {
   padding-top: 4px;
+}
+
+@media (max-width: 900px) {
+  .backup-records-table-head,
+  .backup-record-meta {
+    grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) minmax(200px, max-content);
+  }
 }
 
 :root[data-theme="light"] .settings-group-title {

@@ -319,6 +319,64 @@ describe("configStore", () => {
     expect(loaded.backup_webdav_path).toBe("kimi/backups");
   });
 
+  it("round-trips panel MCP enabled flags without creating nested extra blocks", async () => {
+    const files = createMemoryFs({
+      "/tmp/config.panel.toml": `version = 1
+config_path = "/tmp/config.toml"
+
+[mcp_servers.context7]
+enabled = false
+transport = "streamable-http"
+url = "https://mcp.context7.com/mcp"
+
+  [mcp_servers.context7.headers]
+  CONTEXT7_API_KEY = "ctx-test"
+
+  [mcp_servers.context7.extra]
+  oauth_audience = "ctx"
+`,
+    });
+
+    const loaded = await loadPanelSettings(files, "/tmp/config.panel.toml");
+
+    expect(loaded.mcp_servers.context7.enabled).toBe(false);
+    expect(loaded.mcp_servers.context7.extra).toEqual({
+      oauth_audience: "ctx",
+    });
+
+    const document = buildPanelSettingsDocument(loaded);
+
+    expect(document).toContain("[mcp_servers.context7]");
+    expect(document).toContain('enabled = false');
+    expect(document).toContain("[mcp_servers.context7.extra]");
+    expect(document).not.toContain("[mcp_servers.context7.extra.extra]");
+    expect(document).not.toContain("[mcp_servers.context7.extra.extra.extra]");
+  });
+
+  it("writes panel MCP nested tables without leading indentation", () => {
+    const state = createState();
+    state.panelSettings.mcp_servers = {
+      context7: {
+        enabled: true,
+        transport: "streamable-http",
+        url: "https://mcp.context7.com/mcp",
+        headers: {
+          CONTEXT7_API_KEY: "ctx-test",
+        },
+        command: "",
+        args: [],
+        env: {},
+      },
+    };
+
+    const document = buildPanelSettingsDocument(state.panelSettings);
+
+    expect(document).toContain("[mcp_servers.context7.headers]");
+    expect(document).toContain('CONTEXT7_API_KEY = "ctx-test"');
+    expect(document).not.toContain("  [mcp_servers.context7.headers]");
+    expect(document).not.toContain('  CONTEXT7_API_KEY = "ctx-test"');
+  });
+
   it("forces quit behavior when tray icon is disabled", async () => {
     const files = createMemoryFs({
       "/tmp/config.panel.toml": 'tray_icon = false\nclose_behavior = "keep-in-tray"\n',

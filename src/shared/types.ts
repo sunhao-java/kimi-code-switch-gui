@@ -132,3 +132,10 @@ export interface BackupResult {
   backupPath: string;
   files: string[];
 }
+
+export interface BackupRecord {
+  name: string;
+  createdAt: string;
+  path: string;
+  itemCount?: number;
+}
