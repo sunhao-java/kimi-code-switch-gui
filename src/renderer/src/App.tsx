@@ -604,6 +604,44 @@ export function App(): JSX.Element {
     await persistState(state);
   };
 
+  const persistImmediateState = async (nextVisibleState: AppState, nextSavedStateOverride?: AppState): Promise<void> => {
+    const api = getApi();
+    if (!api) {
+      const message = "Electron preload API is unavailable. Save operation cannot continue.";
+      setError(message);
+      setDiagnostics((current) => ({ ...current, preload: "unavailable", lastError: message }));
+      return;
+    }
+
+    const previousSavedState = savedState;
+    const normalizedVisibleState = normalizeStatePaths(nextVisibleState);
+    const normalizedSavedState = normalizeStatePaths(nextSavedStateOverride ?? nextVisibleState);
+
+    setState(normalizedVisibleState);
+    setSavedState(normalizedSavedState);
+    applyAppearanceMode(normalizedVisibleState.panelSettings.theme);
+    void refreshPreview(normalizedVisibleState);
+    setError("");
+    setNotice("");
+
+    try {
+      await api.saveState(normalizedSavedState);
+      if (previousSavedState?.panelSettings.tray_icon !== normalizedSavedState.panelSettings.tray_icon) {
+        await api.setTray(normalizedSavedState.panelSettings.tray_icon);
+      }
+      const nextPreview = await api.previewState(normalizedVisibleState);
+      setPreview(nextPreview);
+      setError("");
+      setNotice("");
+    } catch (saveError) {
+      const message = saveError instanceof Error ? saveError.message : String(saveError);
+      setSavedState(previousSavedState ?? null);
+      setError(translateError(locale, message));
+      setNotice("");
+      setDiagnostics((current) => ({ ...current, lastError: message }));
+    }
+  };
+
   const requestConfirm = (options: ConfirmDialogState): Promise<boolean> =>
     new Promise((resolve) => {
       confirmResolverRef.current?.(false);
@@ -693,6 +731,22 @@ export function App(): JSX.Element {
     }
   };
 
+  const updateImmediateState = (updater: (draft: AppState) => void): void => {
+    const visibleDraft = cloneState(state);
+    const persistedDraft = cloneState(savedState ?? state);
+
+    try {
+      updater(visibleDraft);
+      updater(persistedDraft);
+      void persistImmediateState(visibleDraft, persistedDraft);
+    } catch (updateError) {
+      const message = updateError instanceof Error ? updateError.message : String(updateError);
+      setError(translateError(locale, message));
+      setNotice("");
+      setDiagnostics((current) => ({ ...current, lastError: message }));
+    }
+  };
+
   const hasUnsavedChanges = Boolean(savedState) && !isEqualValue(state, savedState);
   const dirtyProviders = savedState
     ? collectDirtyKeys(state.mainConfig.providers, savedState.mainConfig.providers)
@@ -706,23 +760,6 @@ export function App(): JSX.Element {
   const dirtyMcpServers = savedState
     ? collectDirtyKeys(state.mcpConfig.mcpServers, savedState.mcpConfig.mcpServers)
     : new Set<string>();
-  const settingsDirty = savedState
-    ? !isEqualValue(
-        {
-          configPath: state.configPath,
-          profilesPath: state.profilesPath,
-          panelSettingsPath: state.panelSettingsPath,
-          panelSettings: state.panelSettings,
-        },
-        {
-          configPath: savedState.configPath,
-          profilesPath: savedState.profilesPath,
-          panelSettingsPath: savedState.panelSettingsPath,
-          panelSettings: savedState.panelSettings,
-        },
-      )
-    : false;
-
   const resolveUnsavedChanges = async (): Promise<void> => {
     if (!hasUnsavedChanges || !savedState || unsavedResolutionRef.current) {
       return;
@@ -848,11 +885,6 @@ export function App(): JSX.Element {
             >
               <Icon size={18} />
               <span>{t(locale, labelKey)}</span>
-              {id === "settings" && settingsDirty ? (
-                <span className="nav-dirty-badge" title={t(locale, "editedBadge")} aria-label={t(locale, "editedBadge")}>
-                  <Star size={14} fill="currentColor" />
-                </span>
-              ) : null}
             </button>
           ))}
         </nav>
@@ -894,14 +926,14 @@ export function App(): JSX.Element {
               locale={locale}
               theme={state.panelSettings.theme}
               onLocaleChange={(value) =>
-                updateState((draft) => {
+                updateImmediateState((draft) => {
                   draft.panelSettings.locale = value;
-                }, { persist: false })
+                })
               }
               onThemeChange={(value) =>
-                updateState((draft) => {
+                updateImmediateState((draft) => {
                   draft.panelSettings.theme = value;
-                }, { persist: false })
+                })
               }
             />
           </div>
@@ -1403,23 +1435,23 @@ export function App(): JSX.Element {
                 label={t(locale, "configPath")}
                 value={state.configPath}
                 onView={() => openDocumentViewer("config")}
-                onChange={(value) =>
-                  updateState((draft) => {
-                    draft.configPath = value;
-                    draft.panelSettings.config_path = value;
-                  })
-                }
+              onChange={(value) =>
+                updateImmediateState((draft) => {
+                  draft.configPath = value;
+                  draft.panelSettings.config_path = value;
+                })
+              }
               />
               <PathField
                 locale={locale}
                 label={t(locale, "profilesPath")}
                 value={state.profilesPath}
                 onView={() => openDocumentViewer("profiles")}
-                onChange={(value) =>
-                  updateState((draft) => {
-                    draft.profilesPath = value;
-                    draft.panelSettings.profiles_path = value;
-                    draft.panelSettings.follow_config_profiles = false;
+              onChange={(value) =>
+                updateImmediateState((draft) => {
+                  draft.profilesPath = value;
+                  draft.panelSettings.profiles_path = value;
+                  draft.panelSettings.follow_config_profiles = false;
                   })
                 }
               />
@@ -1428,11 +1460,11 @@ export function App(): JSX.Element {
                 label={t(locale, "panelSettingsPath")}
                 value={state.panelSettingsPath}
                 onView={() => openDocumentViewer("panel")}
-                onChange={(value) =>
-                  updateState((draft) => {
-                    draft.panelSettingsPath = value;
-                  })
-                }
+              onChange={(value) =>
+                updateImmediateState((draft) => {
+                  draft.panelSettingsPath = value;
+                })
+              }
               />
               <PathField
                 locale={locale}
@@ -1448,11 +1480,11 @@ export function App(): JSX.Element {
               <SelectField
                 label={t(locale, "locale")}
                 value={state.panelSettings.locale}
-                onChange={(value) =>
-                  updateState((draft) => {
-                    draft.panelSettings.locale = value as Locale;
-                  })
-                }
+              onChange={(value) =>
+                updateImmediateState((draft) => {
+                  draft.panelSettings.locale = value as Locale;
+                })
+              }
                 options={LOCALE_OPTIONS.map((option) => ({
                   value: option.value,
                   label: option.longLabel,
@@ -1463,11 +1495,11 @@ export function App(): JSX.Element {
               <SelectField
                 label={t(locale, "theme")}
                 value={state.panelSettings.theme}
-                onChange={(value) =>
-                  updateState((draft) => {
-                    draft.panelSettings.theme = value as AppearanceMode;
-                  })
-                }
+              onChange={(value) =>
+                updateImmediateState((draft) => {
+                  draft.panelSettings.theme = value as AppearanceMode;
+                })
+              }
                 selectedIcon={(THEME_OPTIONS.find((option) => option.value === state.panelSettings.theme) ?? THEME_OPTIONS[0]).icon}
                 options={THEME_OPTIONS.map((option) => ({
                   value: option.value,
@@ -1478,11 +1510,11 @@ export function App(): JSX.Element {
               <SelectField
                 label={t(locale, "displayOpenMode")}
                 value={state.panelSettings.display_open_mode}
-                onChange={(value) =>
-                  updateState((draft) => {
-                    draft.panelSettings.display_open_mode = value as DisplayOpenMode;
-                  })
-                }
+              onChange={(value) =>
+                updateImmediateState((draft) => {
+                  draft.panelSettings.display_open_mode = value as DisplayOpenMode;
+                })
+              }
                 options={DISPLAY_OPEN_OPTIONS.map((option) => ({
                   value: option.value,
                   label: option.label[locale],
@@ -1497,7 +1529,7 @@ export function App(): JSX.Element {
                   checked={state.panelSettings.tray_icon}
                   onChange={(event) => {
                     const enabled = event.target.checked;
-                    updateState((draft) => {
+                    updateImmediateState((draft) => {
                       draft.panelSettings.tray_icon = enabled;
                       draft.panelSettings.close_behavior = enabled ? "keep-in-tray" : "quit";
                     });
@@ -1509,7 +1541,7 @@ export function App(): JSX.Element {
                   label={t(locale, "closeBehavior")}
                   value={state.panelSettings.close_behavior}
                   onChange={(value) =>
-                    updateState((draft) => {
+                    updateImmediateState((draft) => {
                       draft.panelSettings.close_behavior = value as CloseBehavior;
                     })
                   }
@@ -1525,7 +1557,7 @@ export function App(): JSX.Element {
                   type="checkbox"
                   checked={state.panelSettings.follow_config_profiles}
                   onChange={(event) =>
-                    updateState((draft) => {
+                    updateImmediateState((draft) => {
                       draft.panelSettings.follow_config_profiles = event.target.checked;
                     })
                   }
