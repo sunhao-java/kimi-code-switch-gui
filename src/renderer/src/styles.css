@@ -170,10 +170,6 @@ textarea {
   place-items: center;
   width: 54px;
   height: 54px;
-  border-radius: 18px;
-  overflow: hidden;
-  background: linear-gradient(135deg, rgba(87, 177, 255, 0.12), rgba(132, 247, 211, 0.12));
-  border: 1px solid rgba(132, 247, 211, 0.2);
 }
 
 .brand-logo {
@@ -2139,10 +2135,6 @@ textarea {
   place-items: center;
   width: 76px;
   height: 76px;
-  border-radius: 22px;
-  overflow: hidden;
-  background: rgba(87, 177, 255, 0.08);
-  border: 1px solid rgba(132, 247, 211, 0.2);
 }
 
 .about-hero h2 {
