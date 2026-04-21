@@ -2,12 +2,22 @@ import parse from "@iarna/toml/parse-string.js";
 import stringify from "@iarna/toml/stringify.js";
 
 import { buildMcpConfigDocument, DEFAULT_MCP_CONFIG_PATH, loadMcpConfig, parseMcpConfigStrict } from "./mcpStore";
-import type { AppState, MainConfig, McpServerConfig, PanelSettings, PreviewBundle, Profile } from "./types";
+import type {
+  AppState,
+  BackupDestinationType,
+  BackupStrategy,
+  MainConfig,
+  McpServerConfig,
+  PanelSettings,
+  PreviewBundle,
+  Profile,
+} from "./types";
 
 export const PROFILE_VERSION = 1;
 export const PANEL_SETTINGS_VERSION = 1;
 export const PROFILE_FILENAME = "config.profiles.toml";
 export const PANEL_SETTINGS_FILENAME = "config.panel.toml";
+export const BACKUP_DIRECTORY_NAME = "backups";
 export const DEFAULT_PROFILE_NAME = "default";
 export const DEFAULT_CONFIG_PATH = "~/.kimi/config.toml";
 
@@ -53,6 +63,15 @@ export function createDefaultPanelSettings(
     tray_icon: false,
     display_open_mode: "remember-last",
     close_behavior: "quit",
+    backup_strategy: "manual",
+    backup_frequency: "daily",
+    backup_retention_count: 10,
+    backup_destination_type: "local",
+    backup_local_path: defaultBackupPath(configPath),
+    backup_webdav_url: "",
+    backup_webdav_username: "",
+    backup_webdav_password: "",
+    backup_webdav_path: "",
     mcp_servers: {},
   };
 }
@@ -121,12 +140,30 @@ export async function loadPanelSettings(
   const fallback = createDefaultPanelSettings(DEFAULT_CONFIG_PATH, panelSettingsPath);
   const data = parseDocument(await files.readText(panelSettingsPath));
   const trayIcon = typeof data.tray_icon === "boolean" ? data.tray_icon : false;
+  const configPath =
+    typeof data.config_path === "string" && data.config_path.trim()
+      ? data.config_path
+      : fallback.config_path;
+  const backupLocalPathFallback = defaultBackupPath(configPath);
+  const backupStrategy = (() => {
+    if (
+      data.backup_strategy === "manual" ||
+      data.backup_strategy === "scheduled" ||
+      data.backup_strategy === "on-change"
+    ) {
+      return data.backup_strategy;
+    }
+    if (asBoolean(data.backup_schedule_enabled, asBoolean(data.backup_enabled, false))) {
+      return "scheduled";
+    }
+    if (asBoolean(data.backup_on_change_enabled, false)) {
+      return "on-change";
+    }
+    return fallback.backup_strategy;
+  })();
   return {
     version: PANEL_SETTINGS_VERSION,
-    config_path:
-      typeof data.config_path === "string" && data.config_path.trim()
-        ? data.config_path
-        : fallback.config_path,
+    config_path: configPath,
     profiles_path:
       typeof data.profiles_path === "string" ? data.profiles_path : fallback.profiles_path,
     follow_config_profiles:
@@ -138,6 +175,18 @@ export async function loadPanelSettings(
     tray_icon: trayIcon,
     display_open_mode: parseDisplayOpenMode(data.display_open_mode, fallback.display_open_mode),
     close_behavior: trayIcon ? parseCloseBehavior(data.close_behavior, "keep-in-tray") : "quit",
+    backup_strategy: backupStrategy,
+    backup_frequency: parseBackupFrequency(data.backup_frequency, fallback.backup_frequency),
+    backup_retention_count: parseBackupRetentionCount(data.backup_retention_count, fallback.backup_retention_count),
+    backup_destination_type: parseBackupDestinationType(data.backup_destination_type, fallback.backup_destination_type),
+    backup_local_path: sanitizePath(
+      asString(data.backup_local_path, asString(data.backup_path, backupLocalPathFallback)),
+      backupLocalPathFallback,
+    ),
+    backup_webdav_url: asString(data.backup_webdav_url, ""),
+    backup_webdav_username: asString(data.backup_webdav_username, ""),
+    backup_webdav_password: asString(data.backup_webdav_password, ""),
+    backup_webdav_path: asString(data.backup_webdav_path, ""),
     mcp_servers: parsePanelMcpServers(data.mcp_servers),
     last_display_id: typeof data.last_display_id === "number" ? data.last_display_id : undefined,
   };
@@ -486,6 +535,37 @@ function parseCloseBehavior(
   return value === "quit" || value === "keep-in-tray" ? value : fallback;
 }
 
+function parseBackupFrequency(
+  value: unknown,
+  fallback: PanelSettings["backup_frequency"],
+): PanelSettings["backup_frequency"] {
+  return value === "hourly" || value === "daily" || value === "weekly" ? value : fallback;
+}
+
+function parseBackupDestinationType(
+  value: unknown,
+  fallback: BackupDestinationType,
+): BackupDestinationType {
+  return value === "local" || value === "webdav" ? value : fallback;
+}
+
+function parseBackupStrategy(
+  value: unknown,
+  fallback: BackupStrategy,
+): BackupStrategy {
+  return value === "manual" || value === "scheduled" || value === "on-change" ? value : fallback;
+}
+
+function parseBackupRetentionCount(
+  value: unknown,
+  fallback: PanelSettings["backup_retention_count"],
+): PanelSettings["backup_retention_count"] {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  return Math.max(1, Math.min(99, Math.round(value)));
+}
+
 function sanitizePath(path: string | undefined, fallback: string): string {
   return typeof path === "string" && path.trim() ? path.trim() : fallback;
 }
@@ -496,6 +576,10 @@ function defaultProfilesPath(configPath: string): string {
 
 function defaultPanelSettingsPath(configPath: string): string {
   return joinPath(dirnamePath(configPath), PANEL_SETTINGS_FILENAME);
+}
+
+function defaultBackupPath(configPath: string): string {
+  return joinPath(dirnamePath(configPath), BACKUP_DIRECTORY_NAME);
 }
 
 function resolveProfilesPath(options: {
@@ -527,6 +611,15 @@ export function normalizeStatePaths(state: AppState): AppState {
     close_behavior: state.panelSettings.tray_icon
       ? parseCloseBehavior(state.panelSettings.close_behavior, "keep-in-tray")
       : "quit",
+    backup_strategy: parseBackupStrategy(state.panelSettings.backup_strategy, "manual"),
+    backup_frequency: parseBackupFrequency(state.panelSettings.backup_frequency, "daily"),
+    backup_retention_count: parseBackupRetentionCount(state.panelSettings.backup_retention_count, 10),
+    backup_destination_type: parseBackupDestinationType(state.panelSettings.backup_destination_type, "local"),
+    backup_local_path: sanitizePath(state.panelSettings.backup_local_path, defaultBackupPath(configPath)),
+    backup_webdav_url: asString(state.panelSettings.backup_webdav_url, "").trim(),
+    backup_webdav_username: asString(state.panelSettings.backup_webdav_username, ""),
+    backup_webdav_password: asString(state.panelSettings.backup_webdav_password, ""),
+    backup_webdav_path: asString(state.panelSettings.backup_webdav_path, "").trim(),
     last_display_id: state.panelSettings.last_display_id,
     mcp_servers: cloneMcpServers(state.mcpConfig.mcpServers),
     profiles_path: state.panelSettings.follow_config_profiles

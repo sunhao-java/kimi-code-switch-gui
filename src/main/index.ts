@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from "electron";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -10,26 +10,34 @@ import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 import {
   applyProfile,
   buildConfigDocument,
+  buildProfilesDocument,
   buildPanelSettingsDocument,
   buildPreviewBundle,
   cloneState,
   createDefaultPanelSettings,
   DEFAULT_CONFIG_PATH,
+  normalizeStatePaths,
   PANEL_SETTINGS_FILENAME,
   loadAppState,
   loadPanelSettings,
   saveAppState,
 } from "@shared/configStore";
-import type { AppState, FileDialogResult, Locale, PanelSettings, TrayCommand } from "@shared/types";
+import { buildMcpConfigDocument } from "@shared/mcpStore";
+import type { AppState, BackupFrequency, BackupResult, FileDialogResult, Locale, PanelSettings, TrayCommand } from "@shared/types";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let rememberDisplayTimer: NodeJS.Timeout | null = null;
+let scheduledBackupTimer: NodeJS.Timeout | null = null;
+let changeBackupTimer: NodeJS.Timeout | null = null;
+let latestAppState: AppState | null = null;
+let backupInFlight = false;
 let isQuitting = false;
 
 const WINDOW_WIDTH = 1500;
 const WINDOW_HEIGHT = 980;
 const DEFAULT_PANEL_SETTINGS_PATH = DEFAULT_CONFIG_PATH.replace("config.toml", PANEL_SETTINGS_FILENAME);
+const CHANGE_BACKUP_DELAY_MS = 4000;
 const execFileAsync = promisify(execFile);
 
 const resolveHome = (value: string): string =>
@@ -86,6 +94,366 @@ async function runKimiConnectivityTest(state: AppState, modelName: string): Prom
     stdout: stdout.trim(),
     stderr: stderr.trim(),
   };
+}
+
+function backupFrequencyToMs(frequency: BackupFrequency): number {
+  if (frequency === "hourly") {
+    return 60 * 60 * 1000;
+  }
+  if (frequency === "weekly") {
+    return 7 * 24 * 60 * 60 * 1000;
+  }
+  return 24 * 60 * 60 * 1000;
+}
+
+function formatBackupStamp(date: Date): string {
+  const parts = [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+    "-",
+    String(date.getHours()).padStart(2, "0"),
+    String(date.getMinutes()).padStart(2, "0"),
+    String(date.getSeconds()).padStart(2, "0"),
+    "-",
+    String(date.getMilliseconds()).padStart(3, "0"),
+  ];
+  return parts.join("");
+}
+
+function buildBackupFiles(state: AppState): Array<{ name: string; content: string }> {
+  const normalizedState = normalizeStatePaths(state);
+  return [
+    { name: "config.toml", content: buildConfigDocument(normalizedState) },
+    { name: "config.profiles.toml", content: buildProfilesDocument(normalizedState) },
+    { name: "config.panel.toml", content: buildPanelSettingsDocument(normalizedState.panelSettings) },
+    { name: "mcp.json", content: buildMcpConfigDocument(normalizedState.mcpConfig) },
+  ];
+}
+
+async function pruneBackupDirectories(backupRoot: string, keepCount: number): Promise<void> {
+  const entries = await readdir(backupRoot, { withFileTypes: true });
+  const obsoleteDirectories = entries
+    .filter((entry) => entry.isDirectory() && entry.name.startsWith("backup-"))
+    .map((entry) => entry.name)
+    .sort()
+    .reverse()
+    .slice(keepCount);
+
+  await Promise.all(
+    obsoleteDirectories.map((directory) => rm(join(backupRoot, directory), { recursive: true, force: true })),
+  );
+}
+
+function getWebDavAuthHeader(settings: PanelSettings): string {
+  const credentials = `${settings.backup_webdav_username}:${settings.backup_webdav_password}`;
+  return `Basic ${Buffer.from(credentials).toString("base64")}`;
+}
+
+function getWebDavBaseUrl(settings: PanelSettings): string {
+  const baseUrl = settings.backup_webdav_url.trim().replace(/\/+$/, "");
+  if (!baseUrl) {
+    throw new Error("WebDAV URL is required.");
+  }
+  return baseUrl;
+}
+
+function getWebDavPathSegments(settings: PanelSettings, additionalSegments: string[] = []): string[] {
+  const segments = settings.backup_webdav_path
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+  return [...segments, ...additionalSegments];
+}
+
+function buildWebDavUrl(settings: PanelSettings, additionalSegments: string[] = []): string {
+  const baseUrl = getWebDavBaseUrl(settings);
+  const segments = getWebDavPathSegments(settings, additionalSegments).map(encodeURIComponent);
+  return segments.length ? `${baseUrl}/${segments.join("/")}` : baseUrl;
+}
+
+async function ensureWebDavCollection(settings: PanelSettings, additionalSegments: string[] = []): Promise<string> {
+  let currentUrl = getWebDavBaseUrl(settings);
+  const headers = new Headers({
+    Authorization: getWebDavAuthHeader(settings),
+  });
+
+  for (const segment of getWebDavPathSegments(settings, additionalSegments)) {
+    currentUrl = `${currentUrl}/${encodeURIComponent(segment)}`;
+    const response = await fetch(currentUrl, {
+      method: "MKCOL",
+      headers,
+    });
+    if (![200, 201, 204, 301, 405].includes(response.status)) {
+      throw new Error(`WebDAV MKCOL failed: ${response.status} ${response.statusText}`);
+    }
+  }
+
+  return currentUrl;
+}
+
+async function uploadWebDavFile(settings: PanelSettings, url: string, content: string): Promise<void> {
+  const response = await fetch(url, {
+    method: "PUT",
+    headers: {
+      Authorization: getWebDavAuthHeader(settings),
+      "Content-Type": "application/octet-stream",
+    },
+    body: content,
+  });
+
+  if (!response.ok) {
+    throw new Error(`WebDAV upload failed: ${response.status} ${response.statusText}`);
+  }
+}
+
+async function deleteWebDavPath(settings: PanelSettings, url: string): Promise<void> {
+  const response = await fetch(url, {
+    method: "DELETE",
+    headers: {
+      Authorization: getWebDavAuthHeader(settings),
+    },
+  });
+
+  if (![200, 204, 404].includes(response.status)) {
+    throw new Error(`WebDAV delete failed: ${response.status} ${response.statusText}`);
+  }
+}
+
+async function readWebDavManifest(settings: PanelSettings, manifestUrl: string): Promise<Array<{ name: string; createdAt: string }>> {
+  const response = await fetch(manifestUrl, {
+    method: "GET",
+    headers: {
+      Authorization: getWebDavAuthHeader(settings),
+    },
+  });
+
+  if (response.status === 404) {
+    return [];
+  }
+  if (!response.ok) {
+    throw new Error(`WebDAV manifest read failed: ${response.status} ${response.statusText}`);
+  }
+
+  const payload = (await response.json()) as { backups?: Array<{ name?: string; createdAt?: string }> };
+  return Array.isArray(payload.backups)
+    ? payload.backups
+        .filter((entry) => typeof entry.name === "string" && typeof entry.createdAt === "string")
+        .map((entry) => ({ name: entry.name as string, createdAt: entry.createdAt as string }))
+    : [];
+}
+
+async function pruneWebDavBackups(
+  settings: PanelSettings,
+  manifestUrl: string,
+  currentEntries: Array<{ name: string; createdAt: string }>,
+): Promise<void> {
+  const obsoleteEntries = [...currentEntries]
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .slice(settings.backup_retention_count);
+
+  await Promise.all(
+    obsoleteEntries.map((entry) => deleteWebDavPath(settings, buildWebDavUrl(settings, [entry.name]))),
+  );
+
+  const keptEntries = [...currentEntries]
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .slice(0, settings.backup_retention_count);
+
+  await uploadWebDavFile(settings, manifestUrl, JSON.stringify({ backups: keptEntries }, null, 2));
+}
+
+async function createLocalBackupSnapshot(state: AppState, backupName: string): Promise<BackupResult> {
+  const normalizedState = normalizeStatePaths(state);
+  const backupRoot = resolveHome(normalizedState.panelSettings.backup_local_path);
+  const backupDirectory = join(backupRoot, backupName);
+  const files = buildBackupFiles(normalizedState);
+
+  await mkdir(backupDirectory, { recursive: true });
+
+  await Promise.all(
+    files.map((file) => writeFile(join(backupDirectory, file.name), file.content, "utf-8")),
+  );
+  await pruneBackupDirectories(backupRoot, normalizedState.panelSettings.backup_retention_count);
+
+  return {
+    ok: true,
+    backupPath: backupDirectory,
+    files: files.map((file) => join(backupDirectory, file.name)),
+  };
+}
+
+async function createWebDavBackupSnapshot(state: AppState, backupName: string): Promise<BackupResult> {
+  const normalizedState = normalizeStatePaths(state);
+  const settings = normalizedState.panelSettings;
+  const files = buildBackupFiles(normalizedState);
+
+  const backupDirectoryUrl = await ensureWebDavCollection(settings, [backupName]);
+  await Promise.all(
+    files.map((file) => uploadWebDavFile(settings, `${backupDirectoryUrl}/${encodeURIComponent(file.name)}`, file.content)),
+  );
+
+  const manifestUrl = `${await ensureWebDavCollection(settings)}/.kimi-backups.json`;
+  const manifestEntries = await readWebDavManifest(settings, manifestUrl);
+  const nextEntries = [
+    ...manifestEntries.filter((entry) => entry.name !== backupName),
+    { name: backupName, createdAt: backupName },
+  ];
+  await pruneWebDavBackups(settings, manifestUrl, nextEntries);
+
+  return {
+    ok: true,
+    backupPath: backupDirectoryUrl,
+    files: files.map((file) => `${backupDirectoryUrl}/${encodeURIComponent(file.name)}`),
+  };
+}
+
+async function createBackupSnapshot(state: AppState): Promise<BackupResult> {
+  const normalizedState = normalizeStatePaths(state);
+  const backupName = `backup-${formatBackupStamp(new Date())}`;
+
+  if (normalizedState.panelSettings.backup_destination_type === "webdav") {
+    return createWebDavBackupSnapshot(normalizedState, backupName);
+  }
+
+  return createLocalBackupSnapshot(normalizedState, backupName);
+}
+
+async function testWebDavConnection(state: AppState): Promise<{ ok: true; target: string }> {
+  const normalizedState = normalizeStatePaths(state);
+  const settings = normalizedState.panelSettings;
+  const target = buildWebDavUrl(settings);
+  const response = await fetch(target, {
+    method: "PROPFIND",
+    headers: {
+      Authorization: getWebDavAuthHeader(settings),
+      Depth: "0",
+    },
+  });
+
+  if (response.status === 404) {
+    const ensuredTarget = await ensureWebDavCollection(settings);
+    return {
+      ok: true,
+      target: ensuredTarget,
+    };
+  }
+
+  if (!response.ok) {
+    throw new Error(`WebDAV test failed: ${response.status} ${response.statusText}`);
+  }
+
+  return {
+    ok: true,
+    target,
+  };
+}
+
+function clearScheduledBackup(): void {
+  if (scheduledBackupTimer) {
+    clearTimeout(scheduledBackupTimer);
+    scheduledBackupTimer = null;
+  }
+}
+
+function clearChangeBackup(): void {
+  if (changeBackupTimer) {
+    clearTimeout(changeBackupTimer);
+    changeBackupTimer = null;
+  }
+}
+
+function clearBackupSchedule(): void {
+  clearScheduledBackup();
+  clearChangeBackup();
+}
+
+function updateBackupSchedule(state: AppState): void {
+  latestAppState = cloneState(normalizeStatePaths(state));
+  clearScheduledBackup();
+
+  if (latestAppState.panelSettings.backup_strategy !== "scheduled") {
+    return;
+  }
+
+  scheduledBackupTimer = setTimeout(() => {
+    scheduledBackupTimer = null;
+    void runScheduledBackup();
+  }, backupFrequencyToMs(latestAppState.panelSettings.backup_frequency));
+}
+
+function queueChangeBackup(state: AppState): void {
+  latestAppState = cloneState(normalizeStatePaths(state));
+  clearChangeBackup();
+
+  if (latestAppState.panelSettings.backup_strategy !== "on-change") {
+    return;
+  }
+
+  changeBackupTimer = setTimeout(() => {
+    changeBackupTimer = null;
+    void runChangeBackup();
+  }, CHANGE_BACKUP_DELAY_MS);
+}
+
+async function runScheduledBackup(): Promise<void> {
+  if (latestAppState?.panelSettings.backup_strategy !== "scheduled" || backupInFlight) {
+    if (latestAppState?.panelSettings.backup_strategy === "scheduled") {
+      updateBackupSchedule(latestAppState);
+    }
+    return;
+  }
+
+  backupInFlight = true;
+  try {
+    await createBackupSnapshot(latestAppState);
+  } catch (error) {
+    console.error("automatic backup failed", error);
+  } finally {
+    backupInFlight = false;
+    if (latestAppState?.panelSettings.backup_strategy === "scheduled") {
+      updateBackupSchedule(latestAppState);
+    }
+  }
+}
+
+async function runChangeBackup(): Promise<void> {
+  if (latestAppState?.panelSettings.backup_strategy !== "on-change" || backupInFlight) {
+    if (latestAppState?.panelSettings.backup_strategy === "on-change") {
+      queueChangeBackup(latestAppState);
+    }
+    return;
+  }
+
+  backupInFlight = true;
+  try {
+    await createBackupSnapshot(latestAppState);
+  } catch (error) {
+    console.error("change backup failed", error);
+  } finally {
+    backupInFlight = false;
+  }
+}
+
+async function runBackup(state?: AppState): Promise<BackupResult> {
+  if (backupInFlight) {
+    throw new Error("A backup is already in progress.");
+  }
+
+  const sourceState = state
+    ? normalizeStatePaths(state)
+    : latestAppState
+      ? cloneState(latestAppState)
+      : await loadAppState(fileAccess);
+
+  backupInFlight = true;
+  try {
+    const result = await createBackupSnapshot(sourceState);
+    updateBackupSchedule(sourceState);
+    return result;
+  } finally {
+    backupInFlight = false;
+  }
 }
 
 function getResourcePath(filename: string): string {
@@ -217,6 +585,8 @@ async function activateProfileFromTray(profileName: string): Promise<void> {
   const state = await loadAppState(fileAccess);
   applyProfile(state, profileName);
   await saveAppState(fileAccess, state);
+  updateBackupSchedule(state);
+  queueChangeBackup(state);
   await updateTrayMenu();
   if (mainWindow && !mainWindow.isDestroyed()) {
     queueTrayCommand("reload");
@@ -381,6 +751,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle("app:load-state", async (_, paths) => {
     const state = await loadAppState(fileAccess, paths);
+    updateBackupSchedule(state);
     if (state.panelSettings.tray_icon) {
       createTray();
     }
@@ -390,6 +761,8 @@ app.whenReady().then(() => {
 
   ipcMain.handle("app:save-state", async (_, state: AppState) => {
     await saveAppState(fileAccess, state);
+    updateBackupSchedule(state);
+    queueChangeBackup(state);
     void updateTrayMenu();
     return { ok: true };
   });
@@ -427,6 +800,14 @@ app.whenReady().then(() => {
     }
     await shell.openExternal(url);
     return { ok: true };
+  });
+
+  ipcMain.handle("backup:run", async (_, state?: AppState) => {
+    return runBackup(state);
+  });
+
+  ipcMain.handle("backup:test-webdav", async (_, state: AppState) => {
+    return testWebDavConnection(state);
   });
 
   ipcMain.handle("app:set-tray", (_, enabled: boolean) => {
@@ -467,6 +848,7 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
+  clearBackupSchedule();
   if (process.platform !== "darwin") {
     app.quit();
   }

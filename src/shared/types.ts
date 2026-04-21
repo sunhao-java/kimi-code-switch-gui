@@ -12,6 +12,9 @@ export type DisplayOpenMode = "random" | "remember-last" | "active-display";
 export type CloseBehavior = "quit" | "keep-in-tray";
 export type TrayCommand = "reload";
 export type McpTransport = "sse" | "stdio" | "streamable-http";
+export type BackupFrequency = "hourly" | "daily" | "weekly";
+export type BackupDestinationType = "local" | "webdav";
+export type BackupStrategy = "manual" | "scheduled" | "on-change";
 
 export interface ProviderConfig {
   type: string;
@@ -83,6 +86,15 @@ export interface PanelSettings {
   tray_icon: boolean;
   display_open_mode: DisplayOpenMode;
   close_behavior: CloseBehavior;
+  backup_strategy: BackupStrategy;
+  backup_frequency: BackupFrequency;
+  backup_retention_count: number;
+  backup_destination_type: BackupDestinationType;
+  backup_local_path: string;
+  backup_webdav_url: string;
+  backup_webdav_username: string;
+  backup_webdav_password: string;
+  backup_webdav_path: string;
   mcp_servers: Record<string, McpServerConfig>;
   last_display_id?: number;
 }
@@ -113,4 +125,10 @@ export interface PreviewBundle {
 export interface FileDialogResult {
   canceled: boolean;
   filePath?: string;
+}
+
+export interface BackupResult {
+  ok: true;
+  backupPath: string;
+  files: string[];
 }

@@ -48,11 +48,14 @@ import {
 import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
 import type {
   AppState,
+  BackupDestinationType,
   Locale,
   PreviewBundle,
   Profile,
   AppearanceMode,
   DisplayOpenMode,
+  BackupFrequency,
+  BackupStrategy,
   CloseBehavior,
   McpServerConfig,
   McpTransport,
@@ -267,6 +270,32 @@ const CLOSE_BEHAVIOR_OPTIONS: Array<{
   },
 ];
 
+const BACKUP_FREQUENCY_OPTIONS: Array<{
+  value: BackupFrequency;
+  labelKey: string;
+}> = [
+  { value: "hourly", labelKey: "backupFrequencyHourly" },
+  { value: "daily", labelKey: "backupFrequencyDaily" },
+  { value: "weekly", labelKey: "backupFrequencyWeekly" },
+];
+
+const BACKUP_DESTINATION_OPTIONS: Array<{
+  value: BackupDestinationType;
+  labelKey: string;
+}> = [
+  { value: "local", labelKey: "backupDestinationLocal" },
+  { value: "webdav", labelKey: "backupDestinationWebdav" },
+];
+
+const BACKUP_STRATEGY_OPTIONS: Array<{
+  value: BackupStrategy;
+  labelKey: string;
+}> = [
+  { value: "manual", labelKey: "backupStrategyManual" },
+  { value: "scheduled", labelKey: "backupStrategyScheduled" },
+  { value: "on-change", labelKey: "backupStrategyOnChange" },
+];
+
 function getApi() {
   return typeof window !== "undefined" ? window.kimiSwitch : undefined;
 }
@@ -461,6 +490,9 @@ export function App(): JSX.Element {
   const [mcpImportDraft, setMcpImportDraft] = useState("");
   const [mcpTestingName, setMcpTestingName] = useState("");
   const [profileTestingName, setProfileTestingName] = useState("");
+  const [isBackupRunning, setIsBackupRunning] = useState(false);
+  const [isWebDavTesting, setIsWebDavTesting] = useState(false);
+  const [isBackupPasswordVisible, setIsBackupPasswordVisible] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsState>({
     preload: "pending",
@@ -856,11 +888,79 @@ export function App(): JSX.Element {
     setDocumentViewer(mapping[file]);
   };
 
+  const runManualBackup = (): void => {
+    const api = getApi();
+    if (!api) {
+      setNotice("");
+      setError("Electron preload API is unavailable. Backup cannot continue.");
+      return;
+    }
+    if (typeof api.runBackup !== "function") {
+      setNotice("");
+      setError(t(locale, "backupRuntimeOutdated"));
+      return;
+    }
+
+    void (async () => {
+      try {
+        setIsBackupRunning(true);
+        const result = await api.runBackup(state);
+        setError("");
+        setNotice(formatMessage(t(locale, "backupSuccess"), { path: result.backupPath }));
+      } catch (backupError) {
+        const message = backupError instanceof Error ? backupError.message : String(backupError);
+        setNotice("");
+        setError(translateError(locale, message));
+      } finally {
+        setIsBackupRunning(false);
+      }
+    })();
+  };
+
+  const runWebDavTest = (): void => {
+    const api = getApi();
+    if (!api) {
+      setNotice("");
+      setError("Electron preload API is unavailable. Backup test cannot continue.");
+      return;
+    }
+    if (typeof api.testBackupWebdav !== "function") {
+      setNotice("");
+      setError(t(locale, "backupRuntimeOutdated"));
+      return;
+    }
+
+    void (async () => {
+      try {
+        setIsWebDavTesting(true);
+        const result = await api.testBackupWebdav(state);
+        setError("");
+        setNotice(formatMessage(t(locale, "backupWebdavTestSuccess"), { path: result.target }));
+      } catch (backupError) {
+        const message = backupError instanceof Error ? backupError.message : String(backupError);
+        setNotice("");
+        setError(translateError(locale, message));
+      } finally {
+        setIsWebDavTesting(false);
+      }
+    })();
+  };
+
   return (
     <div className="shell">
       <div className="window-titlebar drag-region" aria-hidden="true">
         <div className="window-titlebar-safe" />
       </div>
+      {error ? (
+        <div className="app-tip-layer" role="status" aria-live="polite">
+          <div className="app-tip app-tip-error">{error}</div>
+        </div>
+      ) : null}
+      {!error && notice ? (
+        <div className="app-tip-layer" role="status" aria-live="polite">
+          <div className="app-tip app-tip-success">{notice}</div>
+        </div>
+      ) : null}
       <div className="background-grid" />
       <aside className="sidebar glass-panel">
         <div className="brand drag-region">
@@ -938,9 +1038,6 @@ export function App(): JSX.Element {
             />
           </div>
         </header>
-
-        {error ? <div className="banner error">{error}</div> : null}
-        {!error && notice ? <div className="banner success">{notice}</div> : null}
 
         {activeTab === "overview" ? (
           <OverviewDashboard
@@ -1435,23 +1532,23 @@ export function App(): JSX.Element {
                 label={t(locale, "configPath")}
                 value={state.configPath}
                 onView={() => openDocumentViewer("config")}
-              onChange={(value) =>
-                updateImmediateState((draft) => {
-                  draft.configPath = value;
-                  draft.panelSettings.config_path = value;
-                })
-              }
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.configPath = value;
+                    draft.panelSettings.config_path = value;
+                  })
+                }
               />
               <PathField
                 locale={locale}
                 label={t(locale, "profilesPath")}
                 value={state.profilesPath}
                 onView={() => openDocumentViewer("profiles")}
-              onChange={(value) =>
-                updateImmediateState((draft) => {
-                  draft.profilesPath = value;
-                  draft.panelSettings.profiles_path = value;
-                  draft.panelSettings.follow_config_profiles = false;
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.profilesPath = value;
+                    draft.panelSettings.profiles_path = value;
+                    draft.panelSettings.follow_config_profiles = false;
                   })
                 }
               />
@@ -1460,11 +1557,11 @@ export function App(): JSX.Element {
                 label={t(locale, "panelSettingsPath")}
                 value={state.panelSettingsPath}
                 onView={() => openDocumentViewer("panel")}
-              onChange={(value) =>
-                updateImmediateState((draft) => {
-                  draft.panelSettingsPath = value;
-                })
-              }
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.panelSettingsPath = value;
+                  })
+                }
               />
               <PathField
                 locale={locale}
@@ -1480,11 +1577,11 @@ export function App(): JSX.Element {
               <SelectField
                 label={t(locale, "locale")}
                 value={state.panelSettings.locale}
-              onChange={(value) =>
-                updateImmediateState((draft) => {
-                  draft.panelSettings.locale = value as Locale;
-                })
-              }
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.panelSettings.locale = value as Locale;
+                  })
+                }
                 options={LOCALE_OPTIONS.map((option) => ({
                   value: option.value,
                   label: option.longLabel,
@@ -1495,11 +1592,11 @@ export function App(): JSX.Element {
               <SelectField
                 label={t(locale, "theme")}
                 value={state.panelSettings.theme}
-              onChange={(value) =>
-                updateImmediateState((draft) => {
-                  draft.panelSettings.theme = value as AppearanceMode;
-                })
-              }
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.panelSettings.theme = value as AppearanceMode;
+                  })
+                }
                 selectedIcon={(THEME_OPTIONS.find((option) => option.value === state.panelSettings.theme) ?? THEME_OPTIONS[0]).icon}
                 options={THEME_OPTIONS.map((option) => ({
                   value: option.value,
@@ -1510,11 +1607,11 @@ export function App(): JSX.Element {
               <SelectField
                 label={t(locale, "displayOpenMode")}
                 value={state.panelSettings.display_open_mode}
-              onChange={(value) =>
-                updateImmediateState((draft) => {
-                  draft.panelSettings.display_open_mode = value as DisplayOpenMode;
-                })
-              }
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.panelSettings.display_open_mode = value as DisplayOpenMode;
+                  })
+                }
                 options={DISPLAY_OPEN_OPTIONS.map((option) => ({
                   value: option.value,
                   label: option.label[locale],
@@ -1563,6 +1660,139 @@ export function App(): JSX.Element {
                   }
                 />
               </label>
+            </SettingsGroup>
+            <SettingsGroup title={t(locale, "settingsGroupBackup")}>
+              <SelectField
+                label={t(locale, "backupStrategy")}
+                value={state.panelSettings.backup_strategy}
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.panelSettings.backup_strategy = value as BackupStrategy;
+                  })
+                }
+                options={BACKUP_STRATEGY_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: t(locale, option.labelKey),
+                }))}
+              />
+              {state.panelSettings.backup_strategy === "scheduled" ? (
+                <SelectField
+                  label={t(locale, "backupFrequency")}
+                  value={state.panelSettings.backup_frequency}
+                  onChange={(value) =>
+                    updateImmediateState((draft) => {
+                      draft.panelSettings.backup_frequency = value as BackupFrequency;
+                    })
+                  }
+                  options={BACKUP_FREQUENCY_OPTIONS.map((option) => ({
+                    value: option.value,
+                    label: t(locale, option.labelKey),
+                  }))}
+                />
+              ) : null}
+              <Field
+                label={t(locale, "backupRetentionCount")}
+                value={String(state.panelSettings.backup_retention_count)}
+                onChange={(value) => {
+                  const nextCount = Number.parseInt(value, 10);
+                  if (Number.isNaN(nextCount)) {
+                    return;
+                  }
+                  updateImmediateState((draft) => {
+                    draft.panelSettings.backup_retention_count = Math.max(1, Math.min(99, nextCount));
+                  });
+                }}
+                inputMode="numeric"
+              />
+              <SelectField
+                label={t(locale, "backupDestinationType")}
+                value={state.panelSettings.backup_destination_type}
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.panelSettings.backup_destination_type = value as BackupDestinationType;
+                  })
+                }
+                options={BACKUP_DESTINATION_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: t(locale, option.labelKey),
+                }))}
+              />
+              {state.panelSettings.backup_destination_type === "local" ? (
+                <PathField
+                  locale={locale}
+                  label={t(locale, "backupLocalPath")}
+                  value={state.panelSettings.backup_local_path}
+                  pickerProperties={["openDirectory", "createDirectory"]}
+                  onChange={(value) =>
+                    updateImmediateState((draft) => {
+                      draft.panelSettings.backup_local_path = value;
+                    })
+                  }
+                />
+              ) : (
+                <>
+                  <Field
+                    label={t(locale, "backupWebdavUrl")}
+                    value={state.panelSettings.backup_webdav_url}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.panelSettings.backup_webdav_url = value;
+                      })
+                    }
+                  />
+                  <Field
+                    label={t(locale, "backupWebdavUsername")}
+                    value={state.panelSettings.backup_webdav_username}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.panelSettings.backup_webdav_username = value;
+                      })
+                    }
+                  />
+                  <SecretField
+                    label={t(locale, "backupWebdavPassword")}
+                    value={state.panelSettings.backup_webdav_password}
+                    visible={isBackupPasswordVisible}
+                    onToggleVisible={() => setIsBackupPasswordVisible((current) => !current)}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.panelSettings.backup_webdav_password = value;
+                      })
+                    }
+                  />
+                  <Field
+                    label={t(locale, "backupWebdavPath")}
+                    value={state.panelSettings.backup_webdav_path}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.panelSettings.backup_webdav_path = value;
+                      })
+                    }
+                  />
+                </>
+              )}
+              <div className="button-row settings-action-row">
+                <button
+                  className={isBackupRunning ? "action-button action-button-primary is-loading" : "action-button action-button-primary"}
+                  type="button"
+                  disabled={isBackupRunning}
+                  onClick={runManualBackup}
+                >
+                  {isBackupRunning ? <LoaderCircle size={16} className="button-spinner" /> : <History size={16} />}
+                  <span>{isBackupRunning ? t(locale, "backupRunning") : t(locale, "backupNow")}</span>
+                </button>
+                {state.panelSettings.backup_destination_type === "webdav" ? (
+                  <button
+                    className={isWebDavTesting ? "action-button is-loading" : "action-button"}
+                    type="button"
+                    disabled={isWebDavTesting}
+                    onClick={runWebDavTest}
+                  >
+                    {isWebDavTesting ? <LoaderCircle size={16} className="button-spinner" /> : <Bug size={16} />}
+                    <span>{isWebDavTesting ? t(locale, "backupWebdavTesting") : t(locale, "backupWebdavTest")}</span>
+                  </button>
+                ) : null}
+              </div>
             </SettingsGroup>
           </section>
         ) : null}
@@ -1976,6 +2206,8 @@ function SecretField(props: {
   visible: boolean;
   onToggleVisible: () => void;
   onChange: (value: string) => void;
+  showLabel?: string;
+  hideLabel?: string;
 }): JSX.Element {
   const Icon = props.visible ? EyeOff : Eye;
   return (
@@ -1990,7 +2222,7 @@ function SecretField(props: {
         <button
           className="secret-toggle"
           type="button"
-          aria-label={props.visible ? "Hide API Key" : "Show API Key"}
+          aria-label={props.visible ? (props.hideLabel ?? "Hide secret") : (props.showLabel ?? "Show secret")}
           onClick={props.onToggleVisible}
         >
           <Icon size={16} />
@@ -2262,11 +2494,16 @@ function ProfileForm(props: {
   );
 }
 
-function Field(props: { label: string; value: string; onChange: (value: string) => void }): JSX.Element {
+function Field(props: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  inputMode?: string;
+}): JSX.Element {
   return (
     <label className="field">
       <span>{props.label}</span>
-      <input value={props.value} onChange={(event) => props.onChange(event.target.value)} />
+      <input inputMode={props.inputMode} value={props.value} onChange={(event) => props.onChange(event.target.value)} />
     </label>
   );
 }
@@ -2555,6 +2792,7 @@ function PathField(props: {
   value: string;
   readOnly?: boolean;
   fileType?: "toml" | "json";
+  pickerProperties?: Array<"openFile" | "openDirectory" | "createDirectory">;
   onView?: () => void;
   onChange: (value: string) => void;
 }): JSX.Element {
@@ -2568,7 +2806,10 @@ function PathField(props: {
     }
     const result = await api.pickFile({
       title: props.label,
-      filters: [{ name: (props.fileType ?? "toml").toUpperCase(), extensions: [props.fileType ?? "toml"] }],
+      properties: props.pickerProperties ?? ["openFile"],
+      ...(props.pickerProperties?.includes("openFile") !== false
+        ? { filters: [{ name: (props.fileType ?? "toml").toUpperCase(), extensions: [props.fileType ?? "toml"] }] }
+        : {}),
     });
     if (!result.canceled && result.filePath) {
       props.onChange(result.filePath);
@@ -2625,6 +2866,15 @@ function createFallbackState(): AppState {
     tray_icon: false,
     display_open_mode: "remember-last" as DisplayOpenMode,
     close_behavior: "quit" as CloseBehavior,
+    backup_strategy: "manual" as BackupStrategy,
+    backup_frequency: "daily" as BackupFrequency,
+    backup_retention_count: 10,
+    backup_destination_type: "local" as BackupDestinationType,
+    backup_local_path: "~/.kimi/backups",
+    backup_webdav_url: "",
+    backup_webdav_username: "",
+    backup_webdav_password: "",
+    backup_webdav_path: "",
     mcp_servers: {},
   };
 

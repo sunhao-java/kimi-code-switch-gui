@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-import type { AppState, FileDialogResult, PanelSettings, PreviewBundle, TrayCommand } from "@shared/types";
+import type { AppState, BackupResult, FileDialogResult, PanelSettings, PreviewBundle, TrayCommand } from "@shared/types";
 
 const api = {
   loadState: (paths?: {
@@ -16,6 +16,8 @@ const api = {
     ipcRenderer.invoke("dialog:pick-file", options),
   setTray: (enabled: boolean): Promise<{ ok: true }> => ipcRenderer.invoke("app:set-tray", enabled),
   openExternal: (url: string): Promise<{ ok: true }> => ipcRenderer.invoke("app:open-external", url),
+  runBackup: (state: AppState): Promise<BackupResult> => ipcRenderer.invoke("backup:run", state),
+  testBackupWebdav: (state: AppState): Promise<{ ok: true; target: string }> => ipcRenderer.invoke("backup:test-webdav", state),
   testMcpServer: (name: string): Promise<{ ok: true; stdout: string; stderr: string }> =>
     ipcRenderer.invoke("mcp:test-server", name),
   authMcpServer: (name: string): Promise<{ ok: true; stdout: string; stderr: string }> =>

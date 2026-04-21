@@ -281,7 +281,42 @@ describe("configStore", () => {
     expect(loaded.config_path).toBe("/tmp/custom.toml");
     expect(loaded.display_open_mode).toBe("active-display");
     expect(loaded.close_behavior).toBe("keep-in-tray");
+    expect(loaded.backup_local_path).toBe("/tmp/backups");
+    expect(loaded.backup_frequency).toBe("daily");
+    expect(loaded.backup_retention_count).toBe(10);
+    expect(loaded.backup_strategy).toBe("manual");
+    expect(loaded.backup_destination_type).toBe("local");
     expect(loaded.last_display_id).toBe(2);
+  });
+
+  it("clamps invalid backup settings to safe defaults", async () => {
+    const files = createMemoryFs({
+      "/tmp/config.panel.toml":
+        'config_path = "/tmp/custom.toml"\nbackup_frequency = "monthly"\nbackup_retention_count = 0\nbackup_enabled = true\n',
+    });
+
+    const loaded = await loadPanelSettings(files, "/tmp/config.panel.toml");
+
+    expect(loaded.backup_local_path).toBe("/tmp/backups");
+    expect(loaded.backup_frequency).toBe("daily");
+    expect(loaded.backup_retention_count).toBe(1);
+    expect(loaded.backup_strategy).toBe("scheduled");
+  });
+
+  it("loads explicit webdav backup settings", async () => {
+    const files = createMemoryFs({
+      "/tmp/config.panel.toml":
+        'backup_destination_type = "webdav"\nbackup_strategy = "on-change"\nbackup_webdav_url = "https://dav.example.com/root"\nbackup_webdav_username = "alice"\nbackup_webdav_password = "secret"\nbackup_webdav_path = "kimi/backups"\n',
+    });
+
+    const loaded = await loadPanelSettings(files, "/tmp/config.panel.toml");
+
+    expect(loaded.backup_destination_type).toBe("webdav");
+    expect(loaded.backup_strategy).toBe("on-change");
+    expect(loaded.backup_webdav_url).toBe("https://dav.example.com/root");
+    expect(loaded.backup_webdav_username).toBe("alice");
+    expect(loaded.backup_webdav_password).toBe("secret");
+    expect(loaded.backup_webdav_path).toBe("kimi/backups");
   });
 
   it("forces quit behavior when tray icon is disabled", async () => {
@@ -311,6 +346,9 @@ describe("configStore", () => {
     expect(files.store["/tmp/config.toml"]).toContain("default_model");
     expect(files.store["/tmp/config.profiles.toml"]).toContain("active_profile");
     expect(files.store["/tmp/config.panel.toml"]).toContain("follow_config_profiles");
+    expect(files.store["/tmp/config.panel.toml"]).toContain('backup_local_path = "/tmp/backups"');
+    expect(files.store["/tmp/config.panel.toml"]).toContain('backup_destination_type = "local"');
+    expect(files.store["/tmp/config.panel.toml"]).toContain('backup_strategy = "manual"');
     expect(files.store["/tmp/mcp.json"]).toContain("\"mcpServers\"");
   });
 
