@@ -3,11 +3,12 @@
   "version": "1.0.1",
   "description": "Electron desktop app for managing kimi-code-cli providers, models, and profiles.",
   "main": "out/main/index.js",
-  "author": "Codex",
+  "author": "Hulk Sun <sunhao.java@gmail.com>",
   "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {
+    "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true }); require('fs').rmSync('release', { recursive: true, force: true });\"",
     "dev": "vite",
     "dev:electron": "electron-vite dev",
     "build": "tsc --noEmit && electron-vite build",
