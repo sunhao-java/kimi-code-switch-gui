@@ -185,6 +185,25 @@ describe("configStore", () => {
     expect(state.profiles["default-copy"].default_model).toBe("kimi_gateway/kimi-k2.5");
   });
 
+  it("normalizes profile editor and theme", () => {
+    const state = createState();
+    upsertProfile(state, {
+      name: "work",
+      label: "Work",
+      default_model: "kimi_gateway/kimi-k2.5",
+      default_thinking: true,
+      default_yolo: false,
+      default_plan_mode: false,
+      default_editor: "vim",
+      theme: "light",
+      show_thinking_stream: false,
+      merge_all_available_skills: false,
+    });
+
+    expect(state.profiles.work.default_editor).toBe("");
+    expect(state.profiles.work.theme).toBe("dark");
+  });
+
   it("renders config document", () => {
     const document = buildConfigDocument(createState());
     expect(document).toContain('default_model = "kimi_gateway/kimi-k2.5"');

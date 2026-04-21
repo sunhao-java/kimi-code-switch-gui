@@ -9,8 +9,10 @@ import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 
 import {
   applyProfile,
+  buildConfigDocument,
   buildPanelSettingsDocument,
   buildPreviewBundle,
+  cloneState,
   createDefaultPanelSettings,
   DEFAULT_CONFIG_PATH,
   PANEL_SETTINGS_FILENAME,
@@ -53,6 +55,32 @@ async function runKimiMcpCommand(args: string[]): Promise<{ ok: true; stdout: st
   const { stdout, stderr } = await execFileAsync("kimi", ["mcp", ...args], {
     windowsHide: true,
   });
+  return {
+    ok: true,
+    stdout: stdout.trim(),
+    stderr: stderr.trim(),
+  };
+}
+
+async function runKimiConnectivityTest(state: AppState, modelName: string): Promise<{ ok: true; stdout: string; stderr: string }> {
+  const configDocument = buildConfigDocument(state);
+  const { stdout, stderr } = await execFileAsync(
+    "kimi",
+    [
+      "--config",
+      configDocument,
+      "--model",
+      modelName,
+      "--quiet",
+      "--print",
+      "--command",
+      "Reply with exactly OK.",
+    ],
+    {
+      windowsHide: true,
+      maxBuffer: 10 * 1024 * 1024,
+    },
+  );
   return {
     ok: true,
     stdout: stdout.trim(),
@@ -421,6 +449,12 @@ app.whenReady().then(() => {
 
   ipcMain.handle("mcp:reset-auth", async (_, name: string) => {
     return runKimiMcpCommand(["reset-auth", name]);
+  });
+
+  ipcMain.handle("profile:test-connectivity", async (_, state: AppState, profileName: string) => {
+    const draft = cloneState(state);
+    applyProfile(draft, profileName);
+    return runKimiConnectivityTest(draft, draft.mainConfig.default_model);
   });
 
   void createWindow();

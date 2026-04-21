@@ -184,7 +184,7 @@ export function buildPanelSettingsDocument(settings: PanelSettings): string {
 
 export function bootstrapProfiles(mainConfig: MainConfig): Record<string, Profile> {
   return {
-    [DEFAULT_PROFILE_NAME]: {
+    [DEFAULT_PROFILE_NAME]: normalizeProfile({
       name: DEFAULT_PROFILE_NAME,
       label: "Default",
       default_model: String(mainConfig.default_model ?? DEFAULTS.default_model),
@@ -195,7 +195,7 @@ export function bootstrapProfiles(mainConfig: MainConfig): Record<string, Profil
       theme: String(mainConfig.theme ?? DEFAULTS.theme),
       show_thinking_stream: Boolean(mainConfig.show_thinking_stream),
       merge_all_available_skills: Boolean(mainConfig.merge_all_available_skills),
-    },
+    }),
   };
 }
 
@@ -258,14 +258,15 @@ export function deleteModel(state: AppState, name: string): void {
 }
 
 export function upsertProfile(state: AppState, profile: Profile): void {
-  if (!state.mainConfig.models[profile.default_model]) {
+  const normalizedProfile = normalizeProfile(profile);
+  if (!state.mainConfig.models[normalizedProfile.default_model]) {
     throw new Error(
-      formatMissingModelError(profile.default_model, state.mainConfig.models, {
-        context: `配置Profile ${profile.name || "（未命名）"}`,
+      formatMissingModelError(normalizedProfile.default_model, state.mainConfig.models, {
+        context: `配置Profile ${normalizedProfile.name || "（未命名）"}`,
       }),
     );
   }
-  state.profiles[profile.name] = profile;
+  state.profiles[normalizedProfile.name] = normalizedProfile;
 }
 
 export function cloneProfile(
@@ -281,11 +282,11 @@ export function cloneProfile(
   if (state.profiles[targetName]) {
     throw new Error(`Profile already exists: ${targetName}`);
   }
-  state.profiles[targetName] = {
+  state.profiles[targetName] = normalizeProfile({
     ...source,
     name: targetName,
     label,
-  };
+  });
 }
 
 export function deleteProfile(state: AppState, name: string): void {
@@ -377,7 +378,7 @@ function parseProfiles(
 
 function profileFromUnknown(name: string, raw: unknown): Profile {
   const data = isRecord(raw) ? raw : {};
-  return {
+  return normalizeProfile({
     name,
     label: asString(data.label, name),
     default_model: asString(data.default_model, DEFAULTS.default_model),
@@ -394,6 +395,14 @@ function profileFromUnknown(name: string, raw: unknown): Profile {
       data.merge_all_available_skills,
       DEFAULTS.merge_all_available_skills,
     ),
+  });
+}
+
+function normalizeProfile(profile: Profile): Profile {
+  return {
+    ...profile,
+    default_editor: "",
+    theme: "dark",
   };
 }
 

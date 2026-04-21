@@ -22,6 +22,8 @@ const api = {
     ipcRenderer.invoke("mcp:auth-server", name),
   resetMcpServerAuth: (name: string): Promise<{ ok: true; stdout: string; stderr: string }> =>
     ipcRenderer.invoke("mcp:reset-auth", name),
+  testProfileConnectivity: (state: AppState, profileName: string): Promise<{ ok: true; stdout: string; stderr: string }> =>
+    ipcRenderer.invoke("profile:test-connectivity", state, profileName),
   onTrayCommand: (callback: (command: TrayCommand) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, command: TrayCommand): void => callback(command);
     ipcRenderer.on("tray:command", listener);

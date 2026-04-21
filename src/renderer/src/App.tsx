@@ -7,15 +7,17 @@ import {
   ChevronDown,
   Copy,
   ExternalLink,
-  FileCog,
   FileInput,
+  FileText,
   Globe,
   Eye,
   EyeOff,
+  FolderOpen,
   Github,
   History,
   Info,
   Layers3,
+  LoaderCircle,
   Mail,
   MonitorCog,
   MoonStar,
@@ -43,6 +45,7 @@ import {
   upsertProfile,
   upsertProvider,
 } from "@shared/configStore";
+import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
 import type {
   AppState,
   Locale,
@@ -60,7 +63,7 @@ import { t, translateError } from "./i18n";
 import logoLight from "./assets/logo-light.png";
 import logoDark from "./assets/logo-dark.png";
 
-type TabId = "overview" | "profiles" | "providers" | "models" | "mcp" | "preview" | "settings" | "about";
+type TabId = "overview" | "profiles" | "providers" | "models" | "mcp" | "settings" | "about";
 type DiagnosticLevel = "ok" | "failed" | "pending" | "unavailable";
 type PreviewFileId = "config" | "profiles" | "panel" | "mcp";
 
@@ -71,13 +74,30 @@ interface DiagnosticsState {
   lastError: string;
 }
 
+type ConfirmDialogTone = "primary" | "danger";
+type ConfirmDialogKind = "save" | "delete";
+
+interface ConfirmDialogState {
+  title: string;
+  description?: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  tone: ConfirmDialogTone;
+  kind: ConfirmDialogKind;
+}
+
+interface DocumentViewerState {
+  title: string;
+  format: "TOML" | "JSON";
+  content: string;
+}
+
 const TAB_ITEMS: Array<{ id: TabId; icon: typeof Layers3; labelKey: string }> = [
   { id: "overview", icon: Sparkles, labelKey: "overview" },
   { id: "profiles", icon: Layers3, labelKey: "profiles" },
   { id: "providers", icon: Globe, labelKey: "providers" },
   { id: "models", icon: Boxes, labelKey: "models" },
   { id: "mcp", icon: Zap, labelKey: "mcp" },
-  { id: "preview", icon: FileCog, labelKey: "preview" },
   { id: "settings", icon: Settings2, labelKey: "settings" },
 ];
 
@@ -291,6 +311,140 @@ function collectDirtyKeys<T>(
   );
 }
 
+function isDraftEntry<T>(savedEntries: Record<string, T> | undefined, name: string): boolean {
+  return Boolean(name) && !savedEntries?.[name];
+}
+
+function createUniqueName(baseName: string, existingNames: string[]): string {
+  const normalizedBaseName = normalizeEntryName(baseName) || "item";
+  if (!existingNames.includes(normalizedBaseName)) {
+    return normalizedBaseName;
+  }
+
+  let index = 2;
+  while (existingNames.includes(`${normalizedBaseName}-${index}`)) {
+    index += 1;
+  }
+  return `${normalizedBaseName}-${index}`;
+}
+
+function updateModelReferences(state: AppState, currentName: string, nextName: string): void {
+  if (currentName === nextName) {
+    return;
+  }
+  for (const profile of Object.values(state.profiles)) {
+    if (profile.default_model === currentName) {
+      profile.default_model = nextName;
+    }
+  }
+  if (state.mainConfig.default_model === currentName) {
+    state.mainConfig.default_model = nextName;
+  }
+}
+
+function renameModelInState(
+  state: AppState,
+  currentName: string,
+  nextModel: {
+    provider: string;
+    model: string;
+    max_context_size: number;
+    capabilities: string[];
+  },
+): string {
+  const nextName = buildModelName(nextModel.provider, nextModel.model);
+  if (currentName !== nextName && state.mainConfig.models[nextName]) {
+    throw new Error(`Model already exists: ${nextName}`);
+  }
+
+  const nextModels = { ...state.mainConfig.models };
+  delete nextModels[currentName];
+  nextModels[nextName] = nextModel;
+  state.mainConfig.models = nextModels;
+  updateModelReferences(state, currentName, nextName);
+  return nextName;
+}
+
+function renameProviderInState(
+  state: AppState,
+  currentName: string,
+  nextNameInput: string,
+  nextProvider: {
+    type: string;
+    base_url: string;
+    api_key: string;
+  },
+): string {
+  const nextName = ensureUniqueEntryName({
+    kind: "Provider",
+    name: nextNameInput,
+    currentName,
+    existingNames: Object.keys(state.mainConfig.providers),
+  });
+
+  const dependentModels = Object.entries(state.mainConfig.models).filter(([, model]) => model.provider === currentName);
+  const dependentModelNames = new Set(dependentModels.map(([modelName]) => modelName));
+  const nextModelEntries = dependentModels.map(([modelName, model]) => {
+    const nextModelName = buildModelName(nextName, model.model);
+    return {
+      currentName: modelName,
+      nextName: nextModelName,
+      value: {
+        ...model,
+        provider: nextName,
+      },
+    };
+  });
+
+  const seenNames = new Set<string>();
+  for (const entry of nextModelEntries) {
+    if (seenNames.has(entry.nextName)) {
+      throw new Error(`Model already exists: ${entry.nextName}`);
+    }
+    seenNames.add(entry.nextName);
+    if (
+      entry.currentName !== entry.nextName &&
+      state.mainConfig.models[entry.nextName] &&
+      !dependentModelNames.has(entry.nextName)
+    ) {
+      throw new Error(`Model already exists: ${entry.nextName}`);
+    }
+  }
+
+  const nextProviders = { ...state.mainConfig.providers };
+  delete nextProviders[currentName];
+  nextProviders[nextName] = nextProvider;
+  state.mainConfig.providers = nextProviders;
+
+  const nextModels = { ...state.mainConfig.models };
+  for (const entry of nextModelEntries) {
+    delete nextModels[entry.currentName];
+  }
+  for (const entry of nextModelEntries) {
+    nextModels[entry.nextName] = entry.value;
+    updateModelReferences(state, entry.currentName, entry.nextName);
+  }
+  state.mainConfig.models = nextModels;
+
+  return nextName;
+}
+
+function getResourceLabel(
+  locale: Locale,
+  resource: "provider" | "model" | "profile" | "mcp",
+): string {
+  if (locale === "zh-CN") {
+    if (resource === "provider") return "提供方";
+    if (resource === "model") return "模型";
+    if (resource === "profile") return "Profile";
+    return "MCP";
+  }
+  if (resource === "provider") return "provider";
+  if (resource === "model") return "model";
+  if (resource === "profile") return "profile";
+  return "MCP";
+}
+
 export function App(): JSX.Element {
   const [state, setState] = useState<AppState | null>(null);
   const [savedState, setSavedState] = useState<AppState | null>(null);
@@ -299,12 +453,15 @@ export function App(): JSX.Element {
   const [selectedModel, setSelectedModel] = useState("");
   const [selectedProfile, setSelectedProfile] = useState("");
   const [selectedMcpServer, setSelectedMcpServer] = useState("");
-  const [selectedPreviewFile, setSelectedPreviewFile] = useState<PreviewFileId>("config");
   const [preview, setPreview] = useState<PreviewBundle>(emptyPreview);
+  const [documentViewer, setDocumentViewer] = useState<DocumentViewerState | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isMcpImportOpen, setIsMcpImportOpen] = useState(false);
   const [mcpImportDraft, setMcpImportDraft] = useState("");
+  const [mcpTestingName, setMcpTestingName] = useState("");
+  const [profileTestingName, setProfileTestingName] = useState("");
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsState>({
     preload: "pending",
     loadState: "pending",
@@ -312,6 +469,7 @@ export function App(): JSX.Element {
     lastError: "",
   });
   const unsavedResolutionRef = useRef(false);
+  const confirmResolverRef = useRef<((value: boolean) => void) | null>(null);
 
   useEffect(() => {
     void loadState();
@@ -335,6 +493,13 @@ export function App(): JSX.Element {
     const timer = setTimeout(() => setNotice(""), 5000);
     return () => clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    return () => {
+      confirmResolverRef.current?.(false);
+      confirmResolverRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     const api = getApi();
@@ -439,6 +604,32 @@ export function App(): JSX.Element {
     await persistState(state);
   };
 
+  const requestConfirm = (options: ConfirmDialogState): Promise<boolean> =>
+    new Promise((resolve) => {
+      confirmResolverRef.current?.(false);
+      confirmResolverRef.current = resolve;
+      setConfirmDialog(options);
+    });
+
+  const closeConfirmDialog = (confirmed: boolean): void => {
+    const resolver = confirmResolverRef.current;
+    confirmResolverRef.current = null;
+    setConfirmDialog(null);
+    resolver?.(confirmed);
+  };
+
+  const confirmDeleteResource = async (resourceLabel: string, name: string): Promise<boolean> =>
+    requestConfirm({
+      title: formatMessage(t(locale, "deleteResourceConfirm"), {
+        resource: resourceLabel,
+        name,
+      }),
+      confirmLabel: t(locale, "delete"),
+      cancelLabel: t(locale, "cancel"),
+      tone: "danger",
+      kind: "delete",
+    });
+
   const restoreSavedState = (nextSavedState: AppState): void => {
     const restored = normalizeStatePaths(cloneState(nextSavedState));
     setState(restored);
@@ -538,7 +729,14 @@ export function App(): JSX.Element {
     }
     unsavedResolutionRef.current = true;
     try {
-      const shouldSave = window.confirm(t(locale, "unsavedChangesConfirm"));
+      const shouldSave = await requestConfirm({
+        title: t(locale, "unsavedChangesTitle"),
+        description: t(locale, "unsavedChangesDescription"),
+        confirmLabel: t(locale, "save"),
+        cancelLabel: t(locale, "discardChanges"),
+        tone: "primary",
+        kind: "save",
+      });
       if (shouldSave) {
         await persistState(state);
       } else {
@@ -575,6 +773,10 @@ export function App(): JSX.Element {
   const modelEntries = Object.entries(state.mainConfig.models);
   const profileEntries = Object.entries(state.profiles);
   const mcpEntries = Object.entries(state.mcpConfig.mcpServers);
+  const selectedProviderName = selectedProvider || providerEntries[0]?.[0] || "";
+  const selectedModelName = selectedModel || modelEntries[0]?.[0] || "";
+  const selectedProfileName = selectedProfile || profileEntries[0]?.[0] || "";
+  const selectedMcpServerName = selectedMcpServer || mcpEntries[0]?.[0] || "";
 
   const selectedProviderData =
     (selectedProvider && state.mainConfig.providers[selectedProvider]) ||
@@ -586,6 +788,36 @@ export function App(): JSX.Element {
     (selectedProfile && state.profiles[selectedProfile]) || profileEntries[0]?.[1] || null;
   const selectedMcpServerData =
     (selectedMcpServer && state.mcpConfig.mcpServers[selectedMcpServer]) || mcpEntries[0]?.[1] || null;
+  const isProviderNameEditable = isDraftEntry(savedState?.mainConfig.providers, selectedProviderName);
+  const isProfileNameEditable = isDraftEntry(savedState?.profiles, selectedProfileName);
+  const isMcpServerNameEditable = isDraftEntry(savedState?.mcpConfig.mcpServers, selectedMcpServerName);
+
+  const openDocumentViewer = (file: PreviewFileId): void => {
+    const mapping: Record<PreviewFileId, DocumentViewerState> = {
+      config: {
+        title: t(locale, "previewConfig"),
+        format: "TOML",
+        content: preview.configDocument,
+      },
+      profiles: {
+        title: t(locale, "previewProfiles"),
+        format: "TOML",
+        content: preview.profilesDocument,
+      },
+      panel: {
+        title: t(locale, "previewPanel"),
+        format: "TOML",
+        content: preview.panelSettingsDocument,
+      },
+      mcp: {
+        title: t(locale, "previewMcp"),
+        format: "JSON",
+        content: preview.mcpDocument,
+      },
+    };
+
+    setDocumentViewer(mapping[file]);
+  };
 
   return (
     <div className="shell">
@@ -682,7 +914,6 @@ export function App(): JSX.Element {
           <OverviewDashboard
             state={state}
             locale={locale}
-            preview={preview}
             diagnostics={diagnostics}
             onActivateProfile={(name) =>
               updateState((draft) => {
@@ -717,42 +948,48 @@ export function App(): JSX.Element {
             addButtonContent={<Plus size={15} />}
             onAdd={() =>
               updateState((draft) => {
-                upsertProvider(draft, `provider_${Date.now()}`, {
+                const name = createUniqueName("provider", Object.keys(draft.mainConfig.providers));
+                upsertProvider(draft, name, {
                   type: "kimi",
                   base_url: "https://api.example.com/v1",
                   api_key: "",
                 });
-                setSelectedProvider(Object.keys(draft.mainConfig.providers).at(-1) ?? "");
+                setSelectedProvider(name);
               }, { persist: false })
             }
           >
             {selectedProviderData ? (
               <ProviderForm
                 locale={locale}
-                name={selectedProvider || providerEntries[0]?.[0] || ""}
+                name={selectedProviderName}
+                nameEditable={isProviderNameEditable}
                 value={selectedProviderData}
                 onChange={(name, patch) =>
                   updateState((draft) => {
-                    const currentName = selectedProvider || providerEntries[0]?.[0] || name;
-                    const nextProviders = { ...draft.mainConfig.providers };
-                    delete nextProviders[currentName];
-                    nextProviders[name] = { ...selectedProviderData, ...patch };
-                    draft.mainConfig.providers = nextProviders;
-                    for (const model of Object.values(draft.mainConfig.models)) {
-                      if (model.provider === currentName) {
-                        model.provider = name;
-                      }
+                    const currentName = selectedProviderName;
+                    const currentProvider = draft.mainConfig.providers[currentName];
+                    if (!currentProvider) return;
+                    const nextProvider = { ...currentProvider, ...patch };
+                    const nextName = isProviderNameEditable
+                      ? renameProviderInState(draft, currentName, name, nextProvider)
+                      : currentName;
+
+                    if (!isProviderNameEditable) {
+                      draft.mainConfig.providers[currentName] = nextProvider;
                     }
-                    setSelectedProvider(name);
+                    setSelectedProvider(nextName);
                   }, { persist: false })
                 }
                 onSave={() => void onSave()}
-                onDelete={() =>
-                  updateState((draft) => {
-                    deleteProvider(draft, selectedProvider || providerEntries[0]?.[0] || "");
-                    setSelectedProvider(Object.keys(draft.mainConfig.providers)[0] ?? "");
-                  }, { persist: false })
-                }
+                onDelete={() => {
+                  void (async () => {
+                    if (!(await confirmDeleteResource(getResourceLabel(locale, "provider"), selectedProviderName))) return;
+                    updateState((draft) => {
+                      deleteProvider(draft, selectedProviderName);
+                      setSelectedProvider(Object.keys(draft.mainConfig.providers)[0] ?? "");
+                    });
+                  })();
+                }}
               />
             ) : (
               <EmptyState locale={locale} />
@@ -773,9 +1010,13 @@ export function App(): JSX.Element {
               updateState((draft) => {
                 const model = draft.mainConfig.models[name];
                 if (!model) return;
-                const copyName = createCopyName(name, draft.mainConfig.models);
+                const copyModelId = createUniqueName(`${model.model}-copy`, Object.values(draft.mainConfig.models)
+                  .filter((entry) => entry.provider === model.provider)
+                  .map((entry) => entry.model));
+                const copyName = buildModelName(model.provider, copyModelId);
                 draft.mainConfig.models[copyName] = {
                   ...model,
+                  model: copyModelId,
                   capabilities: [...model.capabilities],
                 };
                 setSelectedModel(copyName);
@@ -791,13 +1032,20 @@ export function App(): JSX.Element {
                 if (!providerName) {
                   throw new Error("Please create a provider first.");
                 }
-                upsertModel(draft, `${providerName}/new-model`, {
+                const modelId = createUniqueName(
+                  "new-model",
+                  Object.values(draft.mainConfig.models)
+                    .filter((model) => model.provider === providerName)
+                    .map((model) => model.model),
+                );
+                const name = buildModelName(providerName, modelId);
+                upsertModel(draft, name, {
                   provider: providerName,
-                  model: "new-model",
+                  model: modelId,
                   max_context_size: 128000,
                   capabilities: [],
                 });
-                setSelectedModel(Object.keys(draft.mainConfig.models).at(-1) ?? "");
+                setSelectedModel(name);
               }, { persist: false })
             }
           >
@@ -805,33 +1053,33 @@ export function App(): JSX.Element {
               <ModelForm
                 locale={locale}
                 providers={Object.keys(state.mainConfig.providers)}
-                name={selectedModel || modelEntries[0]?.[0] || ""}
+                name={selectedModelName}
                 value={selectedModelData}
                 onChange={(name, patch) =>
                   updateState((draft) => {
-                    const currentName = selectedModel || modelEntries[0]?.[0] || name;
-                    const nextModels = { ...draft.mainConfig.models };
-                    delete nextModels[currentName];
-                    nextModels[name] = { ...selectedModelData, ...patch };
-                    draft.mainConfig.models = nextModels;
-                    for (const profile of Object.values(draft.profiles)) {
-                      if (profile.default_model === currentName) {
-                        profile.default_model = name;
-                      }
-                    }
-                    if (draft.mainConfig.default_model === currentName) {
-                      draft.mainConfig.default_model = name;
-                    }
-                    setSelectedModel(name);
+                    const currentName = selectedModelName;
+                    const currentModel = draft.mainConfig.models[currentName];
+                    if (!currentModel) return;
+                    const nextModel = {
+                      ...currentModel,
+                      ...patch,
+                      provider: normalizeEntryName(patch.provider ?? currentModel.provider),
+                      model: normalizeEntryName(patch.model ?? currentModel.model),
+                    };
+                    const nextName = renameModelInState(draft, currentName, nextModel);
+                    setSelectedModel(nextName);
                   }, { persist: false })
                 }
                 onSave={() => void onSave()}
-                onDelete={() =>
-                  updateState((draft) => {
-                    deleteModel(draft, selectedModel || modelEntries[0]?.[0] || "");
-                    setSelectedModel(Object.keys(draft.mainConfig.models)[0] ?? "");
-                  }, { persist: false })
-                }
+                onDelete={() => {
+                  void (async () => {
+                    if (!(await confirmDeleteResource(getResourceLabel(locale, "model"), selectedModelName))) return;
+                    updateState((draft) => {
+                      deleteModel(draft, selectedModelName);
+                      setSelectedModel(Object.keys(draft.mainConfig.models)[0] ?? "");
+                    });
+                  })();
+                }}
               />
             ) : (
               <EmptyState locale={locale} />
@@ -868,8 +1116,9 @@ export function App(): JSX.Element {
                 if (!firstModel) {
                   throw new Error("Please create a model first.");
                 }
+                const name = createUniqueName("profile", Object.keys(draft.profiles));
                 upsertProfile(draft, {
-                  name: `profile_${Date.now()}`,
+                  name,
                   label: "New Profile",
                   default_model: firstModel,
                   default_thinking: true,
@@ -880,7 +1129,7 @@ export function App(): JSX.Element {
                   show_thinking_stream: false,
                   merge_all_available_skills: false,
                 });
-                setSelectedProfile(Object.keys(draft.profiles).at(-1) ?? "");
+                setSelectedProfile(name);
               }, { persist: false })
             }
             renderItemAction={(name) =>
@@ -910,41 +1159,79 @@ export function App(): JSX.Element {
               <ProfileForm
                 locale={locale}
                 models={Object.keys(state.mainConfig.models)}
-                name={selectedProfile || profileEntries[0]?.[0] || ""}
+                name={selectedProfileName}
+                nameEditable={isProfileNameEditable}
                 value={selectedProfileData}
-                isActive={(selectedProfile || profileEntries[0]?.[0] || "") === state.activeProfile}
+                isActive={selectedProfileName === state.activeProfile}
+                isTesting={profileTestingName === selectedProfileName}
                 onChange={(name, nextProfile) =>
                   updateState((draft) => {
-                    const currentName = selectedProfile || profileEntries[0]?.[0] || name;
+                    const currentName = selectedProfileName;
+                    const normalizedName = isProfileNameEditable
+                      ? ensureUniqueEntryName({
+                          kind: "Profile",
+                          name,
+                          currentName,
+                          existingNames: Object.keys(draft.profiles),
+                        })
+                      : currentName;
+                    const normalizedProfile = {
+                      ...nextProfile,
+                      default_editor: "",
+                      theme: "dark",
+                    };
                     const nextProfiles = { ...draft.profiles };
                     delete nextProfiles[currentName];
-                    nextProfiles[name] = { ...nextProfile, name };
+                    nextProfiles[normalizedName] = { ...normalizedProfile, name: normalizedName };
                     if (draft.activeProfile === currentName) {
-                      draft.activeProfile = name;
+                      draft.activeProfile = normalizedName;
                     }
                     draft.profiles = nextProfiles;
-                    setSelectedProfile(name);
+                    setSelectedProfile(normalizedName);
                   }, { persist: false })
                 }
                 onSave={() => void onSave()}
+                onTest={async () => {
+                  const api = getApi();
+                  if (!api || typeof api.testProfileConnectivity !== "function") {
+                    setNotice("");
+                    setError(t(locale, "profileRuntimeOutdated"));
+                    return;
+                  }
+                  try {
+                    setProfileTestingName(selectedProfileName);
+                    await api.testProfileConnectivity(state, selectedProfileName);
+                    setError("");
+                    setNotice(t(locale, "profileTestSuccess"));
+                  } catch (testError) {
+                    const message = testError instanceof Error ? testError.message : String(testError);
+                    setNotice("");
+                    setError(translateError(locale, message));
+                  } finally {
+                    setProfileTestingName("");
+                  }
+                }}
                 onActivate={() =>
                   updateState((draft) => {
-                    applyProfile(draft, selectedProfile || profileEntries[0]?.[0] || "");
+                    applyProfile(draft, selectedProfileName);
                   })
                 }
                 onClone={() =>
                   updateState((draft) => {
-                    const source = selectedProfile || profileEntries[0]?.[0] || "";
+                    const source = selectedProfileName;
                     cloneProfile(draft, source, `${source}-copy`, `${selectedProfileData.label} Copy`);
                     setSelectedProfile(`${source}-copy`);
                   }, { persist: false })
                 }
-                onDelete={() =>
-                  updateState((draft) => {
-                    deleteProfile(draft, selectedProfile || profileEntries[0]?.[0] || "");
-                    setSelectedProfile(Object.keys(draft.profiles)[0] ?? "");
-                  }, { persist: false })
-                }
+                onDelete={() => {
+                  void (async () => {
+                    if (!(await confirmDeleteResource(getResourceLabel(locale, "profile"), selectedProfileName))) return;
+                    updateState((draft) => {
+                      deleteProfile(draft, selectedProfileName);
+                      setSelectedProfile(Object.keys(draft.profiles)[0] ?? "");
+                    });
+                  })();
+                }}
               />
             ) : (
               <EmptyState locale={locale} />
@@ -963,7 +1250,7 @@ export function App(): JSX.Element {
             addLabel={t(locale, "newMcpServer")}
             onAdd={() =>
               updateState((draft) => {
-                const name = `mcp_${Date.now()}`;
+                const name = createUniqueName("mcp", Object.keys(draft.mcpConfig.mcpServers));
                 draft.mcpConfig.mcpServers[name] = createDefaultMcpServer();
                 setSelectedMcpServer(name);
               }, { persist: false })
@@ -975,7 +1262,7 @@ export function App(): JSX.Element {
                 aria-label={t(locale, "importMcpJson")}
                 title={t(locale, "importMcpJson")}
                 onClick={() => {
-                  setIsMcpImportOpen((current) => !current);
+                  setIsMcpImportOpen(true);
                   setMcpImportDraft((current) => current || t(locale, "mcpImportPlaceholder"));
                 }}
               >
@@ -1015,14 +1302,17 @@ export function App(): JSX.Element {
                     type="button"
                     aria-label={`${t(locale, "delete")} ${name}`}
                     title={t(locale, "delete")}
-                    onClick={() =>
-                      updateState((draft) => {
-                        delete draft.mcpConfig.mcpServers[name];
-                        if (selectedMcpServer === name) {
-                          setSelectedMcpServer(Object.keys(draft.mcpConfig.mcpServers)[0] ?? "");
-                        }
-                      }, { persist: false })
-                    }
+                    onClick={() => {
+                      void (async () => {
+                        if (!(await confirmDeleteResource(getResourceLabel(locale, "mcp"), name))) return;
+                        updateState((draft) => {
+                          delete draft.mcpConfig.mcpServers[name];
+                          if (selectedMcpServer === name) {
+                            setSelectedMcpServer(Object.keys(draft.mcpConfig.mcpServers)[0] ?? "");
+                          }
+                        });
+                      })();
+                    }}
                   >
                     <Trash2 size={15} />
                   </button>
@@ -1031,50 +1321,13 @@ export function App(): JSX.Element {
             }}
           >
             <div className="mcp-workspace">
-              {isMcpImportOpen ? (
-                <McpImportPanel
-                  locale={locale}
-                  value={mcpImportDraft}
-                  onChange={setMcpImportDraft}
-                  onCancel={() => {
-                    setIsMcpImportOpen(false);
-                    setMcpImportDraft("");
-                  }}
-                  onImport={() => {
-                    try {
-                      const imported = parseMcpConfigStrict(mcpImportDraft);
-                      const importedNames = Object.keys(imported.mcpServers);
-                      if (!importedNames.length) {
-                        setNotice("");
-                        setError(t(locale, "mcpImportInvalid"));
-                        return;
-                      }
-
-                      updateState((draft) => {
-                        draft.mcpConfig.mcpServers = {
-                          ...draft.mcpConfig.mcpServers,
-                          ...imported.mcpServers,
-                        };
-                        setSelectedMcpServer(importedNames[0] ?? "");
-                      }, { persist: false });
-
-                      setIsMcpImportOpen(false);
-                      setMcpImportDraft("");
-                      setError("");
-                      setNotice(t(locale, "mcpImportSuccess"));
-                    } catch (importError) {
-                      const message = importError instanceof Error ? importError.message : String(importError);
-                      setNotice("");
-                      setError(`${t(locale, "mcpImportInvalid")} ${message}`);
-                    }
-                  }}
-                />
-              ) : null}
               {selectedMcpServerData ? (
                 <McpServerForm
                   locale={locale}
-                  name={selectedMcpServer || mcpEntries[0]?.[0] || ""}
+                  name={selectedMcpServerName}
+                  nameEditable={isMcpServerNameEditable}
                   value={selectedMcpServerData}
+                  isTesting={mcpTestingName === selectedMcpServerName}
                   onRunAction={async (action, serverName) => {
                     const api = getApi();
                     const runAction = getMcpAction(api, action);
@@ -1088,6 +1341,9 @@ export function App(): JSX.Element {
                       return;
                     }
                     try {
+                      if (action === "test") {
+                        setMcpTestingName(serverName);
+                      }
                       await persistState(state);
                       await runAction(serverName);
                       setError("");
@@ -1096,43 +1352,46 @@ export function App(): JSX.Element {
                       const message = commandError instanceof Error ? commandError.message : String(commandError);
                       setNotice("");
                       setError(translateError(locale, message));
+                    } finally {
+                      if (action === "test") {
+                        setMcpTestingName("");
+                      }
                     }
                   }}
                   onChange={(name, nextServer) =>
                     updateState((draft) => {
-                      const currentName = selectedMcpServer || mcpEntries[0]?.[0] || name;
+                      const currentName = selectedMcpServerName;
+                      const normalizedName = isMcpServerNameEditable
+                        ? ensureUniqueEntryName({
+                            kind: "MCP server",
+                            name,
+                            currentName,
+                            existingNames: Object.keys(draft.mcpConfig.mcpServers),
+                          })
+                        : currentName;
                       const nextServers = { ...draft.mcpConfig.mcpServers };
                       delete nextServers[currentName];
-                      nextServers[name] = nextServer;
+                      nextServers[normalizedName] = nextServer;
                       draft.mcpConfig.mcpServers = nextServers;
-                      setSelectedMcpServer(name);
+                      setSelectedMcpServer(normalizedName);
                     }, { persist: false })
                   }
                   onSave={() => void onSave()}
-                  onDelete={() =>
-                    updateState((draft) => {
-                      const currentName = selectedMcpServer || mcpEntries[0]?.[0] || "";
-                      delete draft.mcpConfig.mcpServers[currentName];
-                      setSelectedMcpServer(Object.keys(draft.mcpConfig.mcpServers)[0] ?? "");
-                    }, { persist: false })
-                  }
+                  onDelete={() => {
+                    void (async () => {
+                      if (!(await confirmDeleteResource(getResourceLabel(locale, "mcp"), selectedMcpServerName))) return;
+                      updateState((draft) => {
+                        delete draft.mcpConfig.mcpServers[selectedMcpServerName];
+                        setSelectedMcpServer(Object.keys(draft.mcpConfig.mcpServers)[0] ?? "");
+                      });
+                    })();
+                  }}
                 />
               ) : (
                 <EmptyState locale={locale} />
               )}
             </div>
           </SplitLayout>
-        ) : null}
-
-        {activeTab === "preview" ? (
-          <section className="preview-grid">
-            <PreviewWorkspace
-              locale={locale}
-              preview={preview}
-              selectedFile={selectedPreviewFile}
-              onSelectFile={setSelectedPreviewFile}
-            />
-          </section>
         ) : null}
 
         {activeTab === "settings" ? (
@@ -1143,6 +1402,7 @@ export function App(): JSX.Element {
                 locale={locale}
                 label={t(locale, "configPath")}
                 value={state.configPath}
+                onView={() => openDocumentViewer("config")}
                 onChange={(value) =>
                   updateState((draft) => {
                     draft.configPath = value;
@@ -1154,6 +1414,7 @@ export function App(): JSX.Element {
                 locale={locale}
                 label={t(locale, "profilesPath")}
                 value={state.profilesPath}
+                onView={() => openDocumentViewer("profiles")}
                 onChange={(value) =>
                   updateState((draft) => {
                     draft.profilesPath = value;
@@ -1166,13 +1427,22 @@ export function App(): JSX.Element {
                 locale={locale}
                 label={t(locale, "panelSettingsPath")}
                 value={state.panelSettingsPath}
+                onView={() => openDocumentViewer("panel")}
                 onChange={(value) =>
                   updateState((draft) => {
                     draft.panelSettingsPath = value;
                   })
                 }
               />
-              <ReadOnlyField label={t(locale, "mcpConfigPathLabel")} value={state.mcpConfigPath} />
+              <PathField
+                locale={locale}
+                label={t(locale, "mcpConfigPathLabel")}
+                value={state.mcpConfigPath}
+                readOnly
+                fileType="json"
+                onView={() => openDocumentViewer("mcp")}
+                onChange={() => {}}
+              />
             </SettingsGroup>
             <SettingsGroup title={t(locale, "settingsGroupAppearance")}>
               <SelectField
@@ -1269,6 +1539,58 @@ export function App(): JSX.Element {
           <AboutPage locale={locale} />
         ) : null}
       </main>
+      {confirmDialog ? (
+        <ConfirmDialog
+          {...confirmDialog}
+          onConfirm={() => closeConfirmDialog(true)}
+          onCancel={() => closeConfirmDialog(false)}
+        />
+      ) : null}
+      {documentViewer ? (
+        <DocumentViewerDialog
+          {...documentViewer}
+          onClose={() => setDocumentViewer(null)}
+        />
+      ) : null}
+      {isMcpImportOpen ? (
+        <McpImportDialog
+          locale={locale}
+          value={mcpImportDraft}
+          onChange={setMcpImportDraft}
+          onCancel={() => {
+            setIsMcpImportOpen(false);
+            setMcpImportDraft("");
+          }}
+          onImport={() => {
+            try {
+              const imported = parseMcpConfigStrict(mcpImportDraft);
+              const importedNames = Object.keys(imported.mcpServers);
+              if (!importedNames.length) {
+                setNotice("");
+                setError(t(locale, "mcpImportInvalid"));
+                return;
+              }
+
+              updateState((draft) => {
+                draft.mcpConfig.mcpServers = {
+                  ...draft.mcpConfig.mcpServers,
+                  ...imported.mcpServers,
+                };
+                setSelectedMcpServer(importedNames[0] ?? "");
+              }, { persist: false });
+
+              setIsMcpImportOpen(false);
+              setMcpImportDraft("");
+              setError("");
+              setNotice(t(locale, "mcpImportSuccess"));
+            } catch (importError) {
+              const message = importError instanceof Error ? importError.message : String(importError);
+              setNotice("");
+              setError(`${t(locale, "mcpImportInvalid")} ${message}`);
+            }
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -1279,6 +1601,75 @@ function SummaryCard(props: { label: string; value: string; note?: string; title
       <span>{props.label}</span>
       <strong>{props.value}</strong>
       {props.note ? <small>{props.note}</small> : null}
+    </div>
+  );
+}
+
+function ConfirmDialog(
+  props: ConfirmDialogState & {
+    onConfirm: () => void;
+    onCancel: () => void;
+  },
+): JSX.Element {
+  const Icon = props.kind === "delete" ? Trash2 : Save;
+
+  return (
+    <div className="confirm-dialog-backdrop" role="presentation">
+      <section className="confirm-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+        <div className="confirm-dialog-header">
+          <div className={props.tone === "danger" ? "confirm-dialog-icon danger" : "confirm-dialog-icon"}>
+            <Icon size={20} />
+          </div>
+          <div className="confirm-dialog-copy">
+            <h3 id="confirm-dialog-title">{props.title}</h3>
+            {props.description ? <p>{props.description}</p> : null}
+          </div>
+        </div>
+        <div className="confirm-dialog-actions">
+          <button className="action-button" type="button" onClick={props.onCancel}>
+            {props.cancelLabel}
+          </button>
+          <button
+            className={
+              props.tone === "danger"
+                ? "action-button confirm-dialog-confirm danger"
+                : "action-button action-button-primary confirm-dialog-confirm"
+            }
+            type="button"
+            onClick={props.onConfirm}
+          >
+            {props.confirmLabel}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function DocumentViewerDialog(
+  props: DocumentViewerState & {
+    onClose: () => void;
+  },
+): JSX.Element {
+  return (
+    <div className="document-viewer-backdrop" role="presentation">
+      <section className="document-viewer glass-panel" role="dialog" aria-modal="true" aria-labelledby="document-viewer-title">
+        <div className="document-viewer-header">
+          <div className="document-viewer-title">
+            <div className="document-viewer-icon">
+              <FileText size={18} />
+            </div>
+            <div>
+              <h3 id="document-viewer-title">{props.title}</h3>
+              <p>{props.format}</p>
+            </div>
+          </div>
+          <button className="action-button compact icon-only" type="button" aria-label="Close" onClick={props.onClose}>
+            <X size={16} />
+          </button>
+        </div>
+        <CodePanel title={props.format} content={props.content} />
+      </section>
     </div>
   );
 }
@@ -1497,6 +1888,7 @@ function fromRecordEntries(entries: Array<{ key: string; value: string }>): Reco
 function ProviderForm(props: {
   locale: Locale;
   name: string;
+  nameEditable: boolean;
   value: { type: string; base_url: string; api_key: string };
   onChange: (name: string, patch: { type?: string; base_url?: string; api_key?: string }) => void;
   onSave: () => void;
@@ -1515,7 +1907,11 @@ function ProviderForm(props: {
   return (
     <section className="glass-panel form-panel">
       <div className="section-title">{props.locale === "zh-CN" ? "Provider 编辑" : "Provider Editor"}</div>
-      <Field label={t(props.locale, "formName")} value={props.name} onChange={(value) => props.onChange(value, {})} />
+      {props.nameEditable ? (
+        <Field label={t(props.locale, "formName")} value={props.name} onChange={(value) => props.onChange(value, {})} />
+      ) : (
+        <ReadOnlyField label={t(props.locale, "formName")} value={props.name} />
+      )}
       <SelectField
         label={t(props.locale, "formType")}
         value={props.value.type}
@@ -1606,14 +2002,18 @@ function ModelForm(props: {
   return (
     <section className="glass-panel form-panel">
       <div className="section-title">{props.locale === "zh-CN" ? "Model 编辑" : "Model Editor"}</div>
-      <Field label={t(props.locale, "formName")} value={props.name} onChange={(value) => props.onChange(value, {})} />
+      <ReadOnlyField label={t(props.locale, "formName")} value={props.name} />
       <SelectField
         label={t(props.locale, "formProvider")}
         value={props.value.provider}
         onChange={(value) => props.onChange(props.name, { provider: value })}
         options={props.providers.map((provider) => ({ value: provider, label: provider }))}
       />
-      <Field label={t(props.locale, "formModel")} value={props.value.model} onChange={(value) => props.onChange(props.name, { model: value })} />
+      <Field
+        label={t(props.locale, "formModel")}
+        value={props.value.model}
+        onChange={(value) => props.onChange(props.name, { model: normalizeEntryName(value) })}
+      />
       <Field
         label={t(props.locale, "formContextSize")}
         value={String(props.value.max_context_size)}
@@ -1641,7 +2041,9 @@ function ModelForm(props: {
 function McpServerForm(props: {
   locale: Locale;
   name: string;
+  nameEditable: boolean;
   value: McpServerConfig;
+  isTesting: boolean;
   onRunAction: (action: "test" | "auth" | "reset-auth", name: string) => Promise<void>;
   onChange: (name: string, value: McpServerConfig) => void;
   onSave: () => void;
@@ -1655,7 +2057,11 @@ function McpServerForm(props: {
   return (
     <section className="glass-panel form-panel">
       <div className="section-title">{props.locale === "zh-CN" ? "MCP 编辑" : "MCP Editor"}</div>
-      <Field label={t(props.locale, "formName")} value={props.name} onChange={(next) => props.onChange(next, { ...props.value })} />
+      {props.nameEditable ? (
+        <Field label={t(props.locale, "formName")} value={props.name} onChange={(next) => props.onChange(next, { ...props.value })} />
+      ) : (
+        <ReadOnlyField label={t(props.locale, "formName")} value={props.name} />
+      )}
       <SelectField
         label={t(props.locale, "formTransport")}
         value={props.value.transport}
@@ -1709,8 +2115,14 @@ function McpServerForm(props: {
           <Save size={16} />
           <span>{t(props.locale, "saveMcpServer")}</span>
         </button>
-        <button className="action-button" onClick={() => void props.onRunAction("test", props.name)}>
-          {t(props.locale, "mcpTest")}
+        <button
+          className={props.isTesting ? "action-button is-loading" : "action-button"}
+          type="button"
+          disabled={props.isTesting}
+          onClick={() => void props.onRunAction("test", props.name)}
+        >
+          {props.isTesting ? <LoaderCircle size={16} className="button-spinner" /> : null}
+          <span>{props.isTesting ? t(props.locale, "mcpTesting") : t(props.locale, "mcpTest")}</span>
         </button>
         <button className="action-button danger" onClick={props.onDelete}>{t(props.locale, "delete")}</button>
       </div>
@@ -1718,7 +2130,7 @@ function McpServerForm(props: {
   );
 }
 
-function McpImportPanel(props: {
+function McpImportDialog(props: {
   locale: Locale;
   value: string;
   onChange: (value: string) => void;
@@ -1726,28 +2138,37 @@ function McpImportPanel(props: {
   onCancel: () => void;
 }): JSX.Element {
   return (
-    <section className="glass-panel form-panel mcp-import-panel">
-      <div className="section-title">{t(props.locale, "importMcpJson")}</div>
-      <p className="mcp-import-hint">{t(props.locale, "mcpImportHint")}</p>
-      <label className="field">
-        <span>{t(props.locale, "pasteMcpJson")}</span>
-        <textarea
-          className="mcp-import-textarea"
-          rows={10}
-          value={props.value}
-          placeholder={t(props.locale, "mcpImportPlaceholder")}
-          onChange={(event) => props.onChange(event.target.value)}
-        />
-      </label>
-      <div className="button-row">
-        <button className="action-button action-button-primary" type="button" onClick={props.onImport}>
-          <span>{t(props.locale, "mcpImportApply")}</span>
-        </button>
-        <button className="action-button" type="button" onClick={props.onCancel}>
-          <span>{t(props.locale, "mcpImportCancel")}</span>
-        </button>
-      </div>
-    </section>
+    <div className="mcp-import-backdrop" role="presentation">
+      <section className="glass-panel form-panel mcp-import-dialog" role="dialog" aria-modal="true" aria-labelledby="mcp-import-title">
+        <div className="mcp-import-header">
+          <div>
+            <div className="section-title" id="mcp-import-title">{t(props.locale, "importMcpJson")}</div>
+            <p className="mcp-import-hint">{t(props.locale, "mcpImportHint")}</p>
+          </div>
+          <button className="action-button compact icon-only" type="button" aria-label={t(props.locale, "cancel")} onClick={props.onCancel}>
+            <X size={16} />
+          </button>
+        </div>
+        <label className="field">
+          <span>{t(props.locale, "pasteMcpJson")}</span>
+          <textarea
+            className="mcp-import-textarea"
+            rows={12}
+            value={props.value}
+            placeholder={t(props.locale, "mcpImportPlaceholder")}
+            onChange={(event) => props.onChange(event.target.value)}
+          />
+        </label>
+        <div className="button-row">
+          <button className="action-button action-button-primary" type="button" onClick={props.onImport}>
+            <span>{t(props.locale, "mcpImportApply")}</span>
+          </button>
+          <button className="action-button" type="button" onClick={props.onCancel}>
+            <span>{t(props.locale, "mcpImportCancel")}</span>
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -1755,10 +2176,13 @@ function ProfileForm(props: {
   locale: Locale;
   models: string[];
   name: string;
+  nameEditable: boolean;
   value: Profile;
   isActive: boolean;
+  isTesting: boolean;
   onChange: (name: string, value: Profile) => void;
   onSave: () => void;
+  onTest: () => void;
   onActivate: () => void;
   onClone: () => void;
   onDelete: () => void;
@@ -1767,7 +2191,11 @@ function ProfileForm(props: {
   return (
     <section className="glass-panel form-panel">
       <div className="section-title">{props.locale === "zh-CN" ? "Profile 编辑" : "Profile Editor"}</div>
-      <Field label={t(props.locale, "formName")} value={props.name} onChange={(next) => props.onChange(next, { ...value, name: next })} />
+      {props.nameEditable ? (
+        <Field label={t(props.locale, "formName")} value={props.name} onChange={(next) => props.onChange(next, { ...value, name: next })} />
+      ) : (
+        <ReadOnlyField label={t(props.locale, "formName")} value={props.name} />
+      )}
       <Field label={t(props.locale, "formLabel")} value={value.label} onChange={(next) => props.onChange(props.name, { ...value, label: next })} />
       <SelectField
         label={t(props.locale, "formDefaultModel")}
@@ -1775,7 +2203,6 @@ function ProfileForm(props: {
         onChange={(next) => props.onChange(props.name, { ...value, default_model: next })}
         options={props.models.map((model) => ({ value: model, label: model }))}
       />
-      <Field label={t(props.locale, "formEditor")} value={value.default_editor} onChange={(next) => props.onChange(props.name, { ...value, default_editor: next })} />
       <Toggle label={t(props.locale, "formThinking")} checked={value.default_thinking} onChange={(checked) => props.onChange(props.name, { ...value, default_thinking: checked })} />
       <Toggle label={t(props.locale, "formYolo")} checked={value.default_yolo} onChange={(checked) => props.onChange(props.name, { ...value, default_yolo: checked })} />
       <Toggle label={t(props.locale, "formPlanMode")} checked={value.default_plan_mode} onChange={(checked) => props.onChange(props.name, { ...value, default_plan_mode: checked })} />
@@ -1785,6 +2212,15 @@ function ProfileForm(props: {
         <button className="action-button action-button-primary" onClick={props.onSave}>
           <Save size={16} />
           <span>{t(props.locale, "saveProfile")}</span>
+        </button>
+        <button
+          className={props.isTesting ? "action-button is-loading" : "action-button"}
+          type="button"
+          disabled={props.isTesting}
+          onClick={props.onTest}
+        >
+          {props.isTesting ? <LoaderCircle size={16} className="button-spinner" /> : null}
+          <span>{props.isTesting ? t(props.locale, "profileTesting") : t(props.locale, "profileTest")}</span>
         </button>
         <button className={props.isActive ? "action-button action-button-primary" : "action-button"} onClick={props.onActivate}>{t(props.locale, "activate")}</button>
         <button className="action-button" onClick={props.onClone}>{t(props.locale, "clone")}</button>
@@ -2085,27 +2521,63 @@ function PathField(props: {
   locale: Locale;
   label: string;
   value: string;
+  readOnly?: boolean;
+  fileType?: "toml" | "json";
+  onView?: () => void;
   onChange: (value: string) => void;
 }): JSX.Element {
   const pickFile = async (): Promise<void> => {
+    if (props.readOnly) {
+      return;
+    }
     const api = getApi();
     if (!api) {
       return;
     }
     const result = await api.pickFile({
       title: props.label,
-      filters: [{ name: "TOML", extensions: ["toml"] }],
+      filters: [{ name: (props.fileType ?? "toml").toUpperCase(), extensions: [props.fileType ?? "toml"] }],
     });
     if (!result.canceled && result.filePath) {
       props.onChange(result.filePath);
     }
   };
   return (
-    <div className="field-row">
-      <Field label={props.label} value={props.value} onChange={props.onChange} />
-      <button className="action-button compact" onClick={() => void pickFile()}>
-        {t(props.locale, "browse")}
-      </button>
+    <div className="field">
+      <span>{props.label}</span>
+      <div className="field-row">
+        <input
+          value={props.value}
+          readOnly={props.readOnly}
+          disabled={props.readOnly}
+          className={props.readOnly ? "field-input-disabled" : undefined}
+          onChange={(event) => props.onChange(event.target.value)}
+        />
+        <div className="field-row-actions">
+          {props.onView ? (
+            <button
+              className="action-button compact icon-only"
+              type="button"
+              aria-label={t(props.locale, "view")}
+              title={t(props.locale, "view")}
+              onClick={props.onView}
+            >
+              <Eye size={16} />
+            </button>
+          ) : null}
+          {!props.readOnly ? (
+            <button
+              className="action-button compact icon-only"
+              type="button"
+              aria-label={t(props.locale, "browse")}
+              title={t(props.locale, "browse")}
+              onClick={() => void pickFile()}
+            >
+              <FolderOpen size={16} />
+            </button>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
@@ -2309,89 +2781,6 @@ function Toggle(props: { label: string; checked: boolean; onChange: (checked: bo
   );
 }
 
-function PreviewWorkspace(props: {
-  locale: Locale;
-  preview: PreviewBundle;
-  selectedFile: PreviewFileId;
-  onSelectFile: (file: PreviewFileId) => void;
-}): JSX.Element {
-  const previewItems: Array<{
-    id: PreviewFileId;
-    title: string;
-    format: "TOML" | "JSON";
-    document: string;
-    diff: string;
-  }> = [
-    {
-      id: "config",
-      title: t(props.locale, "previewConfig"),
-      format: "TOML",
-      document: props.preview.configDocument,
-      diff: props.preview.configDiff,
-    },
-    {
-      id: "profiles",
-      title: t(props.locale, "previewProfiles"),
-      format: "TOML",
-      document: props.preview.profilesDocument,
-      diff: props.preview.profilesDiff,
-    },
-    {
-      id: "panel",
-      title: t(props.locale, "previewPanel"),
-      format: "TOML",
-      document: props.preview.panelSettingsDocument,
-      diff: props.preview.panelDiff,
-    },
-    {
-      id: "mcp",
-      title: t(props.locale, "previewMcp"),
-      format: "JSON",
-      document: props.preview.mcpDocument,
-      diff: props.preview.mcpDiff,
-    },
-  ];
-  const selectedItem = previewItems.find((item) => item.id === props.selectedFile) ?? previewItems[0];
-
-  return (
-    <section className="glass-panel preview-workspace">
-      <div className="preview-tabs" role="tablist" aria-label={t(props.locale, "preview")}>
-        {previewItems.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            role="tab"
-            aria-selected={item.id === selectedItem.id}
-            className={item.id === selectedItem.id ? "preview-tab active" : "preview-tab"}
-            onClick={() => props.onSelectFile(item.id)}
-          >
-            {item.title}
-          </button>
-        ))}
-      </div>
-      <PreviewCard
-        title={selectedItem.title}
-        document={selectedItem.document}
-        diff={selectedItem.diff}
-        locale={props.locale}
-        format={selectedItem.format}
-      />
-    </section>
-  );
-}
-
-function PreviewCard(props: { title: string; document: string; diff: string; locale: Locale; format: "TOML" | "JSON" }): JSX.Element {
-  return (
-    <section className="preview-card">
-      <div className="section-title">{props.title}</div>
-      <div className="preview-columns">
-        <CodePanel title={props.format} content={props.document} />
-        <DiffPanel title={t(props.locale, "diff")} content={props.diff} />
-      </div>
-    </section>
-  );
-}
-
 function CodePanel(props: { title: string; content: string }): JSX.Element {
   return (
     <div className="code-panel">
@@ -2400,24 +2789,6 @@ function CodePanel(props: { title: string; content: string }): JSX.Element {
         <ol className="code-lines">
           {toDisplayLines(props.content).map((line, index) => (
             <li key={`${index}-${line}`} className="code-line">
-              <span className="code-line-number">{index + 1}</span>
-              <code>{line || " "}</code>
-            </li>
-          ))}
-        </ol>
-      </div>
-    </div>
-  );
-}
-
-function DiffPanel(props: { title: string; content: string }): JSX.Element {
-  return (
-    <div className="code-panel">
-      <CodePanelHeader title={props.title} />
-      <div className="code-window diff-window" role="region" aria-label={props.title}>
-        <ol className="code-lines diff-lines">
-          {toDisplayLines(props.content).map((line, index) => (
-            <li key={`${index}-${line}`} className={`code-line diff-line ${getDiffLineClass(line)}`}>
               <span className="code-line-number">{index + 1}</span>
               <code>{line || " "}</code>
             </li>
@@ -2444,22 +2815,6 @@ function CodePanelHeader(props: { title: string }): JSX.Element {
 function toDisplayLines(content: string): string[] {
   const normalized = content.trimEnd();
   return normalized ? normalized.split("\n") : [""];
-}
-
-function getDiffLineClass(line: string): string {
-  if (line.startsWith("@@")) {
-    return "diff-line-hunk";
-  }
-  if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("diff ")) {
-    return "diff-line-meta";
-  }
-  if (line.startsWith("+")) {
-    return "diff-line-added";
-  }
-  if (line.startsWith("-")) {
-    return "diff-line-removed";
-  }
-  return "diff-line-context";
 }
 
 function AboutPage(props: {
@@ -2584,12 +2939,11 @@ function AboutPage(props: {
 function OverviewDashboard(props: {
   state: AppState;
   locale: Locale;
-  preview: PreviewBundle;
   diagnostics: DiagnosticsState;
   onActivateProfile: (name: string) => void;
   onNavigate: (tab: TabId) => void;
 }): JSX.Element {
-  const { state, locale, preview, diagnostics, onActivateProfile, onNavigate } = props;
+  const { state, locale, diagnostics, onActivateProfile, onNavigate } = props;
   const activeProfile = state.profiles[state.activeProfile];
   const providerEntries = Object.entries(state.mainConfig.providers);
   const modelEntries = Object.entries(state.mainConfig.models);
@@ -2719,7 +3073,7 @@ function OverviewDashboard(props: {
       <div className="overview-footer">
         <section className="glass-panel overview-card">
           <div className="section-title">
-            <FileCog size={16} />
+            <FileText size={16} />
             <span>{t(locale, "overviewConfigPaths")}</span>
           </div>
           <div className="overview-paths">
