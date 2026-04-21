@@ -121,7 +121,7 @@ const ABOUT_TAB: { id: TabId; icon: typeof Info; labelKey: string } = {
 };
 
 const ABOUT_INFO = {
-  version: "1.0.1",
+  version: "1.0.2",
   author: "Hulk Sun",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",
@@ -3574,6 +3574,13 @@ function AboutPage(props: {
     },
   ];
   const history = [
+    {
+      version: "v1.0.2",
+      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.0.2`,
+      text: isZh
+        ? "补齐备份记录查看与删除流程，修复 MCP 面板配置反复写入导致的结构与缩进异常，并更新项目文档介绍。"
+        : "Added backup record viewing and deletion, fixed repeated MCP panel writes causing structure and indentation issues, and refreshed the project documentation overview.",
+    },
     {
       version: "v1.0.1",
       url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.0.1`,
