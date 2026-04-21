@@ -1,25 +1,28 @@
 # Kimi Code Switch GUI
 
-`Kimi Code Switch GUI` 是一个基于 Electron + React + TypeScript 的桌面工具，用来可视化管理 `kimi-code-cli` 的配置文件，重点解决多 Provider、多 Model、多 Profile 的切换和校验问题。
+`Kimi Code Switch GUI` 是一个面向 `kimi-code-cli` 的桌面配置控制台。它不是简单把 TOML 文件搬进表单，而是把 `Provider`、`Model`、`Profile`、`MCP Server` 和面板设置统一收敛到一个可视化工作台里，适合长期维护多套配置、频繁切换默认模型、排查配置差异以及管理本地 / WebDAV 备份。
 
-它围绕以下三个文件工作：
+应用会同时管理和生成以下四个配置文件：
 
 - `~/.kimi/config.toml`
 - `~/.kimi/config.profiles.toml`
 - `~/.kimi/config.panel.toml`
+- `~/.kimi/mcp.json`
 
-项目延续了 `kimi-code-switch` 的配置语义，并补上了桌面图形界面、预览 Diff、状态栏快捷切换、双语界面和安装包发布流程。
+项目延续了 `kimi-code-switch` 的配置语义，并在桌面侧补齐了实时保存、配置预览、Diff 查看、状态栏快捷操作、显示器打开策略、MCP 导入与测试、备份恢复和双语界面等能力。
 
 ## 功能概览
 
-- 管理 `providers`、`models`、`profiles`
+- 管理 `providers`、`models`、`profiles`、`mcpServers`
 - 激活 Profile 时同步更新主配置默认项
-- 预览三份 TOML 文件的生成结果和 Diff
+- 预览 `config.toml`、`config.profiles.toml`、`config.panel.toml`、`mcp.json`
+- 查看配置差异，并在查看面板中直接复制文件内容
+- 导入 MCP JSON，测试 MCP 服务，触发授权或重置授权
+- 设置备份策略，支持本地目录和 WebDAV 备份、查看、删除、恢复
+- 支持主题、语言、配置路径、关闭行为、显示器启动策略等面板设置
+- 可选状态栏 / 托盘图标，支持快捷操作与 Profile 快速切换
 - 中文 / 英文双语界面
-- 支持主题、配置路径、Profile 路径、关闭行为等面板设置
-- 可选状态栏 / 托盘图标，并支持直接切换 Profile
-- 记忆上次显示器，或按活动显示器 / 随机显示器打开窗口
-- 关于页内置 GitHub、Issue、作者博客外链
+- 关于页内置 GitHub、Issue、博客、版本历史等信息
 - 基于 `electron-builder` 生成 macOS / Windows 安装包
 - GitHub Actions 在推送 `v*` tag 后自动测试、构建并发布 Release
 
@@ -28,8 +31,10 @@
 - 本地维护多套 `kimi-code-cli` Provider 配置
 - 在不同模型之间快速切换默认配置
 - 为不同使用习惯准备独立 Profile
-- 在写入配置前先确认 TOML 输出和变更 Diff
+- 在写入配置前先确认 TOML / JSON 输出和变更 Diff
+- 需要统一管理 MCP 配置，而不是手工维护 `mcp.json`
 - 希望通过桌面应用而不是手改配置文件来管理 CLI 设置
+- 希望给当前配置建立本地或远端备份，并在需要时回滚
 
 ## 技术栈
 
@@ -150,15 +155,21 @@ npm run dist:win
 
 - 配置路径
 - Profile 路径
+- MCP 配置路径
 - 语言
 - 主题
 - 托盘开关
 - 关闭行为
 - 窗口打开显示器策略
+- 备份策略与备份目标
+
+### `mcp.json`
+
+保存 MCP Server 定义，包括远程 `url` / `headers`，或本地 `command` / `args` / `env` 配置。
 
 ## 当前版本
 
-- 应用版本：`1.0.0`
+- 应用版本：`1.0.1`
 - 变更记录见 [CHANGELOG.md](CHANGELOG.md)
 
 ## 许可证
