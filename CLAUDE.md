@@ -50,3 +50,35 @@ Three-process Electron app built with `electron-vite`:
 ## Release
 
 Tag push (`v*`) triggers GitHub Actions workflow that builds macOS (dmg/zip) and Windows (nsis/portable) installers via `electron-builder`, then publishes to GitHub Releases.
+
+## Workflow Automation (Agent SOP)
+
+These are standing instructions — the agent must execute them without re-confirming scope each time.
+
+### "提交代码" / "commit code" / "push 代码"
+
+Execute end-to-end, no confirmation needed:
+1. `git status` + `git diff` to inspect actual changes
+2. Generate a commit message from the diff, following the existing repo style (see `git log` — lowercase conventional-commit prefixes like `feat:`, `fix:`, `chore:`, `ci:`, `docs:`)
+3. `git commit` with that message
+4. `git push` to remote
+
+### "发布新版本" / "release a new version" / "cut a release"
+
+1. **Version number resolution**
+   - If user provided a version, use it (still enforcing `vX.Y.Z` format)
+   - If not provided: `git fetch --tags` → `git tag -l "v*" --sort=-v:refname | head -1` → increment patch by 1
+2. **Update version-bearing files**
+   - `CHANGELOG.md` — add a section for the new version, summarized from the diff since the previous tag
+   - `README.md` — update any "current version" references
+   - `package.json` — bump `version` field
+   - In-app version references in code (grep the previous version string; notably `src/renderer/src/App.tsx` `ABOUT_INFO.version`)
+3. **Commit + push** — apply the commit SOP above (commit message describes the release bump, e.g. `chore: release v1.0.2`)
+4. **Tag** — `git tag vX.Y.Z` (lowercase `v` prefix + three numeric segments, strictly monotonic increasing; reject any deviation like `X.Y.Z` / `version-X.Y.Z` / `release-X.Y.Z`)
+5. **Push tag** — `git push origin vX.Y.Z` so the `v*` CI workflow can pick it up
+
+### Safety rails
+
+- Still honor the general Git Safety Protocol: no `--no-verify`, no force-push to main/master without explicit ask, never commit files that look like secrets (`.env`, `credentials.*`).
+- If pre-commit hooks fail, fix the root cause and create a new commit — do not `--amend` (the commit didn't happen, amend would rewrite the previous commit).
+
