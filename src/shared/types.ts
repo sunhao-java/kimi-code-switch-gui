@@ -81,6 +81,8 @@ export interface PanelSettings {
   config_path: string;
   profiles_path: string;
   follow_config_profiles: boolean;
+  skills_project_root: string;
+  skills_extra_dirs: string[];
   theme: AppearanceMode;
   locale: Locale;
   tray_icon: boolean;

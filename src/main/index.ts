@@ -1,8 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from "electron";
 import type { NativeImage } from "electron";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
@@ -24,6 +24,7 @@ import {
   saveAppState,
 } from "@shared/configStore";
 import { buildMcpConfigDocument } from "@shared/mcpStore";
+import { scanSkills } from "@shared/skillsStore";
 import type { AppState, BackupFrequency, BackupResult, FileDialogResult, Locale, PanelSettings, TrayCommand } from "@shared/types";
 
 let mainWindow: BrowserWindow | null = null;
@@ -79,6 +80,51 @@ const fileAccess = {
     await mkdir(resolveHome(path), { recursive: true });
   },
 };
+
+const skillFileAccess = {
+  async readText(path: string): Promise<string | null> {
+    try {
+      return await readFile(resolveHome(path), "utf-8");
+    } catch {
+      return null;
+    }
+  },
+  async listDir(path: string): Promise<Array<{ name: string; isDirectory: boolean }>> {
+    try {
+      const entries = await readdir(resolveHome(path), { withFileTypes: true });
+      return await Promise.all(
+        entries.map(async (entry) => ({
+          name: entry.name,
+          isDirectory: await isDirectoryEntry(resolveHome(path), entry),
+        })),
+      );
+    } catch {
+      return [];
+    }
+  },
+  async pathExists(path: string): Promise<boolean> {
+    try {
+      await stat(resolveHome(path));
+      return true;
+    } catch {
+      return false;
+    }
+  },
+};
+
+async function isDirectoryEntry(rootPath: string, entry: { name: string; isDirectory(): boolean; isSymbolicLink(): boolean }): Promise<boolean> {
+  if (entry.isDirectory()) {
+    return true;
+  }
+  if (!entry.isSymbolicLink()) {
+    return false;
+  }
+  try {
+    return (await stat(resolve(rootPath, entry.name))).isDirectory();
+  } catch {
+    return false;
+  }
+}
 
 async function runKimiMcpCommand(args: string[]): Promise<{ ok: true; stdout: string; stderr: string }> {
   const { stdout, stderr } = await execFileAsync("kimi", ["mcp", ...args], {
@@ -796,6 +842,14 @@ app.whenReady().then(() => {
       profilesDocument: await fileAccess.readText(state.profilesPath),
       panelSettingsDocument: await fileAccess.readText(state.panelSettingsPath),
       mcpDocument: await fileAccess.readText(state.mcpConfigPath),
+    });
+  });
+  ipcMain.handle("skills:scan", async (_, state: AppState) => {
+    const normalizedState = normalizeStatePaths(state);
+    return scanSkills(skillFileAccess, {
+      mergeAllAvailableSkills: normalizedState.mainConfig.merge_all_available_skills,
+      projectRoot: normalizedState.panelSettings.skills_project_root,
+      extraDirs: normalizedState.panelSettings.skills_extra_dirs,
     });
   });
 

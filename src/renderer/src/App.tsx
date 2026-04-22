@@ -5,6 +5,7 @@ import {
   CheckCheck,
   Check,
   ChevronDown,
+  CircleHelp,
   Copy,
   ExternalLink,
   FileInput,
@@ -16,13 +17,17 @@ import {
   Github,
   History,
   Info,
+  LayoutGrid,
+  List,
   Layers3,
   LoaderCircle,
   Mail,
   MonitorCog,
   MoonStar,
+  PenSquare,
   Plus,
   Power,
+  RefreshCw,
   Save,
   Settings2,
   Sparkles,
@@ -46,6 +51,7 @@ import {
   upsertProvider,
 } from "@shared/configStore";
 import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
+import type { SkillEntry, SkillsScanReport } from "@shared/skillsStore";
 import type {
   AppState,
   BackupDestinationType,
@@ -67,9 +73,10 @@ import { t, translateError } from "./i18n";
 import logoLight from "./assets/logo-light.png";
 import logoDark from "./assets/logo-dark.png";
 
-type TabId = "overview" | "profiles" | "providers" | "models" | "mcp" | "settings" | "about";
+type TabId = "overview" | "profiles" | "providers" | "models" | "mcp" | "skills" | "settings" | "about";
 type DiagnosticLevel = "ok" | "failed" | "pending" | "unavailable";
 type PreviewFileId = "config" | "profiles" | "panel" | "mcp";
+type SkillsViewMode = "grid" | "list";
 
 interface DiagnosticsState {
   preload: DiagnosticLevel;
@@ -111,6 +118,7 @@ const TAB_ITEMS: Array<{ id: TabId; icon: typeof Layers3; labelKey: string }> = 
   { id: "providers", icon: Globe, labelKey: "providers" },
   { id: "models", icon: Boxes, labelKey: "models" },
   { id: "mcp", icon: Zap, labelKey: "mcp" },
+  { id: "skills", icon: FileText, labelKey: "skills" },
   { id: "settings", icon: Settings2, labelKey: "settings" },
 ];
 
@@ -528,7 +536,12 @@ export function App(): JSX.Element {
   const [selectedModel, setSelectedModel] = useState("");
   const [selectedProfile, setSelectedProfile] = useState("");
   const [selectedMcpServer, setSelectedMcpServer] = useState("");
+  const [selectedSkill, setSelectedSkill] = useState("");
+  const [selectedSkillPath, setSelectedSkillPath] = useState("");
+  const [skillsViewMode, setSkillsViewMode] = useState<SkillsViewMode>("grid");
   const [preview, setPreview] = useState<PreviewBundle>(emptyPreview);
+  const [skillsReport, setSkillsReport] = useState<SkillsScanReport | null>(null);
+  const [isSkillsLoading, setIsSkillsLoading] = useState(false);
   const [documentViewer, setDocumentViewer] = useState<DocumentViewerState | null>(null);
   const [backupRecordsDialog, setBackupRecordsDialog] = useState<BackupRecordsDialogState | null>(null);
   const [error, setError] = useState("");
@@ -561,6 +574,17 @@ export function App(): JSX.Element {
     }
     applyAppearanceMode(state.panelSettings.theme);
   }, [state?.panelSettings.theme]);
+
+  useEffect(() => {
+    if (!state) {
+      return;
+    }
+    void refreshSkills(state, { silent: true });
+  }, [
+    state?.mainConfig.merge_all_available_skills,
+    state?.panelSettings.skills_project_root,
+    JSON.stringify(state?.panelSettings.skills_extra_dirs ?? []),
+  ]);
 
   useEffect(() => {
     if (!error) return;
@@ -626,6 +650,7 @@ export function App(): JSX.Element {
       setSelectedMcpServer(Object.keys(normalized.mcpConfig.mcpServers)[0] ?? "");
       const nextPreview = await api.previewState(normalized);
       setPreview(nextPreview);
+      await refreshSkills(normalized, { silent: true });
       setError("");
       setNotice("");
       setDiagnostics({
@@ -670,6 +695,7 @@ export function App(): JSX.Element {
       setState(normalized);
       setSavedState(normalized);
       setPreview(nextPreview);
+      void refreshSkills(normalized, { silent: true });
       setError("");
       setNotice("");
     } catch (saveError) {
@@ -711,6 +737,7 @@ export function App(): JSX.Element {
       }
       const nextPreview = await api.previewState(normalizedVisibleState);
       setPreview(nextPreview);
+      void refreshSkills(normalizedVisibleState, { silent: true });
       setError("");
       setNotice("");
     } catch (saveError) {
@@ -792,6 +819,7 @@ export function App(): JSX.Element {
     setSelectedMcpServer((current) =>
       restored.mcpConfig.mcpServers[current] ? current : Object.keys(restored.mcpConfig.mcpServers)[0] ?? "",
     );
+    void refreshSkills(restored, { silent: true });
     void refreshPreview(restored);
     setError("");
     setNotice("");
@@ -815,6 +843,54 @@ export function App(): JSX.Element {
         previewState: "failed",
         lastError: current.lastError || "Preview generation failed.",
       }));
+    }
+  };
+
+  const refreshSkills = async (
+    draft = state,
+    options: { silent?: boolean } = {},
+  ): Promise<void> => {
+    const api = getApi();
+    if (!api) {
+      setSkillsReport(null);
+      return;
+    }
+    if (typeof api.scanSkills !== "function") {
+      if (!options.silent) {
+        setNotice("");
+        setError(t(locale, "skillsRuntimeOutdated"));
+      }
+      setSkillsReport(null);
+      return;
+    }
+    try {
+      setIsSkillsLoading(true);
+      const report = await api.scanSkills(draft);
+      setSkillsReport(report);
+      setSelectedSkillPath((current) => {
+        if (current && report.paths.some((path) => path.id === current)) {
+          return current;
+        }
+        return report.paths.find((path) => path.selected)?.id ?? report.paths[0]?.id ?? "";
+      });
+      setSelectedSkill((current) => {
+        if (current && report.skills.some((skill) => skill.id === current)) {
+          return current;
+        }
+        return report.skills[0]?.id ?? "";
+      });
+      if (!options.silent) {
+        setError("");
+        setNotice(t(locale, "skillsRefreshed"));
+      }
+    } catch (scanError) {
+      const message = scanError instanceof Error ? scanError.message : String(scanError);
+      if (!options.silent) {
+        setNotice("");
+        setError(translateError(locale, message));
+      }
+    } finally {
+      setIsSkillsLoading(false);
     }
   };
 
@@ -918,10 +994,34 @@ export function App(): JSX.Element {
   const modelEntries = Object.entries(state.mainConfig.models);
   const profileEntries = Object.entries(state.profiles);
   const mcpEntries = Object.entries(state.mcpConfig.mcpServers);
+  const skillPathEntries = skillsReport?.paths ?? [];
+  const skillEntries = skillsReport?.skills ?? [];
+  const sortedSkillPathEntries = [...skillPathEntries].sort((left, right) => {
+    if (left.group === "builtin" && right.group !== "builtin") {
+      return 1;
+    }
+    if (right.group === "builtin" && left.group !== "builtin") {
+      return -1;
+    }
+    if (left.selected !== right.selected) {
+      return left.selected ? -1 : 1;
+    }
+    if (left.exists !== right.exists) {
+      return left.exists ? -1 : 1;
+    }
+    if (left.priority !== right.priority) {
+      return left.priority - right.priority;
+    }
+    return left.label.localeCompare(right.label);
+  });
   const selectedProviderName = selectedProvider || providerEntries[0]?.[0] || "";
   const selectedModelName = selectedModel || modelEntries[0]?.[0] || "";
   const selectedProfileName = selectedProfile || profileEntries[0]?.[0] || "";
   const selectedMcpServerName = selectedMcpServer || mcpEntries[0]?.[0] || "";
+  const selectedSkillPathId =
+    selectedSkillPath || skillPathEntries.find((path) => path.selected)?.id || skillPathEntries[0]?.id || "";
+  const visibleSkillEntries = skillEntries.filter((skill) => skill.sourcePathId === selectedSkillPathId);
+  const selectedSkillId = selectedSkill || visibleSkillEntries[0]?.id || "";
 
   const selectedProviderData =
     (selectedProvider && state.mainConfig.providers[selectedProvider]) ||
@@ -933,6 +1033,14 @@ export function App(): JSX.Element {
     (selectedProfile && state.profiles[selectedProfile]) || profileEntries[0]?.[1] || null;
   const selectedMcpServerData =
     (selectedMcpServer && state.mcpConfig.mcpServers[selectedMcpServer]) || mcpEntries[0]?.[1] || null;
+  const selectedSkillPathData =
+    (selectedSkillPathId && skillPathEntries.find((path) => path.id === selectedSkillPathId)) ||
+    skillPathEntries[0] ||
+    null;
+  const selectedSkillData =
+    (selectedSkillId && visibleSkillEntries.find((skill) => skill.id === selectedSkillId)) ||
+    visibleSkillEntries[0] ||
+    null;
   const isProviderNameEditable = isDraftEntry(savedState?.mainConfig.providers, selectedProviderName);
   const isProfileNameEditable = isDraftEntry(savedState?.profiles, selectedProfileName);
   const isMcpServerNameEditable = isDraftEntry(savedState?.mcpConfig.mcpServers, selectedMcpServerName);
@@ -1291,6 +1399,25 @@ export function App(): JSX.Element {
                 t(locale, "summaryMcpEnabled"),
                 { count: mcpEntries.filter(([, server]) => server.enabled !== false).length },
               )}`}
+            />
+            <SummaryCard
+              label={t(locale, "summarySkills")}
+              value={
+                skillsReport
+                  ? formatMessage(t(locale, "summarySkillsCompact"), {
+                      total: skillsReport.summary.total,
+                      effective: skillsReport.summary.effective,
+                    })
+                  : "-"
+              }
+              title={
+                skillsReport
+                  ? `${formatMessage(t(locale, "summarySkillsTotal"), { count: skillsReport.summary.total })} · ${formatMessage(
+                      t(locale, "summarySkillsEffective"),
+                      { count: skillsReport.summary.effective },
+                    )}`
+                  : undefined
+              }
             />
             <SummaryCard label={t(locale, "summaryActive")} value={state.activeProfile || "-"} accent />
           </div>
@@ -1798,6 +1925,72 @@ export function App(): JSX.Element {
           </SplitLayout>
         ) : null}
 
+        {activeTab === "skills" ? (
+          <SplitLayout
+            listTitle={t(locale, "skillsDirectory")}
+            listItems={sortedSkillPathEntries.map((path) => path.id)}
+            itemLabel={(item) => {
+              const path = sortedSkillPathEntries.find((entry) => entry.id === item);
+              return path ? formatSkillPathLabel(path) : item;
+            }}
+            renderItemLabel={(item) => {
+              const path = sortedSkillPathEntries.find((entry) => entry.id === item);
+              return path ? renderSkillPathLabel(path) : item;
+            }}
+            itemTitle={(item) => {
+              const path = sortedSkillPathEntries.find((entry) => entry.id === item);
+              return path ? path.path : item;
+            }}
+            selectedItem={selectedSkillPathId}
+            onSelect={(item) => {
+              setSelectedSkillPath(item);
+              const firstSkill = skillEntries.find((skill) => skill.sourcePathId === item);
+              setSelectedSkill(firstSkill?.id ?? "");
+            }}
+            addLabel={t(locale, "skillsRefresh")}
+            onAdd={() => void refreshSkills(state)}
+            addButtonTitle={t(locale, "skillsRefresh")}
+            addButtonContent={
+              isSkillsLoading ? <LoaderCircle size={15} className="button-spinner" /> : <RefreshCw size={15} />
+            }
+            addButtonClassName={isSkillsLoading ? "action-button compact icon-only is-loading" : "action-button compact icon-only"}
+            itemClassName={(item) => {
+              const path = skillPathEntries.find((entry) => entry.id === item);
+              if (!path) {
+                return null;
+              }
+              if (!path.exists || !path.selected) {
+                return "disabled";
+              }
+              return null;
+            }}
+            renderItemAction={(item) => {
+              const path = skillPathEntries.find((entry) => entry.id === item);
+              if (!path) {
+                return null;
+              }
+              const pathSkills = skillEntries.filter((skill) => skill.sourcePathId === item);
+              return (
+                <>
+                  <span className="list-current-badge">{pathSkills.length}</span>
+                </>
+              );
+            }}
+          >
+            <SkillsWorkspace
+              locale={locale}
+              report={skillsReport}
+              selectedPath={selectedSkillPathData}
+              visibleSkills={visibleSkillEntries}
+              selectedSkill={selectedSkillData}
+              viewMode={skillsViewMode}
+              onViewModeChange={setSkillsViewMode}
+              onSelectSkill={setSelectedSkill}
+              isLoading={isSkillsLoading}
+            />
+          </SplitLayout>
+        ) : null}
+
         {activeTab === "settings" ? (
           <section className="glass-panel form-panel settings-grid">
             <div className="section-title">{t(locale, "settings")}</div>
@@ -1935,6 +2128,32 @@ export function App(): JSX.Element {
                   }
                 />
               </label>
+            </SettingsGroup>
+            <SettingsGroup title={t(locale, "settingsGroupSkills")}>
+              <PathField
+                locale={locale}
+                label={t(locale, "skillsProjectRoot")}
+                value={state.panelSettings.skills_project_root}
+                pickerProperties={["openDirectory", "createDirectory"]}
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.panelSettings.skills_project_root = value;
+                  })
+                }
+              />
+              <TextAreaField
+                label={t(locale, "skillsExtraDirs")}
+                value={state.panelSettings.skills_extra_dirs.join("\n")}
+                placeholder={t(locale, "skillsExtraDirsPlaceholder")}
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.panelSettings.skills_extra_dirs = value
+                      .split(/\r?\n/)
+                      .map((entry) => entry.trim())
+                      .filter(Boolean);
+                  })
+                }
+              />
             </SettingsGroup>
             <SettingsGroup title={t(locale, "settingsGroupBackup")}>
               <SelectField
@@ -2352,6 +2571,286 @@ function BackupRecordsDialog(
   );
 }
 
+function SkillsWorkspace(props: {
+  locale: Locale;
+  report: SkillsScanReport | null;
+  selectedPath: SkillsScanReport["paths"][number] | null;
+  visibleSkills: SkillEntry[];
+  selectedSkill: SkillEntry | null;
+  viewMode: SkillsViewMode;
+  onViewModeChange: (mode: SkillsViewMode) => void;
+  onSelectSkill: (skillId: string) => void;
+  isLoading: boolean;
+}): JSX.Element {
+  const [copied, setCopied] = useState(false);
+  const [page, setPage] = useState(1);
+  const [isSummaryCollapsed, setIsSummaryCollapsed] = useState(true);
+
+  const pageSize = props.viewMode === "grid" ? 6 : 8;
+  const totalPages = Math.max(1, Math.ceil(props.visibleSkills.length / pageSize));
+  const pagedSkills = props.visibleSkills.slice((page - 1) * pageSize, page * pageSize);
+
+  useEffect(() => {
+    setPage(1);
+  }, [props.selectedPath?.id, props.viewMode]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  const handleCopy = (): void => {
+    if (!props.selectedSkill) {
+      return;
+    }
+    void navigator.clipboard.writeText(props.selectedSkill.content).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    });
+  };
+
+  if (props.isLoading && !props.report) {
+    return (
+      <section className="glass-panel form-panel empty-state">
+        <div className="section-title">{t(props.locale, "skills")}</div>
+        <p>{t(props.locale, "skillsLoading")}</p>
+      </section>
+    );
+  }
+
+  if (!props.report) {
+    return (
+      <section className="glass-panel form-panel empty-state">
+        <div className="section-title">{t(props.locale, "skills")}</div>
+        <p>{t(props.locale, "skillsEmpty")}</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="skills-workspace">
+      <section className="glass-panel form-panel skills-overview-panel">
+        <div className="skills-section-header">
+          <div className="section-title">{t(props.locale, "skillsSummary")}</div>
+          <button
+            className={isSummaryCollapsed ? "skills-collapse-button is-collapsed" : "skills-collapse-button"}
+            type="button"
+            onClick={() => setIsSummaryCollapsed((current) => !current)}
+            aria-expanded={!isSummaryCollapsed}
+            title={t(props.locale, "skillsSummary")}
+          >
+            <ChevronDown size={16} />
+          </button>
+        </div>
+        {!isSummaryCollapsed ? (
+          <>
+            <div className="skills-summary-grid">
+              <SummaryCard label={t(props.locale, "skillsTotal")} value={String(props.report.summary.total)} />
+              <SummaryCard label={t(props.locale, "skillsEffective")} value={String(props.report.summary.effective)} />
+              <SummaryCard label={t(props.locale, "skillsWarnings")} value={String(props.report.summary.warnings)} />
+              <SummaryCard label={t(props.locale, "skillsErrors")} value={String(props.report.summary.errors)} />
+            </div>
+            <div className="skills-hint-grid skills-hint-grid-compact">
+              <div className="skills-kv skills-kv-compact">
+                <span>
+                  {t(props.locale, "skillsDiscoveryMode")}
+                  <SkillHint locale={props.locale} message={t(props.locale, "skillsDiscoveryModeHelp")} />
+                </span>
+                <strong>{props.report.discoveryMode}</strong>
+              </div>
+              <div className="skills-kv skills-kv-compact">
+                <span>
+                  {t(props.locale, "formMergeSkills")}
+                  <SkillHint locale={props.locale} message={t(props.locale, "skillsMergeHelp")} />
+                </span>
+                <strong>{props.report.mergeAllAvailableSkills ? t(props.locale, "overviewOn") : t(props.locale, "overviewOff")}</strong>
+              </div>
+              <div className="skills-kv skills-kv-compact">
+                <span>
+                  {t(props.locale, "skillsProjectRoot")}
+                  <SkillHint locale={props.locale} message={t(props.locale, "skillsProjectRootHelp")} />
+                </span>
+                <strong>{props.report.projectRoot || t(props.locale, "overviewNone")}</strong>
+              </div>
+            </div>
+            <p className="skills-note">{t(props.locale, "skillsBuiltinNotice")}</p>
+          </>
+        ) : null}
+      </section>
+
+      <section className="glass-panel form-panel skills-overview-panel">
+        <div className="skills-detail-header">
+          <div>
+            <div className="skills-path-caption">{props.selectedPath?.path ?? t(props.locale, "overviewNone")}</div>
+            <div className="section-title">{t(props.locale, "skills")}</div>
+          </div>
+          <div className="skills-detail-badges">
+            <div className="skills-view-toggle" role="tablist" aria-label={t(props.locale, "skillsViewMode")}>
+              <button
+                className={props.viewMode === "grid" ? "skills-view-button active" : "skills-view-button"}
+                type="button"
+                onClick={() => props.onViewModeChange("grid")}
+                aria-pressed={props.viewMode === "grid"}
+                title={t(props.locale, "skillsViewGrid")}
+              >
+                <LayoutGrid size={15} />
+              </button>
+              <button
+                className={props.viewMode === "list" ? "skills-view-button active" : "skills-view-button"}
+                type="button"
+                onClick={() => props.onViewModeChange("list")}
+                aria-pressed={props.viewMode === "list"}
+                title={t(props.locale, "skillsViewList")}
+              >
+                <List size={15} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {props.selectedPath && !isSkillPathLoaded(props.selectedPath) ? (
+          <p className="skills-note skills-note-warning">{formatSkillPathNotice(props.locale, props.selectedPath)}</p>
+        ) : null}
+
+        {props.visibleSkills.length ? (
+          <>
+            <div className="skills-pagination">
+              <span className="skills-pagination-info">
+                {formatMessage(t(props.locale, "skillsPagination"), {
+                  current: page,
+                  total: totalPages,
+                  count: props.visibleSkills.length,
+                })}
+              </span>
+              <div className="skills-pagination-actions">
+                <button
+                  className="action-button compact"
+                  type="button"
+                  disabled={page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                >
+                  {t(props.locale, "previousPage")}
+                </button>
+                <button
+                  className="action-button compact"
+                  type="button"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                >
+                  {t(props.locale, "nextPage")}
+                </button>
+              </div>
+            </div>
+            <div className={props.viewMode === "grid" ? "skills-read-grid" : "skills-read-list"} role="list">
+              {pagedSkills.map((skill) => (
+              <button
+                key={skill.id}
+                className={[
+                  props.viewMode === "grid" ? "skills-read-card" : "skills-read-row",
+                  skill.id === props.selectedSkill?.id ? "active" : "",
+                  skill.enabled ? "is-enabled" : "is-disabled",
+                  skill.effective ? "" : "muted",
+                ].filter(Boolean).join(" ")}
+                type="button"
+                onClick={() => props.onSelectSkill(skill.id)}
+              >
+                <div className={props.viewMode === "grid" ? "skills-read-card-top" : "skills-read-row-main"}>
+                  <div className="skills-read-card-header">
+                    <strong>{skill.name}</strong>
+                    <div className="skills-detail-badges">
+                      <span className="list-current-badge">{skill.metadata.type}</span>
+                    </div>
+                  </div>
+                  <p>{skill.metadata.description}</p>
+                </div>
+                <div className="skills-read-card-meta">
+                  <span>{skill.directoryName}</span>
+                  <span>{skill.lineCount}L</span>
+                </div>
+              </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="skills-empty-issues">{t(props.locale, "skillsEmptyInDirectory")}</div>
+        )}
+      </section>
+
+      {props.selectedSkill ? (
+        <section className="glass-panel form-panel skills-detail-panel">
+          <div className="skills-detail-header">
+            <div>
+              <div className="section-title">{props.selectedSkill.name}</div>
+              <p>{props.selectedSkill.metadata.description}</p>
+            </div>
+            <div className="skills-detail-badges">
+              <span className="list-current-badge">{props.selectedSkill.metadata.type}</span>
+              <span className={props.selectedSkill.effective ? "status-pill on" : "status-pill off"}>
+                <span className="dot" />
+                {props.selectedSkill.effective ? t(props.locale, "skillsEffective") : t(props.locale, "skillsOverridden")}
+              </span>
+            </div>
+          </div>
+
+          <div className="skills-hint-grid">
+            <div className="skills-kv"><span>{t(props.locale, "skillsSource")}</span><strong>{props.selectedSkill.sourceLabel}</strong></div>
+            <div className="skills-kv"><span>{t(props.locale, "skillsDirectory")}</span><strong>{props.selectedSkill.directoryPath}</strong></div>
+            <div className="skills-kv"><span>{t(props.locale, "skillsFrontmatter")}</span><strong>{props.selectedSkill.frontmatter ? t(props.locale, "overviewOn") : t(props.locale, "overviewOff")}</strong></div>
+            <div className="skills-kv"><span>{t(props.locale, "skillsLineCount")}</span><strong>{String(props.selectedSkill.lineCount)}</strong></div>
+            <div className="skills-kv"><span>{t(props.locale, "skillsAttachments")}</span><strong>{formatSkillAssets(props.locale, props.selectedSkill)}</strong></div>
+            {props.selectedSkill.overriddenBy ? (
+              <div className="skills-kv"><span>{t(props.locale, "skillsOverrideTarget")}</span><strong>{props.selectedSkill.overriddenBy}</strong></div>
+            ) : null}
+          </div>
+
+          {(props.selectedSkill.metadata.license || props.selectedSkill.metadata.compatibility || Object.keys(props.selectedSkill.metadata.metadata).length > 0) ? (
+            <div className="skills-meta-block">
+              {props.selectedSkill.metadata.license ? (
+                <div className="skills-kv"><span>license</span><strong>{props.selectedSkill.metadata.license}</strong></div>
+              ) : null}
+              {props.selectedSkill.metadata.compatibility ? (
+                <div className="skills-kv"><span>compatibility</span><strong>{props.selectedSkill.metadata.compatibility}</strong></div>
+              ) : null}
+              {Object.keys(props.selectedSkill.metadata.metadata).length ? (
+                <div className="skills-kv skills-kv-multiline">
+                  <span>metadata</span>
+                  <strong>{Object.entries(props.selectedSkill.metadata.metadata).map(([key, value]) => `${key}: ${value}`).join(" · ")}</strong>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          <CodePanel
+            title={props.selectedSkill.skillFilePath}
+            content={props.selectedSkill.content}
+            onCopy={handleCopy}
+            copied={copied}
+          />
+        </section>
+      ) : (
+        <section className="glass-panel form-panel empty-state">
+          <div className="section-title">{t(props.locale, "skills")}</div>
+          <p>{t(props.locale, "skillsEmpty")}</p>
+        </section>
+      )}
+    </section>
+  );
+}
+
+function SkillHint(props: { locale: Locale; message: string }): JSX.Element {
+  return (
+    <button
+      className="skills-hint-button"
+      type="button"
+      aria-label={t(props.locale, "view")}
+      data-tooltip={props.message}
+    >
+      <CircleHelp size={12} />
+    </button>
+  );
+}
+
 function SettingsGroup(props: { title: string; children: JSX.Element | JSX.Element[] }): JSX.Element {
   return (
     <section className="settings-group">
@@ -2370,6 +2869,9 @@ function SettingsGroup(props: { title: string; children: JSX.Element | JSX.Eleme
 function SplitLayout(props: {
   listTitle: string;
   listItems: string[];
+  itemLabel?: (item: string) => string;
+  renderItemLabel?: (item: string) => JSX.Element | string;
+  itemTitle?: (item: string) => string;
   dirtyItems?: Set<string>;
   dirtyLabel?: string;
   selectedItem: string;
@@ -2420,12 +2922,13 @@ function SplitLayout(props: {
             >
               <button
                 className="list-item"
+                title={props.itemTitle ? props.itemTitle(item) : props.itemLabel ? props.itemLabel(item) : item}
                 onClick={() => {
                   if (item === props.selectedItem) return;
                   props.onSelect(item);
                 }}
               >
-                {item}
+                {props.renderItemLabel ? props.renderItemLabel(item) : props.itemLabel ? props.itemLabel(item) : item}
               </button>
               {props.dirtyItems?.has(item) ? (
                 <span className="list-dirty-badge" title={props.dirtyLabel} aria-label={props.dirtyLabel}>
@@ -3295,6 +3798,8 @@ function createFallbackState(): AppState {
     config_path: "~/.kimi/config.toml",
     profiles_path: "",
     follow_config_profiles: true,
+    skills_project_root: "",
+    skills_extra_dirs: [],
     theme: "auto" as AppearanceMode,
     locale: "zh-CN" as Locale,
     tray_icon: false,
@@ -3544,6 +4049,101 @@ function CodePanelHeader(props: { title: string; onCopy?: () => void; copied?: b
 function toDisplayLines(content: string): string[] {
   const normalized = content.trimEnd();
   return normalized ? normalized.split("\n") : [""];
+}
+
+function formatSkillAssets(locale: Locale, skill: SkillEntry): string {
+  const labels = [
+    skill.hasScripts ? "scripts" : "",
+    skill.hasReferences ? "references" : "",
+    skill.hasAssets ? "assets" : "",
+  ].filter(Boolean);
+  return labels.join(" · ") || t(locale, "overviewNone");
+}
+
+function formatSkillPathLabel(
+  path: SkillsScanReport["paths"][number],
+): string {
+  return predictSkillLibrary(path.path).label;
+}
+
+function renderSkillPathLabel(
+  path: SkillsScanReport["paths"][number],
+): JSX.Element {
+  const prediction = predictSkillLibrary(path.path);
+  return (
+    <span className="skill-path-label">
+      <span className={`skill-path-icon ${prediction.className}`} aria-hidden="true">
+        <prediction.icon size={14} />
+      </span>
+      <span className="skill-path-copy">{prediction.label}</span>
+    </span>
+  );
+}
+
+function predictSkillLibrary(path: string): { icon: typeof Sparkles; className: string; label: string } {
+  const normalized = path.toLowerCase();
+  if (normalized.includes("/.claude/")) {
+    return { icon: Sparkles, className: "is-claude", label: "Claude 技能库" };
+  }
+  if (normalized.includes("/.codex/")) {
+    return { icon: Boxes, className: "is-codex", label: "Codex 技能库" };
+  }
+  if (normalized.includes("/.kimi/")) {
+    return { icon: MoonStar, className: "is-kimi", label: "Kimi 技能库" };
+  }
+  if (normalized.includes("/agents/")) {
+    return { icon: PenSquare, className: "is-agents", label: "Agents 技能库" };
+  }
+  if (path === "(managed by CLI package)") {
+    return { icon: FileText, className: "is-generic", label: "内置技能库" };
+  }
+  return { icon: FolderOpen, className: "is-generic", label: "自定义技能库" };
+}
+
+function shortenSkillPath(path: string): string {
+  const normalized = path.replace(/\/+/g, "/").replace(/\/$/, "");
+  const homeAliases = new Set([
+    "~/.kimi/skills",
+    "~/.claude/skills",
+    "~/.codex/skills",
+    "~/.agents/skills",
+    "~/.config/agents/skills",
+  ]);
+
+  if (homeAliases.has(normalized)) {
+    return normalized;
+  }
+
+  const segments = normalized.split("/").filter(Boolean);
+  if (normalized.startsWith("~/")) {
+    if (segments.length <= 3) {
+      return normalized;
+    }
+    return `~/${["...", ...segments.slice(-2)].join("/")}`;
+  }
+
+  if (segments.length <= 3) {
+    return normalized;
+  }
+
+  return `.../${segments.slice(-3).join("/")}`;
+}
+
+function isSkillPathLoaded(path: SkillsScanReport["paths"][number]): boolean {
+  return path.group !== "builtin" && path.exists && path.selected;
+}
+
+function formatSkillPathNotice(locale: Locale, path: SkillsScanReport["paths"][number]): string {
+  if (path.group === "builtin") {
+    return t(locale, "skillsPathNoticeBuiltin");
+  }
+  if (!path.exists) {
+    return t(locale, "skillsPathNoticeMissing");
+  }
+  if (!path.selected) {
+    return t(locale, "skillsPathNoticeSkipped");
+  }
+  return "";
 }
 
 function AboutPage(props: {

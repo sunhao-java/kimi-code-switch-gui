@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 
+import type { SkillsScanReport } from "@shared/skillsStore";
 import type { AppState, BackupRecord, BackupResult, FileDialogResult, PanelSettings, PreviewBundle, TrayCommand } from "@shared/types";
 
 const api = {
@@ -11,6 +12,7 @@ const api = {
   }): Promise<AppState> => ipcRenderer.invoke("app:load-state", paths),
   saveState: (state: AppState): Promise<{ ok: true }> => ipcRenderer.invoke("app:save-state", state),
   previewState: (state: AppState): Promise<PreviewBundle> => ipcRenderer.invoke("app:preview-state", state),
+  scanSkills: (state: AppState): Promise<SkillsScanReport> => ipcRenderer.invoke("skills:scan", state),
   defaultSettings: (): Promise<PanelSettings> => ipcRenderer.invoke("app:default-settings"),
   pickFile: (options?: Record<string, unknown>): Promise<FileDialogResult> =>
     ipcRenderer.invoke("dialog:pick-file", options),

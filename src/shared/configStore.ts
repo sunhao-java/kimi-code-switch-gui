@@ -58,6 +58,8 @@ export function createDefaultPanelSettings(
     config_path: configPath,
     profiles_path: "",
     follow_config_profiles: true,
+    skills_project_root: "",
+    skills_extra_dirs: [],
     theme: "auto",
     locale: "zh-CN",
     tray_icon: false,
@@ -170,6 +172,8 @@ export async function loadPanelSettings(
       typeof data.follow_config_profiles === "boolean"
         ? data.follow_config_profiles
         : true,
+    skills_project_root: asString(data.skills_project_root, ""),
+    skills_extra_dirs: asStringArray(data.skills_extra_dirs),
     theme: parseAppearanceMode(data.theme, fallback.theme),
     locale: data.locale === "en-US" ? "en-US" : "zh-CN",
     tray_icon: trayIcon,
@@ -515,6 +519,16 @@ function asBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 function parseAppearanceMode(value: unknown, fallback: PanelSettings["theme"]): PanelSettings["theme"] {
   return value === "light" || value === "dark" || value === "auto" ? value : fallback;
 }
@@ -620,6 +634,8 @@ export function normalizeStatePaths(state: AppState): AppState {
     backup_webdav_username: asString(state.panelSettings.backup_webdav_username, ""),
     backup_webdav_password: asString(state.panelSettings.backup_webdav_password, ""),
     backup_webdav_path: asString(state.panelSettings.backup_webdav_path, "").trim(),
+    skills_project_root: asString(state.panelSettings.skills_project_root, "").trim(),
+    skills_extra_dirs: asStringArray(state.panelSettings.skills_extra_dirs),
     last_display_id: state.panelSettings.last_display_id,
     mcp_servers: cloneMcpServers(state.mcpConfig.mcpServers),
     profiles_path: state.panelSettings.follow_config_profiles
