@@ -129,7 +129,7 @@ const ABOUT_TAB: { id: TabId; icon: typeof Info; labelKey: string } = {
 };
 
 const ABOUT_INFO = {
-  version: "1.0.2",
+  version: "1.0.3",
   author: "Hulk Sun",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",
@@ -4265,6 +4265,13 @@ function AboutPage(props: {
     },
   ];
   const history = [
+    {
+      version: "v1.0.3",
+      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.0.3`,
+      text: isZh
+        ? "重构 Skills 工作区与详情查看体验，新增界面字体大小设置，统一 Skills 自动发现流程，并修复多个页面无法打开与内容区高度未撑满的问题。"
+        : "Refined the Skills workspace and detail viewer, added interface font size settings, unified Skills auto discovery, and fixed multi-page navigation crashes plus the workspace height fill issue.",
+    },
     {
       version: "v1.0.2",
       url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.0.2`,
