@@ -8,6 +8,7 @@ export type ProviderType =
 
 export type Locale = "zh-CN" | "en-US";
 export type AppearanceMode = "auto" | "dark" | "light";
+export type UiFontSize = "small" | "standard" | "large";
 export type DisplayOpenMode = "random" | "remember-last" | "active-display";
 export type CloseBehavior = "quit" | "keep-in-tray";
 export type TrayCommand = "reload";
@@ -81,9 +82,8 @@ export interface PanelSettings {
   config_path: string;
   profiles_path: string;
   follow_config_profiles: boolean;
-  skills_project_root: string;
-  skills_extra_dirs: string[];
   theme: AppearanceMode;
+  ui_font_size: UiFontSize;
   locale: Locale;
   tray_icon: boolean;
   display_open_mode: DisplayOpenMode;

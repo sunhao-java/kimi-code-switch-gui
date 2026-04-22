@@ -848,8 +848,6 @@ app.whenReady().then(() => {
     const normalizedState = normalizeStatePaths(state);
     return scanSkills(skillFileAccess, {
       mergeAllAvailableSkills: normalizedState.mainConfig.merge_all_available_skills,
-      projectRoot: normalizedState.panelSettings.skills_project_root,
-      extraDirs: normalizedState.panelSettings.skills_extra_dirs,
     });
   });
 

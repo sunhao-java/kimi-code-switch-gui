@@ -91,7 +91,7 @@ description: Secondary reviewer
     expect(overridden?.overriddenBy).toContain("reviewer");
   });
 
-  it("uses custom directories instead of auto discovery when extra dirs are provided", async () => {
+  it("ignores removed custom directory settings and keeps auto discovery", async () => {
     const files = createMemorySkillFs({
       "/tmp/custom-skills/custom-writer/SKILL.md": `---
 name: custom-writer
@@ -109,14 +109,11 @@ description: Should not load
 
     const report = await scanSkills(files, {
       mergeAllAvailableSkills: true,
-      extraDirs: ["/tmp/custom-skills"],
     });
 
-    expect(report.discoveryMode).toBe("custom");
-    expect(report.skills.map((skill) => skill.name)).toEqual(["custom-writer", "ignored"]);
-    expect(report.skills.find((skill) => skill.name === "custom-writer")?.enabled).toBe(true);
-    expect(report.skills.find((skill) => skill.name === "ignored")?.enabled).toBe(false);
-    expect(report.paths.find((entry) => entry.id === "user-brand-kimi")?.selected).toBe(false);
+    expect(report.discoveryMode).toBe("auto");
+    expect(report.skills.map((skill) => skill.name)).toEqual(["ignored"]);
+    expect(report.skills.find((skill) => skill.name === "ignored")?.enabled).toBe(true);
   });
 
   it("still infers flow skills from frontmatter and diagram content", async () => {

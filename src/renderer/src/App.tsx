@@ -5,7 +5,6 @@ import {
   CheckCheck,
   Check,
   ChevronDown,
-  CircleHelp,
   Copy,
   ExternalLink,
   FileInput,
@@ -66,6 +65,7 @@ import type {
   CloseBehavior,
   McpServerConfig,
   McpTransport,
+  UiFontSize,
 } from "@shared/types";
 import { parseMcpConfigStrict } from "@shared/mcpStore";
 
@@ -118,7 +118,7 @@ const TAB_ITEMS: Array<{ id: TabId; icon: typeof Layers3; labelKey: string }> = 
   { id: "providers", icon: Globe, labelKey: "providers" },
   { id: "models", icon: Boxes, labelKey: "models" },
   { id: "mcp", icon: Zap, labelKey: "mcp" },
-  { id: "skills", icon: FileText, labelKey: "skills" },
+  { id: "skills", icon: FileText, labelKey: "skillsNav" },
   { id: "settings", icon: Settings2, labelKey: "settings" },
 ];
 
@@ -177,6 +177,28 @@ const THEME_OPTIONS: Array<{
     icon: MoonStar,
     shortLabel: "D",
     label: { "zh-CN": "暗色", "en-US": "Dark" },
+  },
+];
+
+const UI_FONT_SIZE_OPTIONS: Array<{
+  value: UiFontSize;
+  label: Record<Locale, string>;
+  fontSize: string;
+}> = [
+  {
+    value: "small",
+    label: { "zh-CN": "小", "en-US": "Small" },
+    fontSize: "14px",
+  },
+  {
+    value: "standard",
+    label: { "zh-CN": "标准", "en-US": "Standard" },
+    fontSize: "16px",
+  },
+  {
+    value: "large",
+    label: { "zh-CN": "大", "en-US": "Large" },
+    fontSize: "18px",
   },
 ];
 
@@ -579,12 +601,15 @@ export function App(): JSX.Element {
     if (!state) {
       return;
     }
+    applyUiFontSize(state.panelSettings.ui_font_size);
+  }, [state?.panelSettings.ui_font_size]);
+
+  useEffect(() => {
+    if (!state) {
+      return;
+    }
     void refreshSkills(state, { silent: true });
-  }, [
-    state?.mainConfig.merge_all_available_skills,
-    state?.panelSettings.skills_project_root,
-    JSON.stringify(state?.panelSettings.skills_extra_dirs ?? []),
-  ]);
+  }, [state?.mainConfig.merge_all_available_skills]);
 
   useEffect(() => {
     if (!error) return;
@@ -644,6 +669,7 @@ export function App(): JSX.Element {
       setState(normalized);
       setSavedState(normalized);
       applyAppearanceMode(normalized.panelSettings.theme);
+      applyUiFontSize(normalized.panelSettings.ui_font_size);
       setSelectedProvider(Object.keys(normalized.mainConfig.providers)[0] ?? "");
       setSelectedModel(Object.keys(normalized.mainConfig.models)[0] ?? "");
       setSelectedProfile(normalized.activeProfile);
@@ -664,6 +690,7 @@ export function App(): JSX.Element {
       setState(fallback);
       setSavedState(fallback);
       applyAppearanceMode(fallback.panelSettings.theme);
+      applyUiFontSize(fallback.panelSettings.ui_font_size);
       const message = loadError instanceof Error ? loadError.message : String(loadError);
       setError(message);
       setDiagnostics((current) => ({
@@ -726,6 +753,7 @@ export function App(): JSX.Element {
     setState(normalizedVisibleState);
     setSavedState(normalizedSavedState);
     applyAppearanceMode(normalizedVisibleState.panelSettings.theme);
+    applyUiFontSize(normalizedVisibleState.panelSettings.ui_font_size);
     void refreshPreview(normalizedVisibleState);
     setError("");
     setNotice("");
@@ -807,6 +835,7 @@ export function App(): JSX.Element {
     const restored = normalizeStatePaths(cloneState(nextSavedState));
     setState(restored);
     applyAppearanceMode(restored.panelSettings.theme);
+    applyUiFontSize(restored.panelSettings.ui_font_size);
     setSelectedProvider((current) =>
       restored.mainConfig.providers[current] ? current : Object.keys(restored.mainConfig.providers)[0] ?? "",
     );
@@ -877,7 +906,7 @@ export function App(): JSX.Element {
         if (current && report.skills.some((skill) => skill.id === current)) {
           return current;
         }
-        return report.skills[0]?.id ?? "";
+        return "";
       });
       if (!options.silent) {
         setError("");
@@ -901,6 +930,7 @@ export function App(): JSX.Element {
       const normalized = normalizeStatePaths(draft);
       setState(normalized);
       applyAppearanceMode(normalized.panelSettings.theme);
+      applyUiFontSize(normalized.panelSettings.ui_font_size);
       void refreshPreview(normalized);
       if (options.persist !== false) {
         void persistState(normalized);
@@ -1021,7 +1051,7 @@ export function App(): JSX.Element {
   const selectedSkillPathId =
     selectedSkillPath || skillPathEntries.find((path) => path.selected)?.id || skillPathEntries[0]?.id || "";
   const visibleSkillEntries = skillEntries.filter((skill) => skill.sourcePathId === selectedSkillPathId);
-  const selectedSkillId = selectedSkill || visibleSkillEntries[0]?.id || "";
+  const selectedSkillId = selectedSkill;
 
   const selectedProviderData =
     (selectedProvider && state.mainConfig.providers[selectedProvider]) ||
@@ -1039,7 +1069,6 @@ export function App(): JSX.Element {
     null;
   const selectedSkillData =
     (selectedSkillId && visibleSkillEntries.find((skill) => skill.id === selectedSkillId)) ||
-    visibleSkillEntries[0] ||
     null;
   const isProviderNameEditable = isDraftEntry(savedState?.mainConfig.providers, selectedProviderName);
   const isProfileNameEditable = isDraftEntry(savedState?.profiles, selectedProfileName);
@@ -1267,6 +1296,7 @@ export function App(): JSX.Element {
         setState(normalized);
         setSavedState(normalized);
         applyAppearanceMode(normalized.panelSettings.theme);
+        applyUiFontSize(normalized.panelSettings.ui_font_size);
         setSelectedProvider((current) =>
           normalized.mainConfig.providers[current]
             ? current
@@ -1944,8 +1974,7 @@ export function App(): JSX.Element {
             selectedItem={selectedSkillPathId}
             onSelect={(item) => {
               setSelectedSkillPath(item);
-              const firstSkill = skillEntries.find((skill) => skill.sourcePathId === item);
-              setSelectedSkill(firstSkill?.id ?? "");
+              setSelectedSkill("");
             }}
             addLabel={t(locale, "skillsRefresh")}
             onAdd={() => void refreshSkills(state)}
@@ -2072,6 +2101,17 @@ export function App(): JSX.Element {
                   icon: option.icon,
                 }))}
               />
+              <FontSizeSliderField
+                locale={locale}
+                label={t(locale, "uiFontSize")}
+                value={state.panelSettings.ui_font_size ?? "standard"}
+                options={UI_FONT_SIZE_OPTIONS}
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.panelSettings.ui_font_size = value;
+                  })
+                }
+              />
               <SelectField
                 label={t(locale, "displayOpenMode")}
                 value={state.panelSettings.display_open_mode}
@@ -2128,32 +2168,6 @@ export function App(): JSX.Element {
                   }
                 />
               </label>
-            </SettingsGroup>
-            <SettingsGroup title={t(locale, "settingsGroupSkills")}>
-              <PathField
-                locale={locale}
-                label={t(locale, "skillsProjectRoot")}
-                value={state.panelSettings.skills_project_root}
-                pickerProperties={["openDirectory", "createDirectory"]}
-                onChange={(value) =>
-                  updateImmediateState((draft) => {
-                    draft.panelSettings.skills_project_root = value;
-                  })
-                }
-              />
-              <TextAreaField
-                label={t(locale, "skillsExtraDirs")}
-                value={state.panelSettings.skills_extra_dirs.join("\n")}
-                placeholder={t(locale, "skillsExtraDirsPlaceholder")}
-                onChange={(value) =>
-                  updateImmediateState((draft) => {
-                    draft.panelSettings.skills_extra_dirs = value
-                      .split(/\r?\n/)
-                      .map((entry) => entry.trim())
-                      .filter(Boolean);
-                  })
-                }
-              />
             </SettingsGroup>
             <SettingsGroup title={t(locale, "settingsGroupBackup")}>
               <SelectField
@@ -2387,7 +2401,15 @@ function ConfirmDialog(
   const Icon = props.kind === "delete" ? Trash2 : Save;
 
   return (
-    <div className="confirm-dialog-backdrop" role="presentation">
+    <div
+      className="confirm-dialog-backdrop"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          props.onCancel();
+        }
+      }}
+    >
       <section className="confirm-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
         <div className="confirm-dialog-header">
           <div className={props.tone === "danger" ? "confirm-dialog-icon danger" : "confirm-dialog-icon"}>
@@ -2437,7 +2459,15 @@ function DocumentViewerDialog(
   };
 
   return (
-    <div className="document-viewer-backdrop" role="presentation">
+    <div
+      className="document-viewer-backdrop"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          props.onClose();
+        }
+      }}
+    >
       <section className="document-viewer glass-panel" role="dialog" aria-modal="true" aria-labelledby="document-viewer-title">
         <div className="document-viewer-header">
           <div className="document-viewer-title">
@@ -2480,7 +2510,15 @@ function BackupRecordsDialog(
       : t(props.locale, "backupRecordsSourceLocal");
 
   return (
-    <div className="backup-records-backdrop" role="presentation">
+    <div
+      className="backup-records-backdrop"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          props.onClose();
+        }
+      }}
+    >
       <section className="backup-records-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="backup-records-title">
         <div className="backup-records-header">
           <div className="backup-records-title">
@@ -2571,6 +2609,80 @@ function BackupRecordsDialog(
   );
 }
 
+function SkillsDetailDialog(props: {
+  locale: Locale;
+  skill: SkillEntry;
+  copied: boolean;
+  onCopy: () => void;
+  onClose: () => void;
+}): JSX.Element {
+  useDialogEscape(props.onClose);
+
+  return (
+    <div
+      className="skills-detail-dialog-backdrop"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          props.onClose();
+        }
+      }}
+    >
+      <section className="skills-detail-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="skills-detail-dialog-title">
+        <div className="skills-detail-dialog-header">
+          <div>
+            <div className="skills-detail-dialog-title-row">
+              <span className="list-current-badge">{props.skill.metadata.type}</span>
+              <h3 id="skills-detail-dialog-title">{props.skill.name}</h3>
+            </div>
+            <p>{props.skill.metadata.description}</p>
+          </div>
+          <div className="document-viewer-actions">
+            <button className="action-button compact icon-only" type="button" aria-label={t(props.locale, "close")} onClick={props.onClose}>
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div className="skills-hint-grid">
+          <div className="skills-kv"><span>{t(props.locale, "skillsSource")}</span><strong>{props.skill.sourceLabel}</strong></div>
+          <div className="skills-kv"><span>{t(props.locale, "skillsDirectory")}</span><strong>{props.skill.directoryPath}</strong></div>
+          <div className="skills-kv"><span>{t(props.locale, "skillsFrontmatter")}</span><strong>{props.skill.frontmatter ? t(props.locale, "overviewOn") : t(props.locale, "overviewOff")}</strong></div>
+          <div className="skills-kv"><span>{t(props.locale, "skillsLineCount")}</span><strong>{String(props.skill.lineCount)}</strong></div>
+          <div className="skills-kv"><span>{t(props.locale, "skillsAttachments")}</span><strong>{formatSkillAssets(props.locale, props.skill)}</strong></div>
+          {props.skill.overriddenBy ? (
+            <div className="skills-kv"><span>{t(props.locale, "skillsOverrideTarget")}</span><strong>{props.skill.overriddenBy}</strong></div>
+          ) : null}
+        </div>
+
+        {(props.skill.metadata.license || props.skill.metadata.compatibility || Object.keys(props.skill.metadata.metadata).length > 0) ? (
+          <div className="skills-meta-block">
+            {props.skill.metadata.license ? (
+              <div className="skills-kv"><span>license</span><strong>{props.skill.metadata.license}</strong></div>
+            ) : null}
+            {props.skill.metadata.compatibility ? (
+              <div className="skills-kv"><span>compatibility</span><strong>{props.skill.metadata.compatibility}</strong></div>
+            ) : null}
+            {Object.keys(props.skill.metadata.metadata).length ? (
+              <div className="skills-kv skills-kv-multiline">
+                <span>metadata</span>
+                <strong>{Object.entries(props.skill.metadata.metadata).map(([key, value]) => `${key}: ${value}`).join(" · ")}</strong>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        <CodePanel
+          title={props.skill.skillFilePath}
+          content={props.skill.content}
+          onCopy={props.onCopy}
+          copied={props.copied}
+        />
+      </section>
+    </div>
+  );
+}
+
 function SkillsWorkspace(props: {
   locale: Locale;
   report: SkillsScanReport | null;
@@ -2584,11 +2696,14 @@ function SkillsWorkspace(props: {
 }): JSX.Element {
   const [copied, setCopied] = useState(false);
   const [page, setPage] = useState(1);
-  const [isSummaryCollapsed, setIsSummaryCollapsed] = useState(true);
 
   const pageSize = props.viewMode === "grid" ? 6 : 8;
   const totalPages = Math.max(1, Math.ceil(props.visibleSkills.length / pageSize));
   const pagedSkills = props.visibleSkills.slice((page - 1) * pageSize, page * pageSize);
+  const gridStyle =
+    props.viewMode === "grid" && pagedSkills.length > 0 && pagedSkills.length < 4
+      ? { gridTemplateColumns: `repeat(${pagedSkills.length}, minmax(0, 1fr))`, justifyContent: "stretch" as const }
+      : undefined;
 
   useEffect(() => {
     setPage(1);
@@ -2631,59 +2746,10 @@ function SkillsWorkspace(props: {
   return (
     <section className="skills-workspace">
       <section className="glass-panel form-panel skills-overview-panel">
-        <div className="skills-section-header">
-          <div className="section-title">{t(props.locale, "skillsSummary")}</div>
-          <button
-            className={isSummaryCollapsed ? "skills-collapse-button is-collapsed" : "skills-collapse-button"}
-            type="button"
-            onClick={() => setIsSummaryCollapsed((current) => !current)}
-            aria-expanded={!isSummaryCollapsed}
-            title={t(props.locale, "skillsSummary")}
-          >
-            <ChevronDown size={16} />
-          </button>
-        </div>
-        {!isSummaryCollapsed ? (
-          <>
-            <div className="skills-summary-grid">
-              <SummaryCard label={t(props.locale, "skillsTotal")} value={String(props.report.summary.total)} />
-              <SummaryCard label={t(props.locale, "skillsEffective")} value={String(props.report.summary.effective)} />
-              <SummaryCard label={t(props.locale, "skillsWarnings")} value={String(props.report.summary.warnings)} />
-              <SummaryCard label={t(props.locale, "skillsErrors")} value={String(props.report.summary.errors)} />
-            </div>
-            <div className="skills-hint-grid skills-hint-grid-compact">
-              <div className="skills-kv skills-kv-compact">
-                <span>
-                  {t(props.locale, "skillsDiscoveryMode")}
-                  <SkillHint locale={props.locale} message={t(props.locale, "skillsDiscoveryModeHelp")} />
-                </span>
-                <strong>{props.report.discoveryMode}</strong>
-              </div>
-              <div className="skills-kv skills-kv-compact">
-                <span>
-                  {t(props.locale, "formMergeSkills")}
-                  <SkillHint locale={props.locale} message={t(props.locale, "skillsMergeHelp")} />
-                </span>
-                <strong>{props.report.mergeAllAvailableSkills ? t(props.locale, "overviewOn") : t(props.locale, "overviewOff")}</strong>
-              </div>
-              <div className="skills-kv skills-kv-compact">
-                <span>
-                  {t(props.locale, "skillsProjectRoot")}
-                  <SkillHint locale={props.locale} message={t(props.locale, "skillsProjectRootHelp")} />
-                </span>
-                <strong>{props.report.projectRoot || t(props.locale, "overviewNone")}</strong>
-              </div>
-            </div>
-            <p className="skills-note">{t(props.locale, "skillsBuiltinNotice")}</p>
-          </>
-        ) : null}
-      </section>
-
-      <section className="glass-panel form-panel skills-overview-panel">
         <div className="skills-detail-header">
-          <div>
-            <div className="skills-path-caption">{props.selectedPath?.path ?? t(props.locale, "overviewNone")}</div>
+          <div className="skills-header-main">
             <div className="section-title">{t(props.locale, "skills")}</div>
+            <div className="skills-path-caption">{props.selectedPath?.path ?? t(props.locale, "overviewNone")}</div>
           </div>
           <div className="skills-detail-badges">
             <div className="skills-view-toggle" role="tablist" aria-label={t(props.locale, "skillsViewMode")}>
@@ -2742,7 +2808,11 @@ function SkillsWorkspace(props: {
                 </button>
               </div>
             </div>
-            <div className={props.viewMode === "grid" ? "skills-read-grid" : "skills-read-list"} role="list">
+            <div
+              className={props.viewMode === "grid" ? "skills-read-grid" : "skills-read-list"}
+              role="list"
+              style={gridStyle}
+            >
               {pagedSkills.map((skill) => (
               <button
                 key={skill.id}
@@ -2756,18 +2826,27 @@ function SkillsWorkspace(props: {
                 onClick={() => props.onSelectSkill(skill.id)}
               >
                 <div className={props.viewMode === "grid" ? "skills-read-card-top" : "skills-read-row-main"}>
-                  <div className="skills-read-card-header">
-                    <strong>{skill.name}</strong>
-                    <div className="skills-detail-badges">
+                  {props.viewMode === "grid" ? (
+                    <div className="skills-read-row-header">
                       <span className="list-current-badge">{skill.metadata.type}</span>
+                      <strong>{skill.name}</strong>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="skills-read-row-header">
+                      <span className="list-current-badge">{skill.metadata.type}</span>
+                      <strong>{skill.name}</strong>
+                    </div>
+                  )}
                   <p>{skill.metadata.description}</p>
+                  {props.viewMode === "list" ? (
+                    <div className="skills-read-row-folder">{skill.directoryName}</div>
+                  ) : null}
                 </div>
-                <div className="skills-read-card-meta">
-                  <span>{skill.directoryName}</span>
-                  <span>{skill.lineCount}L</span>
-                </div>
+                {props.viewMode === "grid" ? (
+                  <div className="skills-read-card-meta">
+                    <div className="skills-read-row-folder">{skill.directoryName}</div>
+                  </div>
+                ) : null}
               </button>
               ))}
             </div>
@@ -2776,78 +2855,16 @@ function SkillsWorkspace(props: {
           <div className="skills-empty-issues">{t(props.locale, "skillsEmptyInDirectory")}</div>
         )}
       </section>
-
       {props.selectedSkill ? (
-        <section className="glass-panel form-panel skills-detail-panel">
-          <div className="skills-detail-header">
-            <div>
-              <div className="section-title">{props.selectedSkill.name}</div>
-              <p>{props.selectedSkill.metadata.description}</p>
-            </div>
-            <div className="skills-detail-badges">
-              <span className="list-current-badge">{props.selectedSkill.metadata.type}</span>
-              <span className={props.selectedSkill.effective ? "status-pill on" : "status-pill off"}>
-                <span className="dot" />
-                {props.selectedSkill.effective ? t(props.locale, "skillsEffective") : t(props.locale, "skillsOverridden")}
-              </span>
-            </div>
-          </div>
-
-          <div className="skills-hint-grid">
-            <div className="skills-kv"><span>{t(props.locale, "skillsSource")}</span><strong>{props.selectedSkill.sourceLabel}</strong></div>
-            <div className="skills-kv"><span>{t(props.locale, "skillsDirectory")}</span><strong>{props.selectedSkill.directoryPath}</strong></div>
-            <div className="skills-kv"><span>{t(props.locale, "skillsFrontmatter")}</span><strong>{props.selectedSkill.frontmatter ? t(props.locale, "overviewOn") : t(props.locale, "overviewOff")}</strong></div>
-            <div className="skills-kv"><span>{t(props.locale, "skillsLineCount")}</span><strong>{String(props.selectedSkill.lineCount)}</strong></div>
-            <div className="skills-kv"><span>{t(props.locale, "skillsAttachments")}</span><strong>{formatSkillAssets(props.locale, props.selectedSkill)}</strong></div>
-            {props.selectedSkill.overriddenBy ? (
-              <div className="skills-kv"><span>{t(props.locale, "skillsOverrideTarget")}</span><strong>{props.selectedSkill.overriddenBy}</strong></div>
-            ) : null}
-          </div>
-
-          {(props.selectedSkill.metadata.license || props.selectedSkill.metadata.compatibility || Object.keys(props.selectedSkill.metadata.metadata).length > 0) ? (
-            <div className="skills-meta-block">
-              {props.selectedSkill.metadata.license ? (
-                <div className="skills-kv"><span>license</span><strong>{props.selectedSkill.metadata.license}</strong></div>
-              ) : null}
-              {props.selectedSkill.metadata.compatibility ? (
-                <div className="skills-kv"><span>compatibility</span><strong>{props.selectedSkill.metadata.compatibility}</strong></div>
-              ) : null}
-              {Object.keys(props.selectedSkill.metadata.metadata).length ? (
-                <div className="skills-kv skills-kv-multiline">
-                  <span>metadata</span>
-                  <strong>{Object.entries(props.selectedSkill.metadata.metadata).map(([key, value]) => `${key}: ${value}`).join(" · ")}</strong>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          <CodePanel
-            title={props.selectedSkill.skillFilePath}
-            content={props.selectedSkill.content}
-            onCopy={handleCopy}
-            copied={copied}
-          />
-        </section>
-      ) : (
-        <section className="glass-panel form-panel empty-state">
-          <div className="section-title">{t(props.locale, "skills")}</div>
-          <p>{t(props.locale, "skillsEmpty")}</p>
-        </section>
-      )}
+        <SkillsDetailDialog
+          locale={props.locale}
+          skill={props.selectedSkill}
+          copied={copied}
+          onCopy={handleCopy}
+          onClose={() => props.onSelectSkill("")}
+        />
+      ) : null}
     </section>
-  );
-}
-
-function SkillHint(props: { locale: Locale; message: string }): JSX.Element {
-  return (
-    <button
-      className="skills-hint-button"
-      type="button"
-      aria-label={t(props.locale, "view")}
-      data-tooltip={props.message}
-    >
-      <CircleHelp size={12} />
-    </button>
   );
 }
 
@@ -2887,10 +2904,11 @@ function SplitLayout(props: {
   itemClassName?: (item: string) => string | null;
   renderItemAction?: (item: string) => JSX.Element | null;
   headerActions?: JSX.Element | null;
+  reverse?: boolean;
   children: JSX.Element;
 }): JSX.Element {
   return (
-    <section className="split-layout">
+    <section className={props.reverse ? "split-layout split-layout-reverse" : "split-layout"}>
       <div className="glass-panel list-panel">
         <div className="list-header">
           <div className="section-title">{props.listTitle}</div>
@@ -3323,7 +3341,15 @@ function McpImportDialog(props: {
   useDialogEscape(props.onCancel);
 
   return (
-    <div className="mcp-import-backdrop" role="presentation">
+    <div
+      className="mcp-import-backdrop"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          props.onCancel();
+        }
+      }}
+    >
       <section className="glass-panel form-panel mcp-import-dialog" role="dialog" aria-modal="true" aria-labelledby="mcp-import-title">
         <div className="mcp-import-header">
           <div>
@@ -3635,6 +3661,62 @@ function SelectField(props: {
   );
 }
 
+function FontSizeSliderField(props: {
+  locale: Locale;
+  label: string;
+  value: UiFontSize;
+  options: Array<{
+    value: UiFontSize;
+    label: Record<Locale, string>;
+    fontSize: string;
+  }>;
+  onChange: (value: UiFontSize) => void;
+}): JSX.Element {
+  const options = props.options.length ? props.options : UI_FONT_SIZE_OPTIONS;
+  const selectedIndex = Math.max(
+    0,
+    options.findIndex((option) => option.value === props.value),
+  );
+  const progress =
+    options.length > 1 ? (selectedIndex / (options.length - 1)) * 100 : 0;
+
+  return (
+    <div className="field font-size-field">
+      <span>{props.label}</span>
+      <div
+        className="font-size-slider-shell"
+        style={{ ["--font-slider-progress" as string]: `${progress}%` }}
+      >
+        <div className="font-size-slider-control">
+          <input
+            className="font-size-slider-input"
+            type="range"
+            min={0}
+            max={options.length - 1}
+            step={1}
+            value={selectedIndex}
+            aria-label={props.label}
+            onChange={(event) => {
+              const nextIndex = Number(event.target.value);
+              props.onChange(options[nextIndex]?.value ?? "standard");
+            }}
+          />
+          <div className="font-size-slider-labels" aria-hidden="true">
+            {options.map((option) => (
+              <span
+                key={option.value}
+                className={option.value === props.value ? "is-active" : undefined}
+              >
+                {option.label[props.locale]}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MultiSelectField(props: {
   label: string;
   value: string[];
@@ -3798,9 +3880,8 @@ function createFallbackState(): AppState {
     config_path: "~/.kimi/config.toml",
     profiles_path: "",
     follow_config_profiles: true,
-    skills_project_root: "",
-    skills_extra_dirs: [],
     theme: "auto" as AppearanceMode,
+    ui_font_size: "standard" as UiFontSize,
     locale: "zh-CN" as Locale,
     tray_icon: false,
     display_open_mode: "remember-last" as DisplayOpenMode,
@@ -3879,6 +3960,16 @@ function applyAppearanceMode(mode: AppearanceMode): void {
         : "dark"
       : mode;
   document.documentElement.dataset.theme = resolvedMode;
+}
+
+function applyUiFontSize(size: UiFontSize): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+  const fontSize =
+    UI_FONT_SIZE_OPTIONS.find((option) => option.value === size)?.fontSize ?? "16px";
+  document.documentElement.style.fontSize = fontSize;
+  document.documentElement.dataset.uiFontSize = size;
 }
 
 function formatMessage(template: string, values: Record<string, string | number>): string {

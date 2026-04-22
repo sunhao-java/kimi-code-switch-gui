@@ -1,8 +1,8 @@
 import { basename, join } from "node:path";
 
 export type SkillType = "prompt" | "flow";
-export type SkillDiscoveryMode = "auto" | "custom";
-export type SkillPathGroup = "builtin" | "user-brand" | "user-common" | "project-brand" | "project-common" | "extra";
+export type SkillDiscoveryMode = "auto";
+export type SkillPathGroup = "builtin" | "user-brand" | "user-common";
 
 export interface SkillFileAccess {
   readText(path: string): Promise<string | null>;
@@ -65,8 +65,6 @@ export interface SkillsScanReport {
   builtinNotice: string;
   discoveryMode: SkillDiscoveryMode;
   mergeAllAvailableSkills: boolean;
-  projectRoot: string;
-  extraDirs: string[];
   paths: SkillDiscoveryPath[];
   skills: SkillEntry[];
   summary: SkillsScanSummary;
@@ -76,17 +74,11 @@ export async function scanSkills(
   files: SkillFileAccess,
   options: {
     mergeAllAvailableSkills: boolean;
-    projectRoot?: string;
-    extraDirs?: string[];
   },
 ): Promise<SkillsScanReport> {
-  const projectRoot = sanitizePath(options.projectRoot);
-  const extraDirs = sanitizePathArray(options.extraDirs);
-  const discoveryMode: SkillDiscoveryMode = extraDirs.length > 0 ? "custom" : "auto";
+  const discoveryMode: SkillDiscoveryMode = "auto";
   const paths = await buildDiscoveryPaths(files, {
     mergeAllAvailableSkills: options.mergeAllAvailableSkills,
-    projectRoot,
-    extraDirs,
   });
   const scannedPaths = paths
     .filter((entry) => entry.group !== "builtin" && entry.exists)
@@ -122,8 +114,6 @@ export async function scanSkills(
     builtinNotice: "Built-in skills are provided by Kimi CLI and are not enumerated from the local filesystem.",
     discoveryMode,
     mergeAllAvailableSkills: options.mergeAllAvailableSkills,
-    projectRoot,
-    extraDirs,
     paths,
     skills,
     summary,
@@ -134,8 +124,6 @@ async function buildDiscoveryPaths(
   files: SkillFileAccess,
   options: {
     mergeAllAvailableSkills: boolean;
-    projectRoot: string;
-    extraDirs: string[];
   },
 ): Promise<SkillDiscoveryPath[]> {
   const candidates = [
@@ -145,20 +133,6 @@ async function buildDiscoveryPaths(
     createCandidate("user-brand-codex", "user-brand", "~/.codex/skills"),
     createCandidate("user-common-config", "user-common", "~/.config/agents/skills"),
     createCandidate("user-common-legacy", "user-common", "~/.agents/skills"),
-    ...(options.projectRoot
-      ? [
-          createCandidate("project-brand-kimi", "project-brand", join(options.projectRoot, ".kimi/skills")),
-          createCandidate("project-brand-claude", "project-brand", join(options.projectRoot, ".claude/skills")),
-          createCandidate("project-brand-codex", "project-brand", join(options.projectRoot, ".codex/skills")),
-          createCandidate("project-common", "project-common", join(options.projectRoot, ".agents/skills")),
-        ]
-      : []),
-    ...options.extraDirs.map((path, index) => ({
-      id: `extra-${index}`,
-      group: "extra" as const,
-      label: `Extra ${index + 1}`,
-      path,
-    })),
   ];
 
   const candidatesWithExistence = await Promise.all(
@@ -205,31 +179,8 @@ async function buildDiscoveryPaths(
     }
   };
 
-  if (options.extraDirs.length > 0) {
-    for (const entry of candidatesWithExistence.filter((candidate) => candidate.group === "extra")) {
-      if (!entry.exists) {
-        entry.reason = "Directory not found.";
-        continue;
-      }
-      entry.selected = true;
-      entry.priority = priority;
-      priority += 1;
-      entry.reason = "Enabled from explicit extra skills directories.";
-    }
-
-    for (const entry of candidatesWithExistence.filter((candidate) => candidate.group !== "builtin" && candidate.group !== "extra")) {
-      entry.reason = entry.exists
-        ? "Scanned for visibility but not enabled because custom extra directories are configured."
-        : "Directory not found.";
-    }
-  } else {
-    selectGroup("user-brand", options.mergeAllAvailableSkills ? "all" : "single");
-    selectGroup("user-common", "single");
-    if (options.projectRoot) {
-      selectGroup("project-brand", options.mergeAllAvailableSkills ? "all" : "single");
-      selectGroup("project-common", "single");
-    }
-  }
+  selectGroup("user-brand", options.mergeAllAvailableSkills ? "all" : "single");
+  selectGroup("user-common", "single");
 
   paths.push(...candidatesWithExistence);
   return paths;
@@ -438,29 +389,11 @@ function pathLabel(group: SkillPathGroup, path: string): string {
   if (group === "builtin") {
     return "Built-in Skills";
   }
-  if (group === "extra") {
-    return path;
-  }
   const prefix =
     group === "user-brand"
       ? "User Brand"
-      : group === "user-common"
-        ? "User Common"
-        : group === "project-brand"
-          ? "Project Brand"
-          : "Project Common";
+      : "User Common";
   return `${prefix} · ${path}`;
-}
-
-function sanitizePath(path?: string): string {
-  return typeof path === "string" ? path.trim() : "";
-}
-
-function sanitizePathArray(value?: string[]): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return Array.from(new Set(value.map((entry) => sanitizePath(entry)).filter(Boolean)));
 }
 
 function stripQuotes(value: string): string {

@@ -273,14 +273,13 @@ describe("configStore", () => {
   it("loads panel settings with defaults", async () => {
     const files = createMemoryFs({
       "/tmp/config.panel.toml":
-        'locale = "en-US"\ntheme = "dark"\nconfig_path = "/tmp/custom.toml"\ntray_icon = true\ndisplay_open_mode = "active-display"\nlast_display_id = 2\nskills_project_root = "/workspace/demo"\nskills_extra_dirs = ["/tmp/skills-a", "/tmp/skills-b"]\n',
+        'locale = "en-US"\ntheme = "dark"\nui_font_size = "large"\nconfig_path = "/tmp/custom.toml"\ntray_icon = true\ndisplay_open_mode = "active-display"\nlast_display_id = 2\nskills_project_root = "/workspace/demo"\nskills_extra_dirs = ["/tmp/skills-a", "/tmp/skills-b"]\n',
     });
     const loaded = await loadPanelSettings(files, "/tmp/config.panel.toml");
     expect(loaded.locale).toBe("en-US");
     expect(loaded.theme).toBe("dark");
+    expect(loaded.ui_font_size).toBe("large");
     expect(loaded.config_path).toBe("/tmp/custom.toml");
-    expect(loaded.skills_project_root).toBe("/workspace/demo");
-    expect(loaded.skills_extra_dirs).toEqual(["/tmp/skills-a", "/tmp/skills-b"]);
     expect(loaded.display_open_mode).toBe("active-display");
     expect(loaded.close_behavior).toBe("keep-in-tray");
     expect(loaded.backup_local_path).toBe("/tmp/backups");
@@ -294,11 +293,12 @@ describe("configStore", () => {
   it("clamps invalid backup settings to safe defaults", async () => {
     const files = createMemoryFs({
       "/tmp/config.panel.toml":
-        'config_path = "/tmp/custom.toml"\nbackup_frequency = "monthly"\nbackup_retention_count = 0\nbackup_enabled = true\n',
+        'config_path = "/tmp/custom.toml"\nui_font_size = "huge"\nbackup_frequency = "monthly"\nbackup_retention_count = 0\nbackup_enabled = true\n',
     });
 
     const loaded = await loadPanelSettings(files, "/tmp/config.panel.toml");
 
+    expect(loaded.ui_font_size).toBe("standard");
     expect(loaded.backup_local_path).toBe("/tmp/backups");
     expect(loaded.backup_frequency).toBe("daily");
     expect(loaded.backup_retention_count).toBe(1);

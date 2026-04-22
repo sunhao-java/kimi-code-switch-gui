@@ -58,9 +58,8 @@ export function createDefaultPanelSettings(
     config_path: configPath,
     profiles_path: "",
     follow_config_profiles: true,
-    skills_project_root: "",
-    skills_extra_dirs: [],
     theme: "auto",
+    ui_font_size: "standard",
     locale: "zh-CN",
     tray_icon: false,
     display_open_mode: "remember-last",
@@ -172,9 +171,8 @@ export async function loadPanelSettings(
       typeof data.follow_config_profiles === "boolean"
         ? data.follow_config_profiles
         : true,
-    skills_project_root: asString(data.skills_project_root, ""),
-    skills_extra_dirs: asStringArray(data.skills_extra_dirs),
     theme: parseAppearanceMode(data.theme, fallback.theme),
+    ui_font_size: parseUiFontSize(data.ui_font_size, fallback.ui_font_size),
     locale: data.locale === "en-US" ? "en-US" : "zh-CN",
     tray_icon: trayIcon,
     display_open_mode: parseDisplayOpenMode(data.display_open_mode, fallback.display_open_mode),
@@ -533,6 +531,13 @@ function parseAppearanceMode(value: unknown, fallback: PanelSettings["theme"]): 
   return value === "light" || value === "dark" || value === "auto" ? value : fallback;
 }
 
+function parseUiFontSize(
+  value: unknown,
+  fallback: PanelSettings["ui_font_size"],
+): PanelSettings["ui_font_size"] {
+  return value === "small" || value === "standard" || value === "large" ? value : fallback;
+}
+
 function parseDisplayOpenMode(
   value: unknown,
   fallback: PanelSettings["display_open_mode"],
@@ -621,6 +626,7 @@ export function normalizeStatePaths(state: AppState): AppState {
     ...state.panelSettings,
     config_path: configPath,
     theme: parseAppearanceMode(state.panelSettings.theme, "auto"),
+    ui_font_size: parseUiFontSize(state.panelSettings.ui_font_size, "standard"),
     display_open_mode: parseDisplayOpenMode(state.panelSettings.display_open_mode, "remember-last"),
     close_behavior: state.panelSettings.tray_icon
       ? parseCloseBehavior(state.panelSettings.close_behavior, "keep-in-tray")
@@ -634,8 +640,6 @@ export function normalizeStatePaths(state: AppState): AppState {
     backup_webdav_username: asString(state.panelSettings.backup_webdav_username, ""),
     backup_webdav_password: asString(state.panelSettings.backup_webdav_password, ""),
     backup_webdav_path: asString(state.panelSettings.backup_webdav_path, "").trim(),
-    skills_project_root: asString(state.panelSettings.skills_project_root, "").trim(),
-    skills_extra_dirs: asStringArray(state.panelSettings.skills_extra_dirs),
     last_display_id: state.panelSettings.last_display_id,
     mcp_servers: cloneMcpServers(state.mcpConfig.mcpServers),
     profiles_path: state.panelSettings.follow_config_profiles
