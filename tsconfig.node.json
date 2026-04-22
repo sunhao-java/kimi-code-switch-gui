@@ -9,6 +9,7 @@
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "strict": true,
+    "ignoreDeprecations": "6.0",
     "skipLibCheck": true,
     "types": ["node"],
     "baseUrl": ".",

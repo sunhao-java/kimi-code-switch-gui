@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from "electron";
+import type { NativeImage } from "electron";
 import { delimiter, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -485,7 +486,7 @@ function getResourcePath(filename: string): string {
   return join(process.resourcesPath, filename);
 }
 
-function getTrayIcon(): nativeImage {
+function getTrayIcon(): NativeImage {
   const isDark = nativeTheme.shouldUseDarkColors;
   const iconFile = isDark ? "tray-dark.png" : "tray-light.png";
   const icon2xFile = isDark ? "tray-dark@2x.png" : "tray-light@2x.png";
