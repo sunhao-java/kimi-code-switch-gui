@@ -3192,7 +3192,7 @@ textarea {
 .skills-read-grid {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 245px));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 245px));
   align-items: stretch;
   min-width: 0;
   justify-content: start;
@@ -3223,7 +3223,7 @@ textarea {
   cursor: pointer;
   align-content: space-between;
   min-height: 188px;
-  aspect-ratio: 1 / 0.9;
+  height: 188px;
   overflow: hidden;
   background:
     radial-gradient(circle at top right, rgba(132, 247, 211, 0.1), transparent 34%),
@@ -3499,10 +3499,11 @@ textarea {
 .skills-detail-dialog {
   width: min(980px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
-  padding: 24px;
+  padding: 22px 24px 20px;
   border-radius: 30px;
   display: grid;
-  gap: 18px;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 14px;
   overflow: hidden;
 }
 
@@ -3525,19 +3526,32 @@ textarea {
   font-size: 1.04rem;
 }
 
-.skills-detail-dialog-header p {
+.skills-detail-dialog-copy {
+  min-width: 0;
+}
+
+.skills-detail-dialog-description {
   margin: 8px 0 0;
   color: var(--muted);
   line-height: 1.6;
 }
 
+.skills-detail-summary-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
 .skills-detail-dialog .code-panel {
   min-height: 0;
+  display: grid;
+  gap: 10px;
 }
 
 .skills-detail-dialog .code-window {
   min-height: 0;
-  max-height: calc(100vh - 340px);
+  max-height: calc(100vh - 310px);
   overflow: auto;
 }
 
@@ -3559,6 +3573,17 @@ textarea {
   border-radius: 16px;
   border: 1px dashed rgba(124, 179, 255, 0.16);
   color: var(--muted);
+}
+
+.skills-detail-summary-grid .skills-kv {
+  min-width: 0;
+}
+
+.skills-detail-summary-grid .skills-kv strong {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: initial;
+  word-break: break-word;
 }
 
 .skills-issue.is-error {
@@ -3641,6 +3666,10 @@ textarea {
 }
 
 @media (max-width: 900px) {
+  .skills-detail-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
   .topbar {
     flex-direction: column;
     align-items: stretch;

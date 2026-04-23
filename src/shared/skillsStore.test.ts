@@ -140,6 +140,50 @@ BEGIN --> middle
     expect(report.summary.errors).toBe(0);
   });
 
+  it("parses multiline block scalar descriptions into a readable summary", async () => {
+    const files = createMemorySkillFs({
+      "~/.claude/skills/pdf-parser/SKILL.md": `---
+name: pdf-parser
+description: |
+  Pdf Parser - Auto-activating skill for Business Automation.
+  Triggers on: pdf parser, pdf parser
+  Part of the Business Automation skill category.
+---
+# Pdf Parser
+`,
+    });
+
+    const report = await scanSkills(files, {
+      mergeAllAvailableSkills: false,
+    });
+
+    expect(report.skills[0]?.metadata.description).toBe(
+      "Pdf Parser - Auto-activating skill for Business Automation. Triggers on: pdf parser, pdf parser Part of the Business Automation skill category.",
+    );
+  });
+
+  it("parses indented multiline descriptions without block scalar markers", async () => {
+    const files = createMemorySkillFs({
+      "~/.claude/skills/code-reviewer/SKILL.md": `---
+name: code-reviewer
+description:
+  Use this skill to review code. It supports both local changes (staged or working tree)
+  and remote Pull Requests (by ID or URL). It focuses on correctness, maintainability,
+  and adherence to project standards.
+---
+# Code Reviewer
+`,
+    });
+
+    const report = await scanSkills(files, {
+      mergeAllAvailableSkills: false,
+    });
+
+    expect(report.skills[0]?.metadata.description).toBe(
+      "Use this skill to review code. It supports both local changes (staged or working tree) and remote Pull Requests (by ID or URL). It focuses on correctness, maintainability, and adherence to project standards.",
+    );
+  });
+
   it("marks duplicate skills from disabled directories as not effective", async () => {
     const files = createMemorySkillFs({
       "~/.kimi/skills/reviewer/SKILL.md": `---

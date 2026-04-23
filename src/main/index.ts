@@ -19,13 +19,14 @@ import {
   DEFAULT_CONFIG_PATH,
   normalizeStatePaths,
   PANEL_SETTINGS_FILENAME,
+  PROFILE_FILENAME,
   loadAppState,
   loadPanelSettings,
   saveAppState,
 } from "@shared/configStore";
 import { buildMcpConfigDocument } from "@shared/mcpStore";
 import { scanSkills } from "@shared/skillsStore";
-import type { AppState, BackupFrequency, BackupResult, FileDialogResult, Locale, PanelSettings, TrayCommand } from "@shared/types";
+import type { AppState, BackupFrequency, BackupRecord, BackupResult, FileDialogResult, Locale, PanelSettings, TrayCommand } from "@shared/types";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -416,6 +417,176 @@ async function testWebDavConnection(state: AppState): Promise<{ ok: true; target
     ok: true,
     target,
   };
+}
+
+async function listLocalBackups(state: AppState): Promise<BackupRecord[]> {
+  const normalizedState = normalizeStatePaths(state);
+  const backupRoot = resolveHome(normalizedState.panelSettings.backup_local_path);
+
+  try {
+    const entries = await readdir(backupRoot, { withFileTypes: true });
+    const records = await Promise.all(
+      entries
+        .filter((entry) => entry.isDirectory() && entry.name.startsWith("backup-"))
+        .map(async (entry) => {
+          const recordPath = join(backupRoot, entry.name);
+          const files = await readdir(recordPath).catch(() => []);
+          return {
+            name: entry.name,
+            createdAt: entry.name,
+            path: recordPath,
+            itemCount: files.length,
+          } satisfies BackupRecord;
+        }),
+    );
+    return records.sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+  } catch {
+    return [];
+  }
+}
+
+async function listWebDavBackups(state: AppState): Promise<BackupRecord[]> {
+  const normalizedState = normalizeStatePaths(state);
+  const settings = normalizedState.panelSettings;
+  const manifestUrl = `${await ensureWebDavCollection(settings)}/.kimi-backups.json`;
+  const manifestEntries = await readWebDavManifest(settings, manifestUrl);
+
+  return manifestEntries
+    .map((entry) => ({
+      name: entry.name,
+      createdAt: entry.createdAt,
+      path: buildWebDavUrl(settings, [entry.name]),
+    }))
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+async function listBackups(state: AppState): Promise<BackupRecord[]> {
+  const normalizedState = normalizeStatePaths(state);
+  if (normalizedState.panelSettings.backup_destination_type === "webdav") {
+    return listWebDavBackups(normalizedState);
+  }
+  return listLocalBackups(normalizedState);
+}
+
+async function deleteLocalBackup(state: AppState, backupName: string): Promise<void> {
+  const normalizedState = normalizeStatePaths(state);
+  const backupRoot = resolveHome(normalizedState.panelSettings.backup_local_path);
+  await rm(join(backupRoot, backupName), { recursive: true, force: true });
+}
+
+async function deleteWebDavBackup(state: AppState, backupName: string): Promise<void> {
+  const normalizedState = normalizeStatePaths(state);
+  const settings = normalizedState.panelSettings;
+  const manifestUrl = `${await ensureWebDavCollection(settings)}/.kimi-backups.json`;
+  const manifestEntries = await readWebDavManifest(settings, manifestUrl);
+  await deleteWebDavPath(settings, buildWebDavUrl(settings, [backupName]));
+  await uploadWebDavFile(
+    settings,
+    manifestUrl,
+    JSON.stringify({ backups: manifestEntries.filter((entry) => entry.name !== backupName) }, null, 2),
+  );
+}
+
+async function deleteBackup(state: AppState, backupName: string): Promise<{ ok: true }> {
+  const normalizedState = normalizeStatePaths(state);
+  if (normalizedState.panelSettings.backup_destination_type === "webdav") {
+    await deleteWebDavBackup(normalizedState, backupName);
+  } else {
+    await deleteLocalBackup(normalizedState, backupName);
+  }
+  return { ok: true };
+}
+
+async function readLocalBackupFiles(state: AppState, backupName: string): Promise<Record<string, string>> {
+  const normalizedState = normalizeStatePaths(state);
+  const backupRoot = resolveHome(normalizedState.panelSettings.backup_local_path);
+  const backupDirectory = join(backupRoot, backupName);
+  const [configDocument, profilesDocument, panelSettingsDocument, mcpDocument] = await Promise.all([
+    readFile(join(backupDirectory, "config.toml"), "utf-8"),
+    readFile(join(backupDirectory, "config.profiles.toml"), "utf-8"),
+    readFile(join(backupDirectory, "config.panel.toml"), "utf-8"),
+    readFile(join(backupDirectory, "mcp.json"), "utf-8"),
+  ]);
+
+  return {
+    configDocument,
+    profilesDocument,
+    panelSettingsDocument,
+    mcpDocument,
+  };
+}
+
+async function readWebDavBackupFiles(state: AppState, backupName: string): Promise<Record<string, string>> {
+  const normalizedState = normalizeStatePaths(state);
+  const settings = normalizedState.panelSettings;
+  const backupDirectoryUrl = buildWebDavUrl(settings, [backupName]);
+
+  const readRemoteText = async (filename: string): Promise<string> => {
+    const response = await fetch(`${backupDirectoryUrl}/${encodeURIComponent(filename)}`, {
+      method: "GET",
+      headers: {
+        Authorization: getWebDavAuthHeader(settings),
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`WebDAV restore download failed: ${response.status} ${response.statusText}`);
+    }
+    return response.text();
+  };
+
+  const [configDocument, profilesDocument, panelSettingsDocument, mcpDocument] = await Promise.all([
+    readRemoteText("config.toml"),
+    readRemoteText("config.profiles.toml"),
+    readRemoteText("config.panel.toml"),
+    readRemoteText("mcp.json"),
+  ]);
+
+  return {
+    configDocument,
+    profilesDocument,
+    panelSettingsDocument,
+    mcpDocument,
+  };
+}
+
+function resolveProfilesPathFromPanelSettings(configPath: string, panelSettings: PanelSettings): string {
+  if (panelSettings.follow_config_profiles) {
+    return join(dirname(configPath), PROFILE_FILENAME);
+  }
+  return panelSettings.profiles_path.trim() || join(dirname(configPath), PROFILE_FILENAME);
+}
+
+async function restoreBackup(state: AppState, backupName: string): Promise<AppState> {
+  const normalizedState = normalizeStatePaths(state);
+  const documents =
+    normalizedState.panelSettings.backup_destination_type === "webdav"
+      ? await readWebDavBackupFiles(normalizedState, backupName)
+      : await readLocalBackupFiles(normalizedState, backupName);
+
+  await fileAccess.ensureDir(dirname(normalizedState.panelSettingsPath));
+  await fileAccess.writeText(normalizedState.panelSettingsPath, documents.panelSettingsDocument);
+
+  const restoredPanelSettings = await loadPanelSettings(fileAccess, normalizedState.panelSettingsPath);
+  const restoredConfigPath = restoredPanelSettings.config_path.trim() || DEFAULT_CONFIG_PATH;
+  const restoredProfilesPath = resolveProfilesPathFromPanelSettings(restoredConfigPath, restoredPanelSettings);
+
+  await fileAccess.ensureDir(dirname(restoredConfigPath));
+  await fileAccess.ensureDir(dirname(restoredProfilesPath));
+  await fileAccess.ensureDir(dirname(normalizedState.mcpConfigPath));
+
+  await Promise.all([
+    fileAccess.writeText(restoredConfigPath, documents.configDocument),
+    fileAccess.writeText(restoredProfilesPath, documents.profilesDocument),
+    fileAccess.writeText(normalizedState.mcpConfigPath, documents.mcpDocument),
+  ]);
+
+  const restoredState = await loadAppState(fileAccess, {
+    panelSettingsPath: normalizedState.panelSettingsPath,
+    mcpConfigPath: normalizedState.mcpConfigPath,
+  });
+  updateBackupSchedule(restoredState);
+  latestAppState = cloneState(restoredState);
+  return restoredState;
 }
 
 function clearScheduledBackup(): void {
@@ -879,6 +1050,18 @@ app.whenReady().then(() => {
 
   ipcMain.handle("backup:run", async (_, state?: AppState) => {
     return runBackup(state);
+  });
+
+  ipcMain.handle("backup:list", async (_, state: AppState) => {
+    return listBackups(state);
+  });
+
+  ipcMain.handle("backup:delete", async (_, state: AppState, backupName: string) => {
+    return deleteBackup(state, backupName);
+  });
+
+  ipcMain.handle("backup:restore", async (_, state: AppState, backupName: string) => {
+    return restoreBackup(state, backupName);
   });
 
   ipcMain.handle("backup:test-webdav", async (_, state: AppState) => {

@@ -2617,6 +2617,28 @@ function SkillsDetailDialog(props: {
   onClose: () => void;
 }): JSX.Element {
   useDialogEscape(props.onClose);
+  const detailItems = [
+    { label: t(props.locale, "skillsSource"), value: props.skill.sourceLabel },
+    { label: t(props.locale, "skillsDirectory"), value: props.skill.directoryPath },
+    { label: t(props.locale, "skillsFrontmatter"), value: props.skill.frontmatter ? t(props.locale, "overviewOn") : t(props.locale, "overviewOff") },
+    { label: t(props.locale, "skillsLineCount"), value: String(props.skill.lineCount) },
+    { label: t(props.locale, "skillsAttachments"), value: formatSkillAssets(props.locale, props.skill) },
+    ...(props.skill.overriddenBy
+      ? [{ label: t(props.locale, "skillsOverrideTarget"), value: props.skill.overriddenBy }]
+      : []),
+    ...(props.skill.metadata.license
+      ? [{ label: "license", value: props.skill.metadata.license }]
+      : []),
+    ...(props.skill.metadata.compatibility
+      ? [{ label: "compatibility", value: props.skill.metadata.compatibility }]
+      : []),
+    ...(Object.keys(props.skill.metadata.metadata).length > 0
+      ? [{
+          label: "metadata",
+          value: Object.entries(props.skill.metadata.metadata).map(([key, value]) => `${key}: ${value}`).join(" · "),
+        }]
+      : []),
+  ];
 
   return (
     <div
@@ -2630,12 +2652,14 @@ function SkillsDetailDialog(props: {
     >
       <section className="skills-detail-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="skills-detail-dialog-title">
         <div className="skills-detail-dialog-header">
-          <div>
+          <div className="skills-detail-dialog-copy">
             <div className="skills-detail-dialog-title-row">
               <span className="list-current-badge">{props.skill.metadata.type}</span>
               <h3 id="skills-detail-dialog-title">{props.skill.name}</h3>
             </div>
-            <p>{props.skill.metadata.description}</p>
+            {props.skill.metadata.description ? (
+              <p className="skills-detail-dialog-description">{props.skill.metadata.description}</p>
+            ) : null}
           </div>
           <div className="document-viewer-actions">
             <button className="action-button compact icon-only" type="button" aria-label={t(props.locale, "close")} onClick={props.onClose}>
@@ -2644,33 +2668,21 @@ function SkillsDetailDialog(props: {
           </div>
         </div>
 
-        <div className="skills-hint-grid">
-          <div className="skills-kv"><span>{t(props.locale, "skillsSource")}</span><strong>{props.skill.sourceLabel}</strong></div>
-          <div className="skills-kv"><span>{t(props.locale, "skillsDirectory")}</span><strong>{props.skill.directoryPath}</strong></div>
-          <div className="skills-kv"><span>{t(props.locale, "skillsFrontmatter")}</span><strong>{props.skill.frontmatter ? t(props.locale, "overviewOn") : t(props.locale, "overviewOff")}</strong></div>
-          <div className="skills-kv"><span>{t(props.locale, "skillsLineCount")}</span><strong>{String(props.skill.lineCount)}</strong></div>
-          <div className="skills-kv"><span>{t(props.locale, "skillsAttachments")}</span><strong>{formatSkillAssets(props.locale, props.skill)}</strong></div>
-          {props.skill.overriddenBy ? (
-            <div className="skills-kv"><span>{t(props.locale, "skillsOverrideTarget")}</span><strong>{props.skill.overriddenBy}</strong></div>
-          ) : null}
+        <div className="skills-detail-summary-grid">
+          {detailItems.map((item) => (
+            <div
+              key={`${item.label}-${item.value}`}
+              className={[
+                "skills-kv",
+                "skills-kv-compact",
+                item.value.includes(" · ") || item.value.includes(": ") ? "skills-kv-multiline" : "",
+              ].filter(Boolean).join(" ")}
+            >
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+            </div>
+          ))}
         </div>
-
-        {(props.skill.metadata.license || props.skill.metadata.compatibility || Object.keys(props.skill.metadata.metadata).length > 0) ? (
-          <div className="skills-meta-block">
-            {props.skill.metadata.license ? (
-              <div className="skills-kv"><span>license</span><strong>{props.skill.metadata.license}</strong></div>
-            ) : null}
-            {props.skill.metadata.compatibility ? (
-              <div className="skills-kv"><span>compatibility</span><strong>{props.skill.metadata.compatibility}</strong></div>
-            ) : null}
-            {Object.keys(props.skill.metadata.metadata).length ? (
-              <div className="skills-kv skills-kv-multiline">
-                <span>metadata</span>
-                <strong>{Object.entries(props.skill.metadata.metadata).map(([key, value]) => `${key}: ${value}`).join(" · ")}</strong>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
 
         <CodePanel
           title={props.skill.skillFilePath}
@@ -2697,12 +2709,15 @@ function SkillsWorkspace(props: {
   const [copied, setCopied] = useState(false);
   const [page, setPage] = useState(1);
 
-  const pageSize = props.viewMode === "grid" ? 6 : 8;
+  const pageSize = props.viewMode === "grid" ? 9 : 3;
   const totalPages = Math.max(1, Math.ceil(props.visibleSkills.length / pageSize));
   const pagedSkills = props.visibleSkills.slice((page - 1) * pageSize, page * pageSize);
   const gridStyle =
     props.viewMode === "grid" && pagedSkills.length > 0 && pagedSkills.length < 4
-      ? { gridTemplateColumns: `repeat(${pagedSkills.length}, minmax(0, 1fr))`, justifyContent: "stretch" as const }
+      ? {
+          gridTemplateColumns: `repeat(${pagedSkills.length}, 240px)`,
+          justifyContent: "start" as const,
+        }
       : undefined;
 
   useEffect(() => {
@@ -4294,6 +4309,7 @@ function AboutPage(props: {
         : "Initial desktop release with Provider, Model, Profile management, config preview, diff, tray menu, and the fixed GitHub Release pipeline.",
     },
   ];
+  const visibleHistory = history.slice(0, 3);
 
   return (
     <section className="glass-panel about-page">
@@ -4347,7 +4363,7 @@ function AboutPage(props: {
             <span>{isZh ? "版本历史" : "Version History"}</span>
           </div>
           <div className="about-history">
-            {history.map((item) => (
+            {visibleHistory.map((item) => (
               <div key={item.version} className="about-history-item">
                 <span className="about-history-version">
                   <strong>{item.version}</strong>

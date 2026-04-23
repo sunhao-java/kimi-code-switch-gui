@@ -288,7 +288,8 @@ function parseFrontmatter(document: string): {
   const attributes: Record<string, string | Record<string, string>> = {};
   let currentObjectKey = "";
 
-  for (const rawLine of header) {
+  for (let index = 0; index < header.length; index += 1) {
+    const rawLine = header[index];
     const line = rawLine.trimEnd();
     if (!line.trim()) {
       continue;
@@ -313,9 +314,28 @@ function parseFrontmatter(document: string): {
     }
 
     const [, key, rawValue] = pair;
+    const indentedBlock = collectIndentedBlock(header, index + 1);
+    if (isBlockScalar(rawValue)) {
+      attributes[key] = normalizeBlockScalar(indentedBlock.lines);
+      currentObjectKey = "";
+      index = indentedBlock.nextIndex - 1;
+      continue;
+    }
     if (!rawValue.trim()) {
-      attributes[key] = {};
-      currentObjectKey = key;
+      if (indentedBlock.lines.length === 0) {
+        attributes[key] = "";
+        currentObjectKey = "";
+        continue;
+      }
+      if (isIndentedKeyValueBlock(indentedBlock.lines)) {
+        attributes[key] = {};
+        currentObjectKey = key;
+        index = indentedBlock.startIndex - 1;
+      } else {
+        attributes[key] = normalizeBlockScalar(indentedBlock.lines);
+        currentObjectKey = "";
+        index = indentedBlock.nextIndex - 1;
+      }
       continue;
     }
     attributes[key] = stripQuotes(rawValue);
@@ -349,7 +369,7 @@ function normalizeMetadata(
 
   return {
     name: rawName.trim() || directoryName,
-    description: rawDescription.trim() || "No description provided.",
+    description: normalizeInlineText(rawDescription) || "No description provided.",
     type: rawType === "flow" || inferFlowFromContent(body) ? "flow" : "prompt",
     license: typeof attributes.license === "string" ? attributes.license.trim() : "",
     compatibility: typeof attributes.compatibility === "string" ? attributes.compatibility.trim() : "",
@@ -402,4 +422,65 @@ function stripQuotes(value: string): string {
     return trimmed.slice(1, -1);
   }
   return trimmed;
+}
+
+function isBlockScalar(value: string): boolean {
+  return /^[>|][+-]?\s*$/.test(value.trim());
+}
+
+function normalizeBlockScalar(lines: string[]): string {
+  const nonEmptyIndents = lines
+    .filter((line) => line.trim().length > 0)
+    .map((line) => line.match(/^(\s*)/)?.[1].length ?? 0);
+  const sharedIndent = nonEmptyIndents.length > 0 ? Math.min(...nonEmptyIndents) : 0;
+
+  return lines
+    .map((line) => {
+      if (!line.trim()) {
+        return "";
+      }
+      return line.slice(sharedIndent);
+    })
+    .join("\n")
+    .trim();
+}
+
+function normalizeInlineText(value: string): string {
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function collectIndentedBlock(lines: string[], startIndex: number): {
+  lines: string[];
+  startIndex: number;
+  nextIndex: number;
+} {
+  const blockLines: string[] = [];
+  let cursor = startIndex;
+  while (cursor < lines.length) {
+    const nextLine = lines[cursor];
+    if (nextLine.trim() && !/^\s+/.test(nextLine)) {
+      break;
+    }
+    blockLines.push(nextLine);
+    cursor += 1;
+  }
+  return {
+    lines: blockLines,
+    startIndex,
+    nextIndex: cursor,
+  };
+}
+
+function isIndentedKeyValueBlock(lines: string[]): boolean {
+  const contentLines = lines.filter((line) => line.trim().length > 0);
+  if (contentLines.length === 0) {
+    return false;
+  }
+  return contentLines.every((line) => /^\s+[A-Za-z0-9._-]+\s*:\s*.*$/.test(line));
 }
