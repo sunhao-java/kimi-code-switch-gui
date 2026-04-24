@@ -1,6 +1,6 @@
 {
   "name": "kimi-code-switch-gui",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Electron desktop app for managing kimi-code-cli providers, models, and profiles.",
   "main": "out/main/index.js",
   "author": "Hulk Sun <sunhao.java@gmail.com>",

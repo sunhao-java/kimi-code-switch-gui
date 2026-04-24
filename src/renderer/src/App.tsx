@@ -129,7 +129,7 @@ const ABOUT_TAB: { id: TabId; icon: typeof Info; labelKey: string } = {
 };
 
 const ABOUT_INFO = {
-  version: "1.0.3",
+  version: "1.0.4",
   author: "Hulk Sun",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",
@@ -4280,6 +4280,13 @@ function AboutPage(props: {
     },
   ];
   const history = [
+    {
+      version: "v1.0.4",
+      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.0.4`,
+      text: isZh
+        ? "新增托盘语言与主题快捷切换，补齐备份恢复能力，并继续优化 Skills 工作区浏览、详情展示和 frontmatter 解析兼容性。"
+        : "Added tray shortcuts for language and theme switching, introduced backup restore support, and further refined the Skills workspace, detail presentation, and frontmatter parsing compatibility.",
+    },
     {
       version: "v1.0.3",
       url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.0.3`,
