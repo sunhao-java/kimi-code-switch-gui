@@ -23,6 +23,15 @@ const api = {
   deleteBackup: (state: AppState, backupName: string): Promise<{ ok: true }> => ipcRenderer.invoke("backup:delete", state, backupName),
   restoreBackup: (state: AppState, backupName: string): Promise<AppState> => ipcRenderer.invoke("backup:restore", state, backupName),
   testBackupWebdav: (state: AppState): Promise<{ ok: true; target: string }> => ipcRenderer.invoke("backup:test-webdav", state),
+  checkForUpdates: (): Promise<{
+    currentVersion: string;
+    latestVersion: string;
+    hasUpdate: boolean;
+    releaseUrl: string;
+    releaseName: string;
+    publishedAt: string;
+    homebrewCommand: string;
+  }> => ipcRenderer.invoke("app:check-for-updates"),
   testMcpServer: (name: string): Promise<{ ok: true; stdout: string; stderr: string }> =>
     ipcRenderer.invoke("mcp:test-server", name),
   authMcpServer: (name: string): Promise<{ ok: true; stdout: string; stderr: string }> =>

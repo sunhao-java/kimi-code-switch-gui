@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Boxes,
   Bug,
@@ -112,6 +113,17 @@ interface BackupRecordsDialogState {
   restoringName?: string;
 }
 
+interface UpdateCheckResult {
+  currentVersion: string;
+  latestVersion: string;
+  hasUpdate: boolean;
+  releaseUrl: string;
+  releaseName: string;
+  publishedAt: string;
+  homebrewCommand: string;
+  errorMessage?: string;
+}
+
 const TAB_ITEMS: Array<{ id: TabId; icon: typeof Layers3; labelKey: string }> = [
   { id: "overview", icon: Sparkles, labelKey: "overview" },
   { id: "profiles", icon: Layers3, labelKey: "profiles" },
@@ -137,6 +149,96 @@ const ABOUT_INFO = {
   authorBlogUrl: "https://www.crazy-coder.cn",
   contactEmail: "sunhao.java@gmail.com",
 };
+
+const PENDING_UPDATE_VERSION_STORAGE_KEY = "kimi-switch.pending-update-version";
+
+function normalizeReleaseVersion(value: string): string {
+  return value.trim().replace(/^v/i, "");
+}
+
+function compareReleaseVersions(left: string, right: string): number {
+  const leftParts = normalizeReleaseVersion(left).split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const rightParts = normalizeReleaseVersion(right).split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const maxLength = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftValue = leftParts[index] ?? 0;
+    const rightValue = rightParts[index] ?? 0;
+    if (leftValue !== rightValue) {
+      return leftValue - rightValue;
+    }
+  }
+
+  return 0;
+}
+
+function loadPendingUpdateVersion(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  return window.localStorage.getItem(PENDING_UPDATE_VERSION_STORAGE_KEY) ?? "";
+}
+
+function savePendingUpdateVersion(version: string): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const normalizedVersion = normalizeReleaseVersion(version);
+  if (!normalizedVersion) {
+    window.localStorage.removeItem(PENDING_UPDATE_VERSION_STORAGE_KEY);
+    return;
+  }
+
+  const storedVersion = loadPendingUpdateVersion();
+  const nextVersion =
+    storedVersion && compareReleaseVersions(storedVersion, normalizedVersion) > 0
+      ? storedVersion
+      : normalizedVersion;
+
+  window.localStorage.setItem(PENDING_UPDATE_VERSION_STORAGE_KEY, nextVersion);
+}
+
+function clearPendingUpdateVersion(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(PENDING_UPDATE_VERSION_STORAGE_KEY);
+}
+
+async function copyText(text: string): Promise<boolean> {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Ignore and fall back to execCommand below.
+    }
+  }
+
+  if (typeof document === "undefined") {
+    return false;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.top = "-1000px";
+  textarea.style.left = "-1000px";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  try {
+    return document.execCommand("copy");
+  } finally {
+    document.body.removeChild(textarea);
+  }
+}
 
 const emptyPreview: PreviewBundle = {
   configDocument: "",
@@ -2400,7 +2502,7 @@ function ConfirmDialog(
 ): JSX.Element {
   const Icon = props.kind === "delete" ? Trash2 : Save;
 
-  return (
+  return createPortal(
     <div
       className="confirm-dialog-backdrop"
       role="presentation"
@@ -2437,7 +2539,8 @@ function ConfirmDialog(
           </button>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -2458,7 +2561,7 @@ function DocumentViewerDialog(
     });
   };
 
-  return (
+  return createPortal(
     <div
       className="document-viewer-backdrop"
       role="presentation"
@@ -2492,7 +2595,8 @@ function DocumentViewerDialog(
           copied={copied}
         />
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -2509,7 +2613,7 @@ function BackupRecordsDialog(
       ? t(props.locale, "backupRecordsSourceWebdav")
       : t(props.locale, "backupRecordsSourceLocal");
 
-  return (
+  return createPortal(
     <div
       className="backup-records-backdrop"
       role="presentation"
@@ -2605,7 +2709,128 @@ function BackupRecordsDialog(
           </div>
         )}
       </section>
-    </div>
+    </div>,
+    document.body,
+  );
+}
+
+function UpdateDialog(props: {
+  locale: Locale;
+  result: UpdateCheckResult;
+  copied: boolean;
+  onCopyCommand: () => void;
+  onOpenRelease: () => void;
+  onClose: () => void;
+}): JSX.Element {
+  useDialogEscape(props.onClose);
+
+  const isZh = props.locale === "zh-CN";
+  const hasError = Boolean(props.result.errorMessage);
+  const hasUpdate = props.result.hasUpdate || compareReleaseVersions(props.result.latestVersion, props.result.currentVersion) > 0;
+  const isUpToDate = !hasError && !hasUpdate;
+  const title = hasError
+    ? (isZh ? "检查更新失败" : "Update Check Failed")
+    : hasUpdate
+      ? (isZh ? "发现新版本" : "Update Available")
+      : (isZh ? "当前已是最新版本" : "You're Up to Date");
+  const description = hasError
+    ? (isZh
+        ? `当前版本 v${props.result.currentVersion}。检查更新时发生错误：${props.result.errorMessage}`
+        : `You're on v${props.result.currentVersion}. The update check failed: ${props.result.errorMessage}`)
+    : hasUpdate
+      ? (isZh
+          ? `当前版本 v${props.result.currentVersion}，最新版本 ${props.result.releaseName}。你可以通过 Homebrew 更新，或者前往 GitHub Release 页面下载安装。`
+          : `You're on v${props.result.currentVersion}. The latest release is ${props.result.releaseName}. You can update via Homebrew or download it from the GitHub release page.`)
+      : (isZh
+          ? `当前版本 v${props.result.currentVersion}，未检测到更新。`
+          : `You're on v${props.result.currentVersion}. No newer release was found.`);
+
+  return createPortal(
+    <div
+      className="confirm-dialog-backdrop"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          props.onClose();
+        }
+      }}
+    >
+      <section
+        className={isUpToDate ? "confirm-dialog update-dialog update-dialog-compact glass-panel" : "confirm-dialog update-dialog glass-panel"}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="update-dialog-title"
+      >
+        <div className="confirm-dialog-header update-dialog-header">
+          <div className="confirm-dialog-icon update-dialog-icon">
+            <RefreshCw size={20} />
+          </div>
+          <div className="confirm-dialog-copy update-dialog-copy">
+            <div className="update-dialog-title-row">
+              <h3 id="update-dialog-title">{title}</h3>
+              {hasUpdate ? (
+                <span className="update-dialog-badge">
+                  {isZh ? "建议更新" : "Update Recommended"}
+                </span>
+              ) : null}
+            </div>
+            {!isUpToDate ? (
+              <div className="update-dialog-version-row">
+                <div className="update-dialog-version-card">
+                  <span>{isZh ? "当前版本" : "Current"}</span>
+                  <strong>v{props.result.currentVersion}</strong>
+                </div>
+                <div className="update-dialog-version-separator" aria-hidden="true">
+                  →
+                </div>
+                <div className="update-dialog-version-card">
+                  <span>{isZh ? "最新版本" : "Latest"}</span>
+                  <strong>v{props.result.latestVersion}</strong>
+                </div>
+              </div>
+            ) : null}
+            <p>{description}</p>
+            {hasUpdate ? (
+              <div className="update-dialog-command-block">
+                <span className="update-dialog-command-label">
+                  {isZh ? "Homebrew 更新命令" : "Homebrew Upgrade Command"}
+                </span>
+                <code>{props.result.homebrewCommand}</code>
+              </div>
+            ) : null}
+            {hasError ? (
+              <div className="update-dialog-error-tip">
+                {isZh ? "你也可以直接打开 GitHub Release 页面手动查看最新版本。" : "You can also open the GitHub Releases page and check manually."}
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <div className="confirm-dialog-actions update-dialog-actions">
+          {hasUpdate ? (
+            <>
+              <button className="action-button update-dialog-button" type="button" onClick={props.onCopyCommand}>
+                {props.copied ? (isZh ? "已复制命令" : "Copied") : (isZh ? "复制 Homebrew 命令" : "Copy Homebrew Command")}
+              </button>
+              <button className="action-button action-button-primary update-dialog-button" type="button" onClick={props.onOpenRelease}>
+                {isZh ? "前往 GitHub Release" : "Open GitHub Release"}
+              </button>
+            </>
+          ) : hasError ? (
+            <button className="action-button action-button-primary update-dialog-button" type="button" onClick={props.onOpenRelease}>
+              {isZh ? "打开 GitHub Release" : "Open GitHub Release"}
+            </button>
+          ) : null}
+          <button
+            className={isUpToDate ? "action-button action-button-primary update-dialog-button" : "action-button update-dialog-button"}
+            type="button"
+            onClick={props.onClose}
+          >
+            {t(props.locale, "close")}
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body,
   );
 }
 
@@ -2640,7 +2865,7 @@ function SkillsDetailDialog(props: {
       : []),
   ];
 
-  return (
+  return createPortal(
     <div
       className="skills-detail-dialog-backdrop"
       role="presentation"
@@ -2691,7 +2916,8 @@ function SkillsDetailDialog(props: {
           copied={props.copied}
         />
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -2708,10 +2934,23 @@ function SkillsWorkspace(props: {
 }): JSX.Element {
   const [copied, setCopied] = useState(false);
   const [page, setPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [dynamicPageSize, setDynamicPageSize] = useState(9);
+  const overviewPanelRef = useRef<HTMLElement | null>(null);
+  const skillsListRef = useRef<HTMLDivElement | null>(null);
 
-  const pageSize = props.viewMode === "grid" ? 9 : 3;
-  const totalPages = Math.max(1, Math.ceil(props.visibleSkills.length / pageSize));
-  const pagedSkills = props.visibleSkills.slice((page - 1) * pageSize, page * pageSize);
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filteredSkills = normalizedQuery
+    ? props.visibleSkills.filter((skill) => {
+        const name = skill.name.toLowerCase();
+        const description = skill.metadata.description.toLowerCase();
+        return name.includes(normalizedQuery) || description.includes(normalizedQuery);
+      })
+    : props.visibleSkills;
+
+  const pageSize = dynamicPageSize;
+  const totalPages = Math.max(1, Math.ceil(filteredSkills.length / pageSize));
+  const pagedSkills = filteredSkills.slice((page - 1) * pageSize, page * pageSize);
   const gridStyle =
     props.viewMode === "grid" && pagedSkills.length > 0 && pagedSkills.length < 4
       ? {
@@ -2722,13 +2961,106 @@ function SkillsWorkspace(props: {
 
   useEffect(() => {
     setPage(1);
-  }, [props.selectedPath?.id, props.viewMode]);
+  }, [props.selectedPath?.id, props.viewMode, searchQuery]);
 
   useEffect(() => {
     if (page > totalPages) {
       setPage(totalPages);
     }
   }, [page, totalPages]);
+
+  useEffect(() => {
+    const updateDynamicPageSize = (): void => {
+      const panelElement = overviewPanelRef.current;
+      const listElement = skillsListRef.current;
+      if (!panelElement || !listElement) {
+        return;
+      }
+
+      const panelRect = panelElement.getBoundingClientRect();
+      const listRect = listElement.getBoundingClientRect();
+      const panelStyles = window.getComputedStyle(panelElement);
+      const listStyles = window.getComputedStyle(listElement);
+      const panelPaddingBottom = Number.parseFloat(panelStyles.paddingBottom || "0");
+      const availableHeight = Math.max(
+        0,
+        panelRect.bottom - listRect.top - panelPaddingBottom,
+      );
+      let nextPageSize = 1;
+
+      if (props.viewMode === "list") {
+        const rowGap = Number.parseFloat(listStyles.rowGap || listStyles.gap || "0");
+        const sampleRow = listElement.querySelector<HTMLElement>(".skills-read-row");
+        const rowHeight = sampleRow?.getBoundingClientRect().height ?? 134;
+
+        nextPageSize = Math.max(
+          1,
+          Math.floor((availableHeight + rowGap) / (rowHeight + rowGap)),
+        );
+
+        while (
+          nextPageSize > 1 &&
+          nextPageSize * rowHeight + (nextPageSize - 1) * rowGap > availableHeight + 0.5
+        ) {
+          nextPageSize -= 1;
+        }
+      } else {
+        const columnGap = Number.parseFloat(listStyles.columnGap || listStyles.gap || "0");
+        const rowGap = Number.parseFloat(listStyles.rowGap || listStyles.gap || "0");
+        const sampleCard = listElement.querySelector<HTMLElement>(".skills-read-card");
+        const cardHeight = sampleCard?.getBoundingClientRect().height ?? 188;
+        const cardWidth = sampleCard?.getBoundingClientRect().width ?? 240;
+        const availableWidth = Math.max(0, listRect.width);
+
+        let columns = Math.max(
+          1,
+          Math.floor((availableWidth + columnGap) / (cardWidth + columnGap)),
+        );
+
+        while (
+          columns > 1 &&
+          columns * cardWidth + (columns - 1) * columnGap > availableWidth + 0.5
+        ) {
+          columns -= 1;
+        }
+
+        let rows = Math.max(
+          1,
+          Math.floor((availableHeight + rowGap) / (cardHeight + rowGap)),
+        );
+
+        while (
+          rows > 1 &&
+          rows * cardHeight + (rows - 1) * rowGap > availableHeight + 0.5
+        ) {
+          rows -= 1;
+        }
+
+        nextPageSize = Math.max(1, rows * columns);
+      }
+
+      setDynamicPageSize((current) => (current === nextPageSize ? current : nextPageSize));
+    };
+
+    updateDynamicPageSize();
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateDynamicPageSize();
+    });
+
+    if (overviewPanelRef.current) {
+      resizeObserver.observe(overviewPanelRef.current);
+    }
+    if (skillsListRef.current) {
+      resizeObserver.observe(skillsListRef.current);
+    }
+
+    window.addEventListener("resize", updateDynamicPageSize);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updateDynamicPageSize);
+    };
+  }, [props.viewMode, filteredSkills.length, page]);
 
   const handleCopy = (): void => {
     if (!props.selectedSkill) {
@@ -2760,7 +3092,7 @@ function SkillsWorkspace(props: {
 
   return (
     <section className="skills-workspace">
-      <section className="glass-panel form-panel skills-overview-panel">
+      <section className="glass-panel form-panel skills-overview-panel" ref={overviewPanelRef}>
         <div className="skills-detail-header">
           <div className="skills-header-main">
             <div className="section-title">{t(props.locale, "skills")}</div>
@@ -2790,18 +3122,27 @@ function SkillsWorkspace(props: {
           </div>
         </div>
 
+        <label className="skills-search-field">
+          <input
+            type="search"
+            value={searchQuery}
+            placeholder={t(props.locale, "skillsSearchPlaceholder")}
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
+        </label>
+
         {props.selectedPath && !isSkillPathLoaded(props.selectedPath) ? (
           <p className="skills-note skills-note-warning">{formatSkillPathNotice(props.locale, props.selectedPath)}</p>
         ) : null}
 
-        {props.visibleSkills.length ? (
+        {filteredSkills.length ? (
           <>
             <div className="skills-pagination">
               <span className="skills-pagination-info">
                 {formatMessage(t(props.locale, "skillsPagination"), {
                   current: page,
                   total: totalPages,
-                  count: props.visibleSkills.length,
+                  count: filteredSkills.length,
                 })}
               </span>
               <div className="skills-pagination-actions">
@@ -2827,6 +3168,7 @@ function SkillsWorkspace(props: {
               className={props.viewMode === "grid" ? "skills-read-grid" : "skills-read-list"}
               role="list"
               style={gridStyle}
+              ref={skillsListRef}
             >
               {pagedSkills.map((skill) => (
               <button
@@ -2866,6 +3208,8 @@ function SkillsWorkspace(props: {
               ))}
             </div>
           </>
+        ) : props.visibleSkills.length ? (
+          <div className="skills-empty-issues">{t(props.locale, "skillsEmptySearch")}</div>
         ) : (
           <div className="skills-empty-issues">{t(props.locale, "skillsEmptyInDirectory")}</div>
         )}
@@ -4256,6 +4600,10 @@ function AboutPage(props: {
   locale: Locale;
 }): JSX.Element {
   const isZh = props.locale === "zh-CN";
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateDialog, setUpdateDialog] = useState<UpdateCheckResult | null>(null);
+  const [copiedUpdateCommand, setCopiedUpdateCommand] = useState(false);
+  const [pendingUpdateVersion, setPendingUpdateVersion] = useState(() => loadPendingUpdateVersion());
   const links = [
     {
       icon: Github,
@@ -4317,6 +4665,65 @@ function AboutPage(props: {
     },
   ];
   const visibleHistory = history.slice(0, 3);
+  const hasPendingUpdate =
+    pendingUpdateVersion.length > 0 && compareReleaseVersions(pendingUpdateVersion, ABOUT_INFO.version) > 0;
+
+  useEffect(() => {
+    if (!pendingUpdateVersion) {
+      return;
+    }
+
+    if (compareReleaseVersions(pendingUpdateVersion, ABOUT_INFO.version) <= 0) {
+      clearPendingUpdateVersion();
+      setPendingUpdateVersion("");
+    }
+  }, [pendingUpdateVersion]);
+
+  const handleCheckUpdates = (): void => {
+    const api = getApi();
+    if (!api?.checkForUpdates || isCheckingUpdate) {
+      return;
+    }
+
+    setIsCheckingUpdate(true);
+    void api.checkForUpdates()
+      .then((result) => {
+        const shouldMarkPending = result.hasUpdate || compareReleaseVersions(result.latestVersion, result.currentVersion) > 0;
+
+        if (shouldMarkPending) {
+          savePendingUpdateVersion(result.latestVersion);
+          setPendingUpdateVersion((current) => {
+            if (!current || compareReleaseVersions(result.latestVersion, current) > 0) {
+              return normalizeReleaseVersion(result.latestVersion);
+            }
+            return current;
+          });
+        }
+        setCopiedUpdateCommand(false);
+        setUpdateDialog(result);
+      })
+      .catch((error) => {
+        const rawMessage = error instanceof Error ? error.message : String(error);
+        const message = rawMessage.includes("GitHub API rate limit exceeded")
+          ? (isZh
+              ? "GitHub 请求已被限流，请前往 GitHub Release 页面手动查看最新版本。"
+              : "GitHub rate limit exceeded. Please open the GitHub Releases page and check manually.")
+          : rawMessage;
+        setUpdateDialog({
+          currentVersion: ABOUT_INFO.version,
+          latestVersion: ABOUT_INFO.version,
+          hasUpdate: false,
+          releaseUrl: `${ABOUT_INFO.repositoryUrl}/releases`,
+          releaseName: "",
+          publishedAt: "",
+          homebrewCommand: "brew upgrade --cask kimi-code-switch-gui",
+          errorMessage: message,
+        });
+      })
+      .finally(() => {
+        setIsCheckingUpdate(false);
+      });
+  };
 
   return (
     <section className="glass-panel about-page">
@@ -4339,7 +4746,23 @@ function AboutPage(props: {
               : `Author: ${ABOUT_INFO.author} · License: ${ABOUT_INFO.license}`}
           </p>
         </div>
-        <span className="about-version">v{ABOUT_INFO.version}</span>
+        <div className="about-version-actions">
+          <span className="about-version-wrap">
+            <span className={hasPendingUpdate ? "about-version has-update" : "about-version"}>
+              <span>v{ABOUT_INFO.version}</span>
+              {hasPendingUpdate ? <span className="about-version-status-dot" aria-hidden="true" /> : null}
+            </span>
+          </span>
+          <button
+            className={isCheckingUpdate ? "action-button compact is-loading" : "action-button compact"}
+            type="button"
+            onClick={handleCheckUpdates}
+            disabled={isCheckingUpdate}
+          >
+            {isCheckingUpdate ? <LoaderCircle size={14} className="button-spinner" /> : <RefreshCw size={14} />}
+            <span>{isZh ? "检查更新" : "Check Updates"}</span>
+          </button>
+        </div>
       </div>
 
       <div className="about-grid">
@@ -4389,6 +4812,30 @@ function AboutPage(props: {
           </div>
         </section>
       </div>
+      {updateDialog ? (
+        <UpdateDialog
+          locale={props.locale}
+          result={updateDialog}
+          copied={copiedUpdateCommand}
+          onCopyCommand={() => {
+            void copyText(updateDialog.homebrewCommand).then((copied) => {
+              if (!copied) {
+                return;
+              }
+
+              setCopiedUpdateCommand(true);
+              window.setTimeout(() => setCopiedUpdateCommand(false), 1800);
+            });
+          }}
+          onOpenRelease={() => {
+            void window.kimiSwitch.openExternal(updateDialog.releaseUrl);
+          }}
+          onClose={() => {
+            setCopiedUpdateCommand(false);
+            setUpdateDialog(null);
+          }}
+        />
+      ) : null}
     </section>
   );
 }

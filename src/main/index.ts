@@ -51,6 +51,8 @@ const WINDOW_WIDTH = 1500;
 const WINDOW_HEIGHT = 980;
 const DEFAULT_PANEL_SETTINGS_PATH = DEFAULT_CONFIG_PATH.replace("config.toml", PANEL_SETTINGS_FILENAME);
 const CHANGE_BACKUP_DELAY_MS = 4000;
+const GITHUB_RELEASES_LATEST_URL = "https://api.github.com/repos/sunhao-java/kimi-code-switch-gui/releases/latest";
+const HOMEBREW_UPGRADE_COMMAND = "brew upgrade --cask kimi-code-switch-gui";
 const execFileAsync = promisify(execFile);
 const EXTRA_CLI_PATHS = [
   "/opt/homebrew/bin",
@@ -318,8 +320,8 @@ async function readWebDavManifest(settings: PanelSettings, manifestUrl: string):
   const payload = (await response.json()) as { backups?: Array<{ name?: string; createdAt?: string }> };
   return Array.isArray(payload.backups)
     ? payload.backups
-        .filter((entry) => typeof entry.name === "string" && typeof entry.createdAt === "string")
-        .map((entry) => ({ name: entry.name as string, createdAt: entry.createdAt as string }))
+      .filter((entry) => typeof entry.name === "string" && typeof entry.createdAt === "string")
+      .map((entry) => ({ name: entry.name as string, createdAt: entry.createdAt as string }))
     : [];
 }
 
@@ -427,6 +429,81 @@ async function testWebDavConnection(state: AppState): Promise<{ ok: true; target
     ok: true,
     target,
   };
+}
+
+function normalizeReleaseVersion(value: string): string {
+  return value.trim().replace(/^v/i, "");
+}
+
+function compareReleaseVersions(left: string, right: string): number {
+  const leftParts = normalizeReleaseVersion(left).split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const rightParts = normalizeReleaseVersion(right).split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const maxLength = Math.max(leftParts.length, rightParts.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftValue = leftParts[index] ?? 0;
+    const rightValue = rightParts[index] ?? 0;
+    if (leftValue !== rightValue) {
+      return leftValue - rightValue;
+    }
+  }
+
+  return 0;
+}
+
+type UpdateCheckResult = {
+  currentVersion: string;
+  latestVersion: string;
+  hasUpdate: boolean;
+  releaseUrl: string;
+  releaseName: string;
+  publishedAt: string;
+  homebrewCommand: string;
+};
+
+async function checkForUpdates(): Promise<{
+  currentVersion: string;
+  latestVersion: string;
+  hasUpdate: boolean;
+  releaseUrl: string;
+  releaseName: string;
+  publishedAt: string;
+  homebrewCommand: string;
+}> {
+  const response = await fetch(GITHUB_RELEASES_LATEST_URL, {
+    method: "GET",
+    headers: {
+      Accept: "application/vnd.github+json",
+      "User-Agent": "kimi-code-switch-gui",
+    },
+  });
+
+  if (!response.ok) {
+    if (response.status === 403) {
+      throw new Error("GitHub API rate limit exceeded. Please open the GitHub Releases page and check manually.");
+    }
+
+    throw new Error(`GitHub release check failed: ${response.status} ${response.statusText}`);
+  }
+
+  const payload = await response.json() as {
+    tag_name?: string;
+    name?: string;
+    html_url?: string;
+    published_at?: string;
+  };
+  const currentVersion = app.getVersion();
+  const latestVersion = normalizeReleaseVersion(payload.tag_name ?? currentVersion);
+  const result: UpdateCheckResult = {
+    currentVersion,
+    latestVersion,
+    hasUpdate: compareReleaseVersions(latestVersion, currentVersion) > 0,
+    releaseUrl: payload.html_url ?? "https://github.com/sunhao-java/kimi-code-switch-gui/releases",
+    releaseName: payload.name?.trim() || payload.tag_name?.trim() || `v${latestVersion}`,
+    publishedAt: payload.published_at ?? "",
+    homebrewCommand: HOMEBREW_UPGRADE_COMMAND,
+  };
+  return result;
 }
 
 async function listLocalBackups(state: AppState): Promise<BackupRecord[]> {
@@ -1117,6 +1194,10 @@ app.whenReady().then(() => {
 
   ipcMain.handle("app:default-settings", () => {
     return createDefaultPanelSettings();
+  });
+
+  ipcMain.handle("app:check-for-updates", async () => {
+    return checkForUpdates();
   });
 
   ipcMain.handle("dialog:pick-file", async (_, options): Promise<FileDialogResult> => {
