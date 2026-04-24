@@ -26,7 +26,17 @@ import {
 } from "@shared/configStore";
 import { buildMcpConfigDocument } from "@shared/mcpStore";
 import { scanSkills } from "@shared/skillsStore";
-import type { AppState, BackupFrequency, BackupRecord, BackupResult, FileDialogResult, Locale, PanelSettings, TrayCommand } from "@shared/types";
+import type {
+  AppState,
+  AppearanceMode,
+  BackupFrequency,
+  BackupRecord,
+  BackupResult,
+  FileDialogResult,
+  Locale,
+  PanelSettings,
+  TrayCommand,
+} from "@shared/types";
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -809,6 +819,46 @@ async function updateTrayMenu(): Promise<void> {
       })),
       enabled: Object.keys(state.profiles).length > 0,
     },
+    {
+      label: labels.switchLanguage,
+      submenu: [
+        {
+          label: "中文",
+          type: "radio" as const,
+          checked: settings.locale === "zh-CN",
+          click: () => void updateLocaleFromTray("zh-CN"),
+        },
+        {
+          label: "English",
+          type: "radio" as const,
+          checked: settings.locale === "en-US",
+          click: () => void updateLocaleFromTray("en-US"),
+        },
+      ],
+    },
+    {
+      label: labels.switchTheme,
+      submenu: [
+        {
+          label: labels.themeAuto,
+          type: "radio" as const,
+          checked: settings.theme === "auto",
+          click: () => void updateThemeFromTray("auto"),
+        },
+        {
+          label: labels.themeLight,
+          type: "radio" as const,
+          checked: settings.theme === "light",
+          click: () => void updateThemeFromTray("light"),
+        },
+        {
+          label: labels.themeDark,
+          type: "radio" as const,
+          checked: settings.theme === "dark",
+          click: () => void updateThemeFromTray("dark"),
+        },
+      ],
+    },
     { type: "separator" },
     {
       label: labels.quit,
@@ -833,17 +883,60 @@ async function activateProfileFromTray(profileName: string): Promise<void> {
   }
 }
 
-function getTrayLabels(locale: Locale): Record<"showWindow" | "switchProfile" | "quit", string> {
+async function updateLocaleFromTray(locale: Locale): Promise<void> {
+  const state = await loadAppState(fileAccess);
+  if (state.panelSettings.locale === locale) {
+    return;
+  }
+  state.panelSettings.locale = locale;
+  await saveAppState(fileAccess, state);
+  latestAppState = cloneState(normalizeStatePaths(state));
+  await updateTrayMenu();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    queueTrayCommand("reload");
+  }
+}
+
+async function updateThemeFromTray(theme: AppearanceMode): Promise<void> {
+  const state = await loadAppState(fileAccess);
+  if (state.panelSettings.theme === theme) {
+    return;
+  }
+  state.panelSettings.theme = theme;
+  await saveAppState(fileAccess, state);
+  latestAppState = cloneState(normalizeStatePaths(state));
+  await updateTrayMenu();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    queueTrayCommand("reload");
+  }
+}
+
+function getTrayLabels(
+  locale: Locale,
+): Record<
+  "showWindow" | "switchProfile" | "switchLanguage" | "switchTheme" | "themeAuto" | "themeLight" | "themeDark" | "quit",
+  string
+> {
   if (locale === "en-US") {
     return {
       showWindow: "Show Window",
       switchProfile: "Switch Profile",
+      switchLanguage: "Language",
+      switchTheme: "Theme",
+      themeAuto: "Auto",
+      themeLight: "Light",
+      themeDark: "Dark",
       quit: "Quit",
     };
   }
   return {
     showWindow: "显示窗口",
     switchProfile: "切换 Profile",
+    switchLanguage: "切换语言",
+    switchTheme: "切换主题",
+    themeAuto: "自动",
+    themeLight: "明亮",
+    themeDark: "暗色",
     quit: "退出",
   };
 }
