@@ -18,6 +18,7 @@ const api = {
     ipcRenderer.invoke("dialog:pick-file", options),
   setTray: (enabled: boolean): Promise<{ ok: true }> => ipcRenderer.invoke("app:set-tray", enabled),
   openExternal: (url: string): Promise<{ ok: true }> => ipcRenderer.invoke("app:open-external", url),
+  getInstallSource: (): Promise<"homebrew" | "manual" | "development"> => ipcRenderer.invoke("app:get-install-source"),
   runBackup: (state: AppState): Promise<BackupResult> => ipcRenderer.invoke("backup:run", state),
   listBackups: (state: AppState): Promise<BackupRecord[]> => ipcRenderer.invoke("backup:list", state),
   deleteBackup: (state: AppState, backupName: string): Promise<{ ok: true }> => ipcRenderer.invoke("backup:delete", state, backupName),
@@ -31,6 +32,7 @@ const api = {
     releaseName: string;
     publishedAt: string;
     homebrewCommand: string;
+    installSource: "homebrew" | "manual" | "development";
   }> => ipcRenderer.invoke("app:check-for-updates"),
   testMcpServer: (name: string): Promise<{ ok: true; stdout: string; stderr: string }> =>
     ipcRenderer.invoke("mcp:test-server", name),

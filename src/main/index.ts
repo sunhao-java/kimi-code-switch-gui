@@ -470,7 +470,23 @@ type UpdateCheckResult = {
   releaseName: string;
   publishedAt: string;
   homebrewCommand: string;
+  installSource: "homebrew" | "manual" | "development";
 };
+
+async function detectInstallSource(): Promise<UpdateCheckResult["installSource"]> {
+  if (!app.isPackaged) {
+    return "development";
+  }
+
+  try {
+    await execFileAsync("brew", ["list", "--cask", "kimi-code-switch-gui"], {
+      env: getCliEnv(),
+    });
+    return "homebrew";
+  } catch {
+    return "manual";
+  }
+}
 
 async function checkForUpdates(): Promise<{
   currentVersion: string;
@@ -480,6 +496,7 @@ async function checkForUpdates(): Promise<{
   releaseName: string;
   publishedAt: string;
   homebrewCommand: string;
+  installSource: "homebrew" | "manual" | "development";
 }> {
   const response = await fetch(GITHUB_RELEASES_LATEST_URL, {
     method: "GET",
@@ -505,6 +522,7 @@ async function checkForUpdates(): Promise<{
   };
   const currentVersion = app.getVersion();
   const latestVersion = normalizeReleaseVersion(payload.tag_name ?? currentVersion);
+  const installSource = await detectInstallSource();
   const result: UpdateCheckResult = {
     currentVersion,
     latestVersion,
@@ -513,6 +531,7 @@ async function checkForUpdates(): Promise<{
     releaseName: payload.name?.trim() || payload.tag_name?.trim() || `v${latestVersion}`,
     publishedAt: payload.published_at ?? "",
     homebrewCommand: HOMEBREW_UPGRADE_COMMAND,
+    installSource,
   };
   return result;
 }
@@ -1209,6 +1228,10 @@ app.whenReady().then(() => {
 
   ipcMain.handle("app:check-for-updates", async () => {
     return checkForUpdates();
+  });
+
+  ipcMain.handle("app:get-install-source", async () => {
+    return detectInstallSource();
   });
 
   ipcMain.handle("dialog:pick-file", async (_, options): Promise<FileDialogResult> => {
