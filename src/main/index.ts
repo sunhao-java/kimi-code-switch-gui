@@ -1249,8 +1249,14 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle("app:open-external", async (_, url: string) => {
-    if (!url.startsWith("https://")) {
-      throw new Error("Only HTTPS URLs can be opened.");
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      throw new Error("Invalid URL provided.");
+    }
+    if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "mailto:") {
+      throw new Error("Only HTTPS and mailto URLs can be opened.");
     }
     await shell.openExternal(url);
     return { ok: true };
