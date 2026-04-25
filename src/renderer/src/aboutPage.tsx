@@ -23,7 +23,7 @@ interface UpdateCheckResult {
 }
 
 const ABOUT_INFO = {
-  version: "1.0.4",
+  version: "1.1.0",
   author: "Hulk Sun",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",
@@ -329,6 +329,13 @@ export function AboutPage(props: {
     },
   ];
   const history = [
+    {
+      version: "v1.1.0",
+      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.0`,
+      text: isZh
+        ? "新增发布更新闭环，支持按安装来源提示更新方式；同时拆分渲染层大文件，提升 App.tsx 可维护性，并修复外链与空值类型边界问题。"
+        : "Added the release update loop with install-source-aware guidance; split renderer modules for a more maintainable App.tsx, and fixed external-link and nullable-state boundaries.",
+    },
     {
       version: "v1.0.4",
       url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.0.4`,
