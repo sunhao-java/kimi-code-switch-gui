@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from "electron";
 import type { NativeImage } from "electron";
 import { delimiter, dirname, join, resolve } from "node:path";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -203,6 +203,17 @@ function formatBackupStamp(date: Date): string {
   return parts.join("");
 }
 
+function sanitizeMachineName(value: string): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-_.]+|[-_.]+$/g, "");
+
+  return normalized || "unknown-host";
+}
+
 function buildBackupFiles(state: AppState): Array<{ name: string; content: string }> {
   const normalizedState = normalizeStatePaths(state);
   return [
@@ -392,7 +403,7 @@ async function createWebDavBackupSnapshot(state: AppState, backupName: string): 
 
 async function createBackupSnapshot(state: AppState): Promise<BackupResult> {
   const normalizedState = normalizeStatePaths(state);
-  const backupName = `backup-${formatBackupStamp(new Date())}`;
+  const backupName = `backup-${formatBackupStamp(new Date())}-${sanitizeMachineName(hostname())}`;
 
   if (normalizedState.panelSettings.backup_destination_type === "webdav") {
     return createWebDavBackupSnapshot(normalizedState, backupName);

@@ -622,7 +622,7 @@ function parseBackupDisplayDate(value: string): Date | null {
     return parsed;
   }
 
-  const match = /^backup-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-(\d{3})$/.exec(value);
+  const match = /^backup-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})-(\d{3})(?:-.+)?$/.exec(value);
   if (!match) {
     return null;
   }
@@ -2612,6 +2612,8 @@ function BackupRecordsDialog(
     props.destinationType === "webdav"
       ? t(props.locale, "backupRecordsSourceWebdav")
       : t(props.locale, "backupRecordsSourceLocal");
+
+  useDialogEscape(props.onClose);
 
   return createPortal(
     <div
