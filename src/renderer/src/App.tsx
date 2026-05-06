@@ -1,10 +1,12 @@
 import { X } from "lucide-react";
 
-import type { McpServerConfig } from "@shared/types";
+import type { McpServerConfig, ShortcutAction, ShortcutBinding } from "@shared/types";
 import { parseMcpConfigStrict } from "@shared/mcpStore";
+import { formatAcceleratorForPlatform, getBrowserShortcutPlatform, normalizeShortcuts } from "@shared/shortcutStore";
 
 import { TabPanels } from "./tabs/TabPanels";
 import { useAppHandlers } from "./useAppHandlers";
+import { useShortcuts } from "./useShortcuts";
 import { TAB_ITEMS, ABOUT_TAB, LOCALE_OPTIONS, THEME_OPTIONS } from "./appOptions";
 import {
   BackupRecordsDialog,
@@ -24,6 +26,7 @@ export function App(): JSX.Element {
     state,
     activeTab, setActiveTab,
     locale, title, diagnostics,
+    loadState,
     closeConfirmDialog,
     selectedProvider, setSelectedProvider,
     selectedModel, setSelectedModel,
@@ -64,6 +67,16 @@ export function App(): JSX.Element {
     runManualBackup, runWebDavTest,
     openBackupRecords, deleteBackupRecord, restoreBackupRecord,
   } = app;
+  const shortcuts = normalizeShortcuts(state.panelSettings.shortcuts);
+  const shortcutPlatform = getBrowserShortcutPlatform();
+  const tabShortcutLabels = createTabShortcutLabels(shortcuts, shortcutPlatform);
+
+  useShortcuts({
+    shortcuts,
+    onSave: () => void onSave(),
+    onReload: () => void loadState(),
+    onNavigate: (tab) => runAfterUnsavedHandled(() => setActiveTab(tab)),
+  });
 
   return (
     <div className="shell">
@@ -124,6 +137,7 @@ export function App(): JSX.Element {
             >
               <Icon size={18} />
               <span>{t(locale, labelKey)}</span>
+              {tabShortcutLabels[id] ? <kbd className="nav-shortcut">{tabShortcutLabels[id]}</kbd> : null}
             </button>
           ))}
         </nav>
@@ -201,6 +215,7 @@ export function App(): JSX.Element {
 
         <TabPanels
           state={state}
+          shortcuts={shortcuts}
           activeTab={activeTab}
           locale={locale}
           diagnostics={diagnostics}
@@ -333,3 +348,28 @@ export function App(): JSX.Element {
     </div>
   );
 }
+
+function createTabShortcutLabels(
+  shortcuts: Record<ShortcutAction, ShortcutBinding>,
+  platform: string,
+): Partial<Record<string, string>> {
+  const labels: Partial<Record<string, string>> = {};
+  for (const [action, tab] of Object.entries(TAB_SHORTCUT_ACTIONS)) {
+    const binding = shortcuts[action as ShortcutAction];
+    if (!binding?.enabled || !binding.accelerator.trim()) {
+      continue;
+    }
+    labels[tab] = formatAcceleratorForPlatform(binding.accelerator, platform);
+  }
+  return labels;
+}
+
+const TAB_SHORTCUT_ACTIONS: Record<string, string> = {
+  "tab.overview": "overview",
+  "tab.profiles": "profiles",
+  "tab.providers": "providers",
+  "tab.models": "models",
+  "tab.mcp": "mcp",
+  "tab.skills": "skills",
+  "tab.settings": "settings",
+};

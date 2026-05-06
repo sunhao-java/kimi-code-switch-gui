@@ -17,6 +17,7 @@ import {
   loadAppState,
   loadPanelSettings,
   normalizeStatePaths,
+  parsePanelSettingsDocument,
   saveAppState,
   upsertModel,
   upsertProfile,
@@ -287,6 +288,8 @@ describe("configStore", () => {
     expect(loaded.backup_retention_count).toBe(10);
     expect(loaded.backup_strategy).toBe("manual");
     expect(loaded.backup_destination_type).toBe("local");
+    expect(loaded.shortcuts["window.toggle"].accelerator).toBe("CommandOrControl+Shift+K");
+    expect(loaded.shortcuts["app.save"].scope).toBe("window");
     expect(loaded.last_display_id).toBe(2);
   });
 
@@ -375,8 +378,21 @@ url = "https://mcp.context7.com/mcp"
 
     expect(document).toContain("[mcp_servers.context7.headers]");
     expect(document).toContain('CONTEXT7_API_KEY = "ctx-test"');
+    expect(document).toContain('[shortcuts."window.toggle"]');
+    expect(document).toContain('accelerator = "CommandOrControl+Shift+K"');
     expect(document).not.toContain("  [mcp_servers.context7.headers]");
     expect(document).not.toContain('  CONTEXT7_API_KEY = "ctx-test"');
+  });
+
+  it("parses shortcut tables from panel settings documents", () => {
+    const panelSettings = createDefaultPanelSettings("/tmp/config.toml", "/tmp/config.panel.toml");
+    panelSettings.shortcuts["window.toggle"].accelerator = "Command+Shift+H";
+    panelSettings.shortcuts["window.toggle"].enabled = true;
+
+    const parsed = parsePanelSettingsDocument(buildPanelSettingsDocument(panelSettings), panelSettings);
+
+    expect(parsed.shortcuts["window.toggle"].accelerator).toBe("Command+Shift+H");
+    expect(parsed.shortcuts["window.toggle"].enabled).toBe(true);
   });
 
   it("forces quit behavior when tray icon is disabled", async () => {

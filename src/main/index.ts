@@ -15,17 +15,19 @@ import {
   buildPanelSettingsDocument,
   buildPreviewBundle,
   cloneState,
-  createDefaultPanelSettings,
   DEFAULT_CONFIG_PATH,
   normalizeStatePaths,
   PANEL_SETTINGS_FILENAME,
   PROFILE_FILENAME,
   loadAppState,
   loadPanelSettings,
+  parsePanelSettingsDocument,
   saveAppState,
 } from "@shared/configStore";
 import { buildMcpConfigDocument } from "@shared/mcpStore";
 import { scanSkills } from "@shared/skillsStore";
+import { normalizeShortcuts } from "@shared/shortcutStore";
+import { registerGlobalShortcuts, unregisterGlobalShortcuts } from "./modules/shortcuts";
 import {
   buildWebDavUrl,
   deleteWebDavPath,
@@ -72,6 +74,7 @@ const EXTRA_CLI_PATHS = [
 ];
 
 const ENCRYPTED_PASSWORD_PREFIX = "__enc__";
+const SHORTCUTS_BACKUP_FILENAME = "shortcuts.json";
 
 function encryptWebDavPassword(state: AppState): AppState {
   if (!state.panelSettings.backup_webdav_password || !safeStorage.isEncryptionAvailable()) {
@@ -256,10 +259,12 @@ function sanitizeMachineName(value: string): string {
 
 function buildBackupFiles(state: AppState): Array<{ name: string; content: string }> {
   const normalizedState = normalizeStatePaths(state);
+  const shortcuts = normalizeShortcuts(normalizedState.panelSettings.shortcuts);
   return [
     { name: "config.toml", content: buildConfigDocument(normalizedState) },
     { name: "config.profiles.toml", content: buildProfilesDocument(normalizedState) },
     { name: "config.panel.toml", content: buildPanelSettingsDocument(normalizedState.panelSettings) },
+    { name: SHORTCUTS_BACKUP_FILENAME, content: JSON.stringify(shortcuts, null, 2) },
     { name: "mcp.json", content: buildMcpConfigDocument(normalizedState.mcpConfig) },
   ];
 }
@@ -426,7 +431,10 @@ async function readLocalBackupFiles(state: AppState, backupName: string): Promis
   return {
     configDocument,
     profilesDocument,
-    panelSettingsDocument,
+    panelSettingsDocument: mergeShortcutsBackupDocument(
+      panelSettingsDocument,
+      await readFile(join(backupDirectory, SHORTCUTS_BACKUP_FILENAME), "utf-8").catch(() => null),
+    ),
     mcpDocument,
   };
 }
@@ -449,19 +457,36 @@ async function readWebDavBackupFiles(state: AppState, backupName: string): Promi
     return response.text();
   };
 
-  const [configDocument, profilesDocument, panelSettingsDocument, mcpDocument] = await Promise.all([
+  const [configDocument, profilesDocument, panelSettingsDocument, shortcutsDocument, mcpDocument] = await Promise.all([
     readRemoteText("config.toml"),
     readRemoteText("config.profiles.toml"),
     readRemoteText("config.panel.toml"),
+    readRemoteText(SHORTCUTS_BACKUP_FILENAME).catch(() => null),
     readRemoteText("mcp.json"),
   ]);
 
   return {
     configDocument,
     profilesDocument,
-    panelSettingsDocument,
+    panelSettingsDocument: mergeShortcutsBackupDocument(panelSettingsDocument, shortcutsDocument),
     mcpDocument,
   };
+}
+
+function mergeShortcutsBackupDocument(panelSettingsDocument: string, shortcutsDocument: string | null): string {
+  if (!shortcutsDocument?.trim()) {
+    return panelSettingsDocument;
+  }
+
+  try {
+    const parsedShortcuts = JSON.parse(shortcutsDocument) as unknown;
+    const panelSettings = parsePanelSettingsDocument(panelSettingsDocument);
+    panelSettings.shortcuts = normalizeShortcuts(parsedShortcuts);
+    return buildPanelSettingsDocument(panelSettings);
+  } catch (error) {
+    console.warn("Failed to merge shortcuts backup document", error);
+    return panelSettingsDocument;
+  }
 }
 
 function resolveProfilesPathFromPanelSettings(configPath: string, panelSettings: PanelSettings): string {
@@ -667,6 +692,19 @@ function showMainWindow(): void {
   void createWindow();
 }
 
+function hideMainWindow(): void {
+  mainWindow?.hide();
+  hideDockIcon();
+}
+
+function toggleMainWindow(): void {
+  if (!mainWindow || !mainWindow.isVisible()) {
+    showMainWindow();
+    return;
+  }
+  hideMainWindow();
+}
+
 function showDockIcon(): void {
   if (process.platform === "darwin") {
     app.dock?.show();
@@ -700,6 +738,7 @@ async function updateTrayMenu(): Promise<void> {
   const contextMenu = Menu.buildFromTemplate([
     {
       label: labels.showWindow,
+      accelerator: getTrayToggleWindowAccelerator(state),
       click: showMainWindow,
     },
     { type: "separator" },
@@ -756,6 +795,7 @@ async function updateTrayMenu(): Promise<void> {
     { type: "separator" },
     {
       label: labels.quit,
+      accelerator: "CommandOrControl+Q",
       click: () => {
         isQuitting = true;
         app.quit();
@@ -775,6 +815,32 @@ async function activateProfileFromTray(profileName: string): Promise<void> {
   if (mainWindow && !mainWindow.isDestroyed()) {
     queueTrayCommand("reload");
   }
+}
+
+async function activateRelativeProfile(direction: 1 | -1): Promise<void> {
+  const state = await loadAppState(fileAccess);
+  const profileNames = Object.keys(state.profiles);
+  if (profileNames.length < 2) {
+    return;
+  }
+  const currentIndex = Math.max(0, profileNames.indexOf(state.activeProfile));
+  const nextIndex = (currentIndex + direction + profileNames.length) % profileNames.length;
+  await activateProfileFromTray(profileNames[nextIndex]);
+}
+
+function refreshGlobalShortcuts(state: AppState): void {
+  registerGlobalShortcuts(state, {
+    toggleWindow: toggleMainWindow,
+    activateNextProfile: () => void activateRelativeProfile(1),
+    activatePreviousProfile: () => void activateRelativeProfile(-1),
+  });
+}
+
+function getTrayToggleWindowAccelerator(state: AppState): string {
+  const shortcut = normalizeShortcuts(state.panelSettings.shortcuts)["window.toggle"];
+  return shortcut.enabled && shortcut.accelerator.trim()
+    ? shortcut.accelerator
+    : "CommandOrControl+Shift+K";
 }
 
 async function updateLocaleFromTray(locale: Locale): Promise<void> {
@@ -813,7 +879,7 @@ function getTrayLabels(
 > {
   if (locale === "en-US") {
     return {
-      showWindow: "Show Window",
+      showWindow: "Show / Hide Window",
       switchProfile: "Switch Profile",
       switchLanguage: "Language",
       switchTheme: "Theme",
@@ -824,7 +890,7 @@ function getTrayLabels(
     };
   }
   return {
-    showWindow: "显示窗口",
+    showWindow: "显示/隐藏窗口",
     switchProfile: "切换 Profile",
     switchLanguage: "切换语言",
     switchTheme: "切换主题",
@@ -956,11 +1022,7 @@ async function createWindow(): Promise<void> {
   });
 
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  mainWindow.webContents.on("before-input-event", (_, input) => {
-    if (input.type === "keyDown") {
-      optimizer.watchWindowShortcuts(mainWindow!);
-    }
-  });
+  optimizer.watchWindowShortcuts(mainWindow);
 
   if (is.dev && process.env.ELECTRON_RENDERER_URL) {
     void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL);
@@ -980,6 +1042,7 @@ app.whenReady().then(() => {
     const state = await loadAppState(fileAccess, paths);
     decryptWebDavPassword(state);
     updateBackupSchedule(state);
+    refreshGlobalShortcuts(state);
     if (state.panelSettings.tray_icon) {
       createTray();
     }
@@ -991,6 +1054,7 @@ app.whenReady().then(() => {
     encryptWebDavPassword(state);
     await saveAppState(fileAccess, state);
     updateBackupSchedule(state);
+    refreshGlobalShortcuts(state);
     queueChangeBackup(state);
     void updateTrayMenu();
     return { ok: true };
@@ -1110,7 +1174,12 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   clearBackupSchedule();
+  unregisterGlobalShortcuts();
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("will-quit", () => {
+  unregisterGlobalShortcuts();
 });

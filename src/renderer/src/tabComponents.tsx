@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 
 import { normalizeEntryName } from "@shared/nameRules";
+import { createDefaultShortcuts } from "@shared/shortcutStore";
 import type { SkillsScanReport } from "@shared/skillsStore";
 import type {
   AppState,
@@ -569,6 +570,7 @@ export function createFallbackState(): AppState {
     backup_webdav_username: "",
     backup_webdav_password: "",
     backup_webdav_path: "",
+    shortcuts: createDefaultShortcuts(),
     mcp_servers: {},
   };
 

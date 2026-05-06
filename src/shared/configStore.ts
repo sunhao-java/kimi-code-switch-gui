@@ -2,6 +2,7 @@ import parse from "@iarna/toml/parse-string.js";
 import stringify from "@iarna/toml/stringify.js";
 
 import { buildMcpConfigDocument, DEFAULT_MCP_CONFIG_PATH, loadMcpConfig, parseMcpConfigStrict } from "./mcpStore";
+import { createDefaultShortcuts, normalizeShortcuts } from "./shortcutStore";
 import type {
   AppState,
   BackupDestinationType,
@@ -73,6 +74,7 @@ export function createDefaultPanelSettings(
     backup_webdav_username: "",
     backup_webdav_password: "",
     backup_webdav_path: "",
+    shortcuts: createDefaultShortcuts(),
     mcp_servers: {},
   };
 }
@@ -140,6 +142,14 @@ export async function loadPanelSettings(
 ): Promise<PanelSettings> {
   const fallback = createDefaultPanelSettings(DEFAULT_CONFIG_PATH, panelSettingsPath);
   const data = parseDocument(await files.readText(panelSettingsPath));
+  return panelSettingsFromUnknown(data, fallback);
+}
+
+export function parsePanelSettingsDocument(document: string, fallback = createDefaultPanelSettings()): PanelSettings {
+  return panelSettingsFromUnknown(parseDocument(document), fallback);
+}
+
+function panelSettingsFromUnknown(data: Record<string, unknown>, fallback: PanelSettings): PanelSettings {
   const trayIcon = typeof data.tray_icon === "boolean" ? data.tray_icon : false;
   const configPath =
     typeof data.config_path === "string" && data.config_path.trim()
@@ -189,6 +199,7 @@ export async function loadPanelSettings(
     backup_webdav_username: asString(data.backup_webdav_username, ""),
     backup_webdav_password: asString(data.backup_webdav_password, ""),
     backup_webdav_path: asString(data.backup_webdav_path, ""),
+    shortcuts: normalizeShortcuts(data.shortcuts),
     mcp_servers: parsePanelMcpServers(data.mcp_servers),
     last_display_id: typeof data.last_display_id === "number" ? data.last_display_id : undefined,
   };
@@ -626,6 +637,7 @@ export function normalizeStatePaths(state: AppState): AppState {
     backup_webdav_username: asString(state.panelSettings.backup_webdav_username, ""),
     backup_webdav_password: asString(state.panelSettings.backup_webdav_password, ""),
     backup_webdav_path: asString(state.panelSettings.backup_webdav_path, "").trim(),
+    shortcuts: normalizeShortcuts(state.panelSettings.shortcuts),
     last_display_id: state.panelSettings.last_display_id,
     mcp_servers: cloneMcpServers(state.mcpConfig.mcpServers),
     profiles_path: state.panelSettings.follow_config_profiles

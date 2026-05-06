@@ -16,6 +16,20 @@ export type McpTransport = "sse" | "stdio" | "streamable-http";
 export type BackupFrequency = "hourly" | "daily" | "weekly";
 export type BackupDestinationType = "local" | "webdav";
 export type BackupStrategy = "manual" | "scheduled" | "on-change";
+export type ShortcutScope = "global" | "window";
+export type ShortcutAction =
+  | "window.toggle"
+  | "profile.next"
+  | "profile.previous"
+  | "app.reloadConfig"
+  | "app.save"
+  | "tab.overview"
+  | "tab.profiles"
+  | "tab.providers"
+  | "tab.models"
+  | "tab.mcp"
+  | "tab.skills"
+  | "tab.settings";
 
 export interface ProviderConfig {
   type: string;
@@ -77,6 +91,13 @@ export interface McpConfig {
   mcpServers: Record<string, McpServerConfig>;
 }
 
+export interface ShortcutBinding {
+  action: ShortcutAction;
+  accelerator: string;
+  enabled: boolean;
+  scope: ShortcutScope;
+}
+
 export interface PanelSettings {
   version: number;
   config_path: string;
@@ -97,6 +118,7 @@ export interface PanelSettings {
   backup_webdav_username: string;
   backup_webdav_password: string;
   backup_webdav_path: string;
+  shortcuts: Record<ShortcutAction, ShortcutBinding>;
   mcp_servers: Record<string, McpServerConfig>;
   last_display_id?: number;
 }

@@ -1,6 +1,13 @@
-import { Bug, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, Trash2 } from "lucide-react";
+import { Bug, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { applyProfile, cloneProfile, deleteModel, deleteProfile, deleteProvider, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
 import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
+import {
+  formatAcceleratorForPlatform,
+  getBrowserShortcutPlatform,
+  getShortcutConflicts,
+  resetShortcutBinding,
+  SHORTCUT_ACTIONS,
+} from "@shared/shortcutStore";
 import type {
   AppearanceMode,
   BackupDestinationType,
@@ -9,6 +16,8 @@ import type {
   CloseBehavior,
   DisplayOpenMode,
   Locale,
+  ShortcutAction,
+  ShortcutBinding,
 } from "@shared/types";
 
 import { AboutPage } from "../aboutPage";
@@ -18,7 +27,7 @@ import {
   CLOSE_BEHAVIOR_OPTIONS, DISPLAY_OPEN_OPTIONS, LOCALE_OPTIONS, THEME_OPTIONS, UI_FONT_SIZE_OPTIONS,
 } from "../appOptions";
 import { ErrorBoundary } from "../ErrorBoundary";
-import { Field, FontSizeSliderField, SelectField, SettingsGroup } from "../formControls";
+import { Field, FontSizeSliderField, SelectField, SettingsGroup, ShortcutRecorderField } from "../formControls";
 import { t, translateError } from "../i18n";
 import { EmptyState, SplitLayout } from "../layoutComponents";
 import { OverviewDashboard } from "../overviewDashboard";
@@ -27,7 +36,7 @@ import type { AppContext } from "./appContext";
 import {
   ProviderForm, ModelForm, ProfileForm, McpServerForm,
   SecretField, PathField, createCopyName, createDefaultMcpServer,
-  formatSkillPathLabel, renderSkillPathLabel,
+  formatMessage, formatSkillPathLabel, renderSkillPathLabel,
 } from "../tabComponents";
 
 type TabPanelsProps = Pick<
@@ -102,7 +111,9 @@ type TabPanelsProps = Pick<
   | "setActiveTab"
   | "setError"
   | "setNotice"
->;
+> & {
+  shortcuts: Record<ShortcutAction, ShortcutBinding>;
+};
 
 export function TabPanels(props: TabPanelsProps): JSX.Element {
   const {
@@ -175,8 +186,30 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     openBackupRecords,
     setActiveTab,
     setError,
-    setNotice
+    setNotice,
+    shortcuts,
   } = props;
+  const shortcutConflicts = getShortcutConflicts(shortcuts);
+  const shortcutPlatform = getBrowserShortcutPlatform();
+  const shortcutConflictActions = new Set(shortcutConflicts.flatMap((conflict) => conflict.actions));
+  const shortcutLabels = Object.fromEntries(
+    SHORTCUT_ACTIONS.map((definition) => [definition.action, definition.label[locale]]),
+  ) as Record<ShortcutAction, string>;
+  const shortcutGroups = [
+    {
+      scope: "global" as const,
+      title: t(locale, "shortcutGlobalGroup"),
+      description: t(locale, "shortcutGlobalDescription"),
+      actions: SHORTCUT_ACTIONS.filter((definition) => definition.scope === "global"),
+    },
+    {
+      scope: "window" as const,
+      title: t(locale, "shortcutWindowGroup"),
+      description: t(locale, "shortcutWindowDescription"),
+      actions: SHORTCUT_ACTIONS.filter((definition) => definition.scope === "window"),
+    },
+  ];
+
   return (
     <ErrorBoundary>
         {activeTab === "overview" ? (
@@ -878,6 +911,124 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                   }
                 />
               </label>
+            </SettingsGroup>
+            <SettingsGroup title={t(locale, "settingsGroupShortcuts")} className="settings-group-wide">
+              <div className="shortcut-settings-list">
+                {shortcutGroups.map((group) => (
+                  <section className={`shortcut-section ${group.scope}`} key={group.scope}>
+                    <div className="shortcut-section-header">
+                      <div>
+                        <strong>{group.title}</strong>
+                        <span>{group.description}</span>
+                      </div>
+                      <div className="shortcut-section-tools">
+                        <span className={`shortcut-scope-badge ${group.scope}`}>
+                          {group.scope === "global" ? t(locale, "shortcutGlobal") : t(locale, "shortcutWindow")}
+                        </span>
+                        <label className="shortcut-group-toggle">
+                          <span>
+                            {group.actions.some((definition) => shortcuts[definition.action].enabled)
+                              ? t(locale, "enabled")
+                              : t(locale, "shortcutDisabled")}
+                          </span>
+                          <input
+                            type="checkbox"
+                            checked={group.actions.some((definition) => shortcuts[definition.action].enabled)}
+                            onChange={(event) => {
+                              const enabled = event.target.checked;
+                              updateImmediateState((draft) => {
+                                for (const definition of group.actions) {
+                                  draft.panelSettings.shortcuts[definition.action].enabled = enabled
+                                    && draft.panelSettings.shortcuts[definition.action].accelerator.trim().length > 0;
+                                }
+                              });
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                    <div className="shortcut-section-list">
+                      {group.actions.map((definition) => {
+                        const binding = shortcuts[definition.action];
+                        const isConflicting = shortcutConflictActions.has(definition.action);
+                        const conflict = shortcutConflicts.find((entry) => entry.actions.includes(definition.action));
+                        const conflictText = conflict
+                          ? formatMessage(t(locale, "shortcutConflict"), {
+                              actions: conflict.actions.map((action) => shortcutLabels[action]).join(" / "),
+                            })
+                          : "";
+
+                        return (
+                          <div
+                            key={definition.action}
+                            className={isConflicting ? "shortcut-row has-conflict" : "shortcut-row"}
+                          >
+                            <div className="shortcut-row-copy">
+                              <strong>{definition.label[locale]}</strong>
+                              {isConflicting ? <em>{conflictText}</em> : <span>{definition.action}</span>}
+                            </div>
+                            <div className="shortcut-row-actions">
+                              <ShortcutRecorderField
+                                label={definition.label[locale]}
+                                displayValue={formatAcceleratorForPlatform(binding.accelerator, shortcutPlatform)}
+                                placeholder={t(locale, "shortcutClickToRecord")}
+                                recordingHint={t(locale, "shortcutRecorderHint")}
+                                disabledText={t(locale, "shortcutDisabled")}
+                                onChange={(accelerator) =>
+                                  updateImmediateState((draft) => {
+                                    draft.panelSettings.shortcuts[definition.action].accelerator = accelerator;
+                                    draft.panelSettings.shortcuts[definition.action].enabled = Boolean(accelerator.trim());
+                                  })
+                                }
+                              />
+                              <button
+                                className="shortcut-icon-button"
+                                type="button"
+                                title={t(locale, "shortcutReset")}
+                                aria-label={t(locale, "shortcutReset")}
+                                onClick={() =>
+                                  updateImmediateState((draft) => {
+                                    draft.panelSettings.shortcuts[definition.action] = resetShortcutBinding(definition.action);
+                                  })
+                                }
+                              >
+                                <RotateCcw size={15} />
+                              </button>
+                              <label className="shortcut-enable">
+                                <input
+                                  type="checkbox"
+                                  checked={binding.enabled}
+                                  onChange={(event) =>
+                                    updateImmediateState((draft) => {
+                                      draft.panelSettings.shortcuts[definition.action].enabled = event.target.checked;
+                                    })
+                                  }
+                                />
+                                <span>{binding.enabled ? t(locale, "enabled") : t(locale, "shortcutDisabled")}</span>
+                              </label>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
+              </div>
+              <div className="button-row settings-action-row">
+                <button
+                  className="action-button"
+                  type="button"
+                  onClick={() =>
+                    updateImmediateState((draft) => {
+                      for (const definition of SHORTCUT_ACTIONS) {
+                        draft.panelSettings.shortcuts[definition.action] = resetShortcutBinding(definition.action);
+                      }
+                    })
+                  }
+                >
+                  {t(locale, "shortcutResetAll")}
+                </button>
+              </div>
             </SettingsGroup>
             <SettingsGroup title={t(locale, "settingsGroupBackup")}>
               <SelectField

@@ -5,10 +5,11 @@ import { Check, ChevronDown, Globe, Plus, X } from "lucide-react";
 import type { Locale, UiFontSize } from "@shared/types";
 
 import { t } from "./i18n";
+import { eventToAccelerator } from "./useShortcuts";
 
-export function SettingsGroup(props: { title: string; children: ReactNode }): JSX.Element {
+export function SettingsGroup(props: { title: string; children: ReactNode; className?: string }): JSX.Element {
   return (
-    <section className="settings-group">
+    <section className={props.className ? `settings-group ${props.className}` : "settings-group"}>
       <div className="settings-group-header">
         <div className="settings-group-title">
           <span className="settings-group-dot" aria-hidden="true" />
@@ -32,6 +33,55 @@ export function Field(props: {
       <span>{props.label}</span>
       <input inputMode={props.inputMode} value={props.value} onChange={(event) => props.onChange(event.target.value)} />
     </label>
+  );
+}
+
+export function ShortcutRecorderField(props: {
+  label: string;
+  displayValue: string;
+  placeholder: string;
+  recordingHint: string;
+  disabledText: string;
+  onChange: (value: string) => void;
+}): JSX.Element {
+  const [isRecording, setIsRecording] = useState(false);
+  const shownValue = isRecording
+    ? props.recordingHint
+    : props.displayValue || props.disabledText || props.placeholder;
+
+  return (
+    <button
+      className={isRecording ? "shortcut-recorder is-recording" : "shortcut-recorder"}
+      type="button"
+      aria-label={props.label}
+      onClick={() => setIsRecording(true)}
+      onBlur={() => setIsRecording(false)}
+      onKeyDown={(event) => {
+        if (!isRecording) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (event.key === "Escape") {
+          setIsRecording(false);
+          return;
+        }
+        if (event.key === "Backspace" || event.key === "Delete") {
+          props.onChange("");
+          setIsRecording(false);
+          return;
+        }
+
+        const accelerator = eventToAccelerator(event.nativeEvent);
+        if (accelerator) {
+          props.onChange(accelerator);
+          setIsRecording(false);
+        }
+      }}
+    >
+      <span>{shownValue}</span>
+    </button>
   );
 }
 
