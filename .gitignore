@@ -8,3 +8,4 @@ out
 release
 coverage
 *.log
+.deepseek

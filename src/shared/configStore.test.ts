@@ -185,7 +185,7 @@ describe("configStore", () => {
     expect(state.profiles["default-copy"].default_model).toBe("kimi_gateway/kimi-k2.5");
   });
 
-  it("normalizes profile editor and theme", () => {
+  it("preserves profile editor and theme from input", () => {
     const state = createState();
     upsertProfile(state, {
       name: "work",
@@ -200,8 +200,8 @@ describe("configStore", () => {
       merge_all_available_skills: false,
     });
 
-    expect(state.profiles.work.default_editor).toBe("");
-    expect(state.profiles.work.theme).toBe("dark");
+    expect(state.profiles.work.default_editor).toBe("vim");
+    expect(state.profiles.work.theme).toBe("light");
   });
 
   it("renders config document", () => {

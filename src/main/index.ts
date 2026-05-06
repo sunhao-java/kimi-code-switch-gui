@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, safeStorage, screen, shell, Tray } from "electron";
 import type { NativeImage } from "electron";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { homedir, hostname } from "node:os";
@@ -26,6 +26,18 @@ import {
 } from "@shared/configStore";
 import { buildMcpConfigDocument } from "@shared/mcpStore";
 import { scanSkills } from "@shared/skillsStore";
+import {
+  buildWebDavUrl,
+  deleteWebDavPath,
+  ensureWebDavCollection,
+  getWebDavAuthHeader,
+  pruneWebDavBackups,
+  readWebDavManifest,
+  testWebDavConnection,
+  uploadWebDavFile,
+} from "./modules/webdav";
+import { checkForUpdates, detectInstallSource } from "./modules/updates";
+import type { UpdateCheckResult } from "./modules/updates";
 import type {
   AppState,
   AppearanceMode,
@@ -49,10 +61,11 @@ let isQuitting = false;
 
 const WINDOW_WIDTH = 1500;
 const WINDOW_HEIGHT = 980;
+const WINDOW_SHOW_TIMEOUT_MS = 1500;
+const DISPLAY_REMEMBER_DELAY_MS = 400;
+const ERROR_NOTICE_DURATION_MS = 5000;
 const DEFAULT_PANEL_SETTINGS_PATH = DEFAULT_CONFIG_PATH.replace("config.toml", PANEL_SETTINGS_FILENAME);
 const CHANGE_BACKUP_DELAY_MS = 4000;
-const GITHUB_RELEASES_LATEST_URL = "https://api.github.com/repos/sunhao-java/kimi-code-switch-gui/releases/latest";
-const HOMEBREW_UPGRADE_COMMAND = "brew upgrade --cask kimi-code-switch-gui";
 const execFileAsync = promisify(execFile);
 const EXTRA_CLI_PATHS = [
   "/opt/homebrew/bin",
@@ -60,6 +73,36 @@ const EXTRA_CLI_PATHS = [
   join(homedir(), ".local", "bin"),
   join(homedir(), ".cargo", "bin"),
 ];
+
+const ENCRYPTED_PASSWORD_PREFIX = "__enc__";
+
+function encryptWebDavPassword(state: AppState): AppState {
+  if (!state.panelSettings.backup_webdav_password || !safeStorage.isEncryptionAvailable()) {
+    return state;
+  }
+  // Already encrypted
+  if (state.panelSettings.backup_webdav_password.startsWith(ENCRYPTED_PASSWORD_PREFIX)) {
+    return state;
+  }
+  const encrypted = safeStorage.encryptString(state.panelSettings.backup_webdav_password);
+  state.panelSettings.backup_webdav_password = ENCRYPTED_PASSWORD_PREFIX + encrypted.toString("base64");
+  return state;
+}
+
+function decryptWebDavPassword(state: AppState): AppState {
+  if (!state.panelSettings.backup_webdav_password?.startsWith(ENCRYPTED_PASSWORD_PREFIX) || !safeStorage.isEncryptionAvailable()) {
+    return state;
+  }
+  try {
+    const encoded = state.panelSettings.backup_webdav_password.slice(ENCRYPTED_PASSWORD_PREFIX.length);
+    const buffer = Buffer.from(encoded, "base64");
+    state.panelSettings.backup_webdav_password = safeStorage.decryptString(buffer);
+  } catch {
+    // If decryption fails, leave as-is (might be from another machine)
+    console.warn("Failed to decrypt WebDAV password, keychain may have changed");
+  }
+  return state;
+}
 
 const resolveHome = (value: string): string =>
   value.startsWith("~/") ? join(homedir(), value.slice(2)) : value;
@@ -238,124 +281,6 @@ async function pruneBackupDirectories(backupRoot: string, keepCount: number): Pr
   );
 }
 
-function getWebDavAuthHeader(settings: PanelSettings): string {
-  const credentials = `${settings.backup_webdav_username}:${settings.backup_webdav_password}`;
-  return `Basic ${Buffer.from(credentials).toString("base64")}`;
-}
-
-function getWebDavBaseUrl(settings: PanelSettings): string {
-  const baseUrl = settings.backup_webdav_url.trim().replace(/\/+$/, "");
-  if (!baseUrl) {
-    throw new Error("WebDAV URL is required.");
-  }
-  return baseUrl;
-}
-
-function getWebDavPathSegments(settings: PanelSettings, additionalSegments: string[] = []): string[] {
-  const segments = settings.backup_webdav_path
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter(Boolean);
-  return [...segments, ...additionalSegments];
-}
-
-function buildWebDavUrl(settings: PanelSettings, additionalSegments: string[] = []): string {
-  const baseUrl = getWebDavBaseUrl(settings);
-  const segments = getWebDavPathSegments(settings, additionalSegments).map(encodeURIComponent);
-  return segments.length ? `${baseUrl}/${segments.join("/")}` : baseUrl;
-}
-
-async function ensureWebDavCollection(settings: PanelSettings, additionalSegments: string[] = []): Promise<string> {
-  let currentUrl = getWebDavBaseUrl(settings);
-  const headers = new Headers({
-    Authorization: getWebDavAuthHeader(settings),
-  });
-
-  for (const segment of getWebDavPathSegments(settings, additionalSegments)) {
-    currentUrl = `${currentUrl}/${encodeURIComponent(segment)}`;
-    const response = await fetch(currentUrl, {
-      method: "MKCOL",
-      headers,
-    });
-    if (![200, 201, 204, 301, 405].includes(response.status)) {
-      throw new Error(`WebDAV MKCOL failed: ${response.status} ${response.statusText}`);
-    }
-  }
-
-  return currentUrl;
-}
-
-async function uploadWebDavFile(settings: PanelSettings, url: string, content: string): Promise<void> {
-  const response = await fetch(url, {
-    method: "PUT",
-    headers: {
-      Authorization: getWebDavAuthHeader(settings),
-      "Content-Type": "application/octet-stream",
-    },
-    body: content,
-  });
-
-  if (!response.ok) {
-    throw new Error(`WebDAV upload failed: ${response.status} ${response.statusText}`);
-  }
-}
-
-async function deleteWebDavPath(settings: PanelSettings, url: string): Promise<void> {
-  const response = await fetch(url, {
-    method: "DELETE",
-    headers: {
-      Authorization: getWebDavAuthHeader(settings),
-    },
-  });
-
-  if (![200, 204, 404].includes(response.status)) {
-    throw new Error(`WebDAV delete failed: ${response.status} ${response.statusText}`);
-  }
-}
-
-async function readWebDavManifest(settings: PanelSettings, manifestUrl: string): Promise<Array<{ name: string; createdAt: string }>> {
-  const response = await fetch(manifestUrl, {
-    method: "GET",
-    headers: {
-      Authorization: getWebDavAuthHeader(settings),
-    },
-  });
-
-  if (response.status === 404) {
-    return [];
-  }
-  if (!response.ok) {
-    throw new Error(`WebDAV manifest read failed: ${response.status} ${response.statusText}`);
-  }
-
-  const payload = (await response.json()) as { backups?: Array<{ name?: string; createdAt?: string }> };
-  return Array.isArray(payload.backups)
-    ? payload.backups
-      .filter((entry) => typeof entry.name === "string" && typeof entry.createdAt === "string")
-      .map((entry) => ({ name: entry.name as string, createdAt: entry.createdAt as string }))
-    : [];
-}
-
-async function pruneWebDavBackups(
-  settings: PanelSettings,
-  manifestUrl: string,
-  currentEntries: Array<{ name: string; createdAt: string }>,
-): Promise<void> {
-  const obsoleteEntries = [...currentEntries]
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-    .slice(settings.backup_retention_count);
-
-  await Promise.all(
-    obsoleteEntries.map((entry) => deleteWebDavPath(settings, buildWebDavUrl(settings, [entry.name]))),
-  );
-
-  const keptEntries = [...currentEntries]
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-    .slice(0, settings.backup_retention_count);
-
-  await uploadWebDavFile(settings, manifestUrl, JSON.stringify({ backups: keptEntries }, null, 2));
-}
-
 async function createLocalBackupSnapshot(state: AppState, backupName: string): Promise<BackupResult> {
   const normalizedState = normalizeStatePaths(state);
   const backupRoot = resolveHome(normalizedState.panelSettings.backup_local_path);
@@ -410,130 +335,6 @@ async function createBackupSnapshot(state: AppState): Promise<BackupResult> {
   }
 
   return createLocalBackupSnapshot(normalizedState, backupName);
-}
-
-async function testWebDavConnection(state: AppState): Promise<{ ok: true; target: string }> {
-  const normalizedState = normalizeStatePaths(state);
-  const settings = normalizedState.panelSettings;
-  const target = buildWebDavUrl(settings);
-  const response = await fetch(target, {
-    method: "PROPFIND",
-    headers: {
-      Authorization: getWebDavAuthHeader(settings),
-      Depth: "0",
-    },
-  });
-
-  if (response.status === 404) {
-    const ensuredTarget = await ensureWebDavCollection(settings);
-    return {
-      ok: true,
-      target: ensuredTarget,
-    };
-  }
-
-  if (!response.ok) {
-    throw new Error(`WebDAV test failed: ${response.status} ${response.statusText}`);
-  }
-
-  return {
-    ok: true,
-    target,
-  };
-}
-
-function normalizeReleaseVersion(value: string): string {
-  return value.trim().replace(/^v/i, "");
-}
-
-function compareReleaseVersions(left: string, right: string): number {
-  const leftParts = normalizeReleaseVersion(left).split(".").map((part) => Number.parseInt(part, 10) || 0);
-  const rightParts = normalizeReleaseVersion(right).split(".").map((part) => Number.parseInt(part, 10) || 0);
-  const maxLength = Math.max(leftParts.length, rightParts.length);
-
-  for (let index = 0; index < maxLength; index += 1) {
-    const leftValue = leftParts[index] ?? 0;
-    const rightValue = rightParts[index] ?? 0;
-    if (leftValue !== rightValue) {
-      return leftValue - rightValue;
-    }
-  }
-
-  return 0;
-}
-
-type UpdateCheckResult = {
-  currentVersion: string;
-  latestVersion: string;
-  hasUpdate: boolean;
-  releaseUrl: string;
-  releaseName: string;
-  publishedAt: string;
-  homebrewCommand: string;
-  installSource: "homebrew" | "manual" | "development";
-};
-
-async function detectInstallSource(): Promise<UpdateCheckResult["installSource"]> {
-  if (!app.isPackaged) {
-    return "development";
-  }
-
-  try {
-    await execFileAsync("brew", ["list", "--cask", "kimi-code-switch-gui"], {
-      env: getCliEnv(),
-    });
-    return "homebrew";
-  } catch {
-    return "manual";
-  }
-}
-
-async function checkForUpdates(): Promise<{
-  currentVersion: string;
-  latestVersion: string;
-  hasUpdate: boolean;
-  releaseUrl: string;
-  releaseName: string;
-  publishedAt: string;
-  homebrewCommand: string;
-  installSource: "homebrew" | "manual" | "development";
-}> {
-  const response = await fetch(GITHUB_RELEASES_LATEST_URL, {
-    method: "GET",
-    headers: {
-      Accept: "application/vnd.github+json",
-      "User-Agent": "kimi-code-switch-gui",
-    },
-  });
-
-  if (!response.ok) {
-    if (response.status === 403) {
-      throw new Error("GitHub API rate limit exceeded. Please open the GitHub Releases page and check manually.");
-    }
-
-    throw new Error(`GitHub release check failed: ${response.status} ${response.statusText}`);
-  }
-
-  const payload = await response.json() as {
-    tag_name?: string;
-    name?: string;
-    html_url?: string;
-    published_at?: string;
-  };
-  const currentVersion = app.getVersion();
-  const latestVersion = normalizeReleaseVersion(payload.tag_name ?? currentVersion);
-  const installSource = await detectInstallSource();
-  const result: UpdateCheckResult = {
-    currentVersion,
-    latestVersion,
-    hasUpdate: compareReleaseVersions(latestVersion, currentVersion) > 0,
-    releaseUrl: payload.html_url ?? "https://github.com/sunhao-java/kimi-code-switch-gui/releases",
-    releaseName: payload.name?.trim() || payload.tag_name?.trim() || `v${latestVersion}`,
-    publishedAt: payload.published_at ?? "",
-    homebrewCommand: HOMEBREW_UPGRADE_COMMAND,
-    installSource,
-  };
-  return result;
 }
 
 async function listLocalBackups(state: AppState): Promise<BackupRecord[]> {
@@ -1084,7 +885,7 @@ function scheduleRememberWindowDisplay(): void {
   rememberDisplayTimer = setTimeout(() => {
     rememberDisplayTimer = null;
     void rememberWindowDisplay();
-  }, 400);
+  }, DISPLAY_REMEMBER_DELAY_MS);
 }
 
 async function rememberWindowDisplay(): Promise<void> {
@@ -1183,7 +984,7 @@ async function createWindow(): Promise<void> {
 
   setTimeout(() => {
     mainWindow?.show();
-  }, 1500);
+  }, WINDOW_SHOW_TIMEOUT_MS);
 }
 
 app.whenReady().then(() => {
@@ -1191,6 +992,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle("app:load-state", async (_, paths) => {
     const state = await loadAppState(fileAccess, paths);
+    decryptWebDavPassword(state);
     updateBackupSchedule(state);
     if (state.panelSettings.tray_icon) {
       createTray();
@@ -1200,6 +1002,7 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle("app:save-state", async (_, state: AppState) => {
+    encryptWebDavPassword(state);
     await saveAppState(fileAccess, state);
     updateBackupSchedule(state);
     queueChangeBackup(state);
@@ -1227,11 +1030,11 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle("app:check-for-updates", async () => {
-    return checkForUpdates();
+    return checkForUpdates(getCliEnv);
   });
 
   ipcMain.handle("app:get-install-source", async () => {
-    return detectInstallSource();
+    return detectInstallSource(getCliEnv);
   });
 
   ipcMain.handle("dialog:pick-file", async (_, options): Promise<FileDialogResult> => {
@@ -1279,7 +1082,7 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle("backup:test-webdav", async (_, state: AppState) => {
-    return testWebDavConnection(state);
+    return testWebDavConnection(state.panelSettings);
   });
 
   ipcMain.handle("app:set-tray", (_, enabled: boolean) => {

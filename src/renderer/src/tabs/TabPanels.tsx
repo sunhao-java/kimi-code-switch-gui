@@ -1,0 +1,1053 @@
+import { Bug, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, Trash2 } from "lucide-react";
+import { applyProfile, cloneProfile, deleteModel, deleteProfile, deleteProvider, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
+import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
+import type {
+  AppearanceMode,
+  BackupDestinationType,
+  BackupFrequency,
+  BackupStrategy,
+  CloseBehavior,
+  DisplayOpenMode,
+  Locale,
+} from "@shared/types";
+
+import { AboutPage } from "../aboutPage";
+import { getApi, getMcpAction, getMcpActionNotice, getResourceLabel, createUniqueName, renameModelInState, renameProviderInState } from "../appHelpers";
+import {
+  BACKUP_DESTINATION_OPTIONS, BACKUP_FREQUENCY_OPTIONS, BACKUP_STRATEGY_OPTIONS,
+  CLOSE_BEHAVIOR_OPTIONS, DISPLAY_OPEN_OPTIONS, LOCALE_OPTIONS, THEME_OPTIONS, UI_FONT_SIZE_OPTIONS,
+} from "../appOptions";
+import type { PreviewFileId } from "../appOptions";
+import { ErrorBoundary } from "../ErrorBoundary";
+import { Field, FontSizeSliderField, SelectField, SettingsGroup } from "../formControls";
+import { t, translateError } from "../i18n";
+import { EmptyState, SplitLayout } from "../layoutComponents";
+import { OverviewDashboard, type DiagnosticsState } from "../overviewDashboard";
+import { SkillsWorkspace, type SkillsViewMode } from "../skillsWorkspace";
+import type { AppContext } from "./appContext";
+import {
+  ProviderForm, ModelForm, ProfileForm, McpServerForm, McpImportDialog,
+  SecretField, PathField, createCopyName, createDefaultMcpServer,
+  formatMessage, formatSkillPathLabel, renderSkillPathLabel,
+} from "../tabComponents";
+
+type TabPanelsProps = Pick<
+  AppContext,
+  | "state"
+  | "activeTab"
+  | "locale"
+  | "diagnostics"
+  | "selectedProvider"
+  | "setSelectedProvider"
+  | "selectedModel"
+  | "setSelectedModel"
+  | "selectedProfile"
+  | "setSelectedProfile"
+  | "selectedMcpServer"
+  | "setSelectedMcpServer"
+  | "selectedSkill"
+  | "setSelectedSkill"
+  | "selectedSkillPath"
+  | "setSelectedSkillPath"
+  | "skillsViewMode"
+  | "setSkillsViewMode"
+  | "skillsReport"
+  | "isSkillsLoading"
+  | "providerEntries"
+  | "modelEntries"
+  | "profileEntries"
+  | "mcpEntries"
+  | "skillPathEntries"
+  | "skillEntries"
+  | "sortedSkillPathEntries"
+  | "visibleSkillEntries"
+  | "selectedProviderName"
+  | "selectedModelName"
+  | "selectedProfileName"
+  | "selectedMcpServerName"
+  | "selectedSkillPathId"
+  | "selectedSkillData"
+  | "selectedSkillPathData"
+  | "selectedProviderData"
+  | "selectedModelData"
+  | "selectedProfileData"
+  | "selectedMcpServerData"
+  | "isProviderNameEditable"
+  | "isProfileNameEditable"
+  | "isMcpServerNameEditable"
+  | "dirtyProviders"
+  | "dirtyModels"
+  | "dirtyProfiles"
+  | "dirtyMcpServers"
+  | "isMcpImportOpen"
+  | "setIsMcpImportOpen"
+  | "mcpImportDraft"
+  | "setMcpImportDraft"
+  | "mcpImportInitialDraft"
+  | "setMcpImportInitialDraft"
+  | "mcpTestingName"
+  | "setMcpTestingName"
+  | "profileTestingName"
+  | "setProfileTestingName"
+  | "backupRecordsDialog"
+  | "isBackupRunning"
+  | "isWebDavTesting"
+  | "isBackupPasswordVisible"
+  | "setIsBackupPasswordVisible"
+  | "updateState"
+  | "updateImmediateState"
+  | "runAfterUnsavedHandled"
+  | "onSave"
+  | "persistState"
+  | "confirmDeleteResource"
+  | "closeMcpImportDialog"
+  | "requestCloseMcpImportDialog"
+  | "refreshSkills"
+  | "openDocumentViewer"
+  | "runManualBackup"
+  | "runWebDavTest"
+  | "openBackupRecords"
+  | "deleteBackupRecord"
+  | "restoreBackupRecord"
+  | "setActiveTab"
+  | "setError"
+  | "setNotice"
+>;
+
+export function TabPanels(props: TabPanelsProps): JSX.Element {
+  const {
+    state,
+    activeTab,
+    locale,
+    diagnostics,
+    selectedProvider,
+    setSelectedProvider,
+    selectedModel,
+    setSelectedModel,
+    selectedProfile,
+    setSelectedProfile,
+    selectedMcpServer,
+    setSelectedMcpServer,
+    selectedSkill,
+    setSelectedSkill,
+    selectedSkillPath,
+    setSelectedSkillPath,
+    skillsViewMode,
+    setSkillsViewMode,
+    skillsReport,
+    isSkillsLoading,
+    providerEntries,
+    modelEntries,
+    profileEntries,
+    mcpEntries,
+    skillPathEntries,
+    skillEntries,
+    sortedSkillPathEntries,
+    visibleSkillEntries,
+    selectedProviderName,
+    selectedModelName,
+    selectedProfileName,
+    selectedMcpServerName,
+    selectedSkillPathId,
+    selectedSkillData,
+    selectedSkillPathData,
+    selectedProviderData,
+    selectedModelData,
+    selectedProfileData,
+    selectedMcpServerData,
+    isProviderNameEditable,
+    isProfileNameEditable,
+    isMcpServerNameEditable,
+    dirtyProviders,
+    dirtyModels,
+    dirtyProfiles,
+    dirtyMcpServers,
+    isMcpImportOpen,
+    setIsMcpImportOpen,
+    mcpImportDraft,
+    setMcpImportDraft,
+    mcpImportInitialDraft,
+    setMcpImportInitialDraft,
+    mcpTestingName,
+    setMcpTestingName,
+    profileTestingName,
+    setProfileTestingName,
+    backupRecordsDialog,
+    isBackupRunning,
+    isWebDavTesting,
+    isBackupPasswordVisible,
+    setIsBackupPasswordVisible,
+    updateState,
+    updateImmediateState,
+    runAfterUnsavedHandled,
+    onSave,
+    persistState,
+    confirmDeleteResource,
+    closeMcpImportDialog,
+    requestCloseMcpImportDialog,
+    refreshSkills,
+    openDocumentViewer,
+    runManualBackup,
+    runWebDavTest,
+    openBackupRecords,
+    deleteBackupRecord,
+    restoreBackupRecord,
+    setActiveTab,
+    setError,
+    setNotice
+  } = props;
+  return (
+    <ErrorBoundary>
+        {activeTab === "overview" ? (
+          <OverviewDashboard
+            state={state}
+            locale={locale}
+            diagnostics={diagnostics}
+            onActivateProfile={(name) =>
+              updateState((draft) => {
+                applyProfile(draft, name);
+              }, { persist: true })
+            }
+            onNavigate={(tab) => runAfterUnsavedHandled(() => setActiveTab(tab))}
+          />
+        ) : null}
+
+        {activeTab === "providers" ? (
+          <SplitLayout
+            listTitle={t(locale, "providers")}
+            listItems={providerEntries.map(([name]) => name)}
+            dirtyItems={dirtyProviders}
+            dirtyLabel={t(locale, "editedBadge")}
+            selectedItem={selectedProvider}
+            onSelect={(item) => runAfterUnsavedHandled(() => setSelectedProvider(item))}
+            copyLabel={t(locale, "clone")}
+            onCopy={(name) =>
+              updateState((draft) => {
+                const provider = draft.mainConfig.providers[name];
+                if (!provider) return;
+                const copyName = createCopyName(name, draft.mainConfig.providers);
+                draft.mainConfig.providers[copyName] = { ...provider };
+                setSelectedProvider(copyName);
+              }, { persist: false })
+            }
+            addLabel={t(locale, "newProvider")}
+            addButtonClassName="action-button compact icon-only"
+            addButtonTitle={t(locale, "newProvider")}
+            addButtonContent={<Plus size={15} />}
+            onAdd={() =>
+              updateState((draft) => {
+                const name = createUniqueName("provider", Object.keys(draft.mainConfig.providers));
+                upsertProvider(draft, name, {
+                  type: "kimi",
+                  base_url: "https://api.example.com/v1",
+                  api_key: "",
+                });
+                setSelectedProvider(name);
+              }, { persist: false })
+            }
+          >
+            {selectedProviderData ? (
+              <ProviderForm
+                locale={locale}
+                name={selectedProviderName}
+                nameEditable={isProviderNameEditable}
+                value={selectedProviderData}
+                onChange={(name, patch) =>
+                  updateState((draft) => {
+                    const currentName = selectedProviderName;
+                    const currentProvider = draft.mainConfig.providers[currentName];
+                    if (!currentProvider) return;
+                    const nextProvider = { ...currentProvider, ...patch };
+                    const nextName = isProviderNameEditable
+                      ? renameProviderInState(draft, currentName, name, nextProvider)
+                      : currentName;
+
+                    if (!isProviderNameEditable) {
+                      draft.mainConfig.providers[currentName] = nextProvider;
+                    }
+                    setSelectedProvider(nextName);
+                  }, { persist: false })
+                }
+                onSave={() => void onSave()}
+                onDelete={() => {
+                  void (async () => {
+                    if (!(await confirmDeleteResource(getResourceLabel(locale, "provider"), selectedProviderName))) return;
+                    updateState((draft) => {
+                      deleteProvider(draft, selectedProviderName);
+                      setSelectedProvider(Object.keys(draft.mainConfig.providers)[0] ?? "");
+                    });
+                  })();
+                }}
+              />
+            ) : (
+              <EmptyState locale={locale} />
+            )}
+          </SplitLayout>
+        ) : null}
+
+        {activeTab === "models" ? (
+          <SplitLayout
+            listTitle={t(locale, "models")}
+            listItems={modelEntries.map(([name]) => name)}
+            dirtyItems={dirtyModels}
+            dirtyLabel={t(locale, "editedBadge")}
+            selectedItem={selectedModel}
+            onSelect={(item) => runAfterUnsavedHandled(() => setSelectedModel(item))}
+            copyLabel={t(locale, "clone")}
+            onCopy={(name) =>
+              updateState((draft) => {
+                const model = draft.mainConfig.models[name];
+                if (!model) return;
+                const copyModelId = createUniqueName(`${model.model}-copy`, Object.values(draft.mainConfig.models)
+                  .filter((entry) => entry.provider === model.provider)
+                  .map((entry) => entry.model));
+                const copyName = buildModelName(model.provider, copyModelId);
+                draft.mainConfig.models[copyName] = {
+                  ...model,
+                  model: copyModelId,
+                  capabilities: [...model.capabilities],
+                };
+                setSelectedModel(copyName);
+              }, { persist: false })
+            }
+            addLabel={t(locale, "newModel")}
+            addButtonClassName="action-button compact icon-only"
+            addButtonTitle={t(locale, "newModel")}
+            addButtonContent={<Plus size={15} />}
+            onAdd={() =>
+              updateState((draft) => {
+                const providerName = Object.keys(draft.mainConfig.providers)[0];
+                if (!providerName) {
+                  throw new Error("Please create a provider first.");
+                }
+                const modelId = createUniqueName(
+                  "new-model",
+                  Object.values(draft.mainConfig.models)
+                    .filter((model) => model.provider === providerName)
+                    .map((model) => model.model),
+                );
+                const name = buildModelName(providerName, modelId);
+                upsertModel(draft, name, {
+                  provider: providerName,
+                  model: modelId,
+                  max_context_size: 128000,
+                  capabilities: [],
+                });
+                setSelectedModel(name);
+              }, { persist: false })
+            }
+          >
+            {selectedModelData ? (
+              <ModelForm
+                locale={locale}
+                providers={Object.keys(state.mainConfig.providers)}
+                name={selectedModelName}
+                value={selectedModelData}
+                onChange={(name, patch) =>
+                  updateState((draft) => {
+                    const currentName = selectedModelName;
+                    const currentModel = draft.mainConfig.models[currentName];
+                    if (!currentModel) return;
+                    const nextModel = {
+                      ...currentModel,
+                      ...patch,
+                      provider: normalizeEntryName(patch.provider ?? currentModel.provider),
+                      model: normalizeEntryName(patch.model ?? currentModel.model),
+                    };
+                    const nextName = renameModelInState(draft, currentName, nextModel);
+                    setSelectedModel(nextName);
+                  }, { persist: false })
+                }
+                onSave={() => void onSave()}
+                onDelete={() => {
+                  void (async () => {
+                    if (!(await confirmDeleteResource(getResourceLabel(locale, "model"), selectedModelName))) return;
+                    updateState((draft) => {
+                      deleteModel(draft, selectedModelName);
+                      setSelectedModel(Object.keys(draft.mainConfig.models)[0] ?? "");
+                    });
+                  })();
+                }}
+              />
+            ) : (
+              <EmptyState locale={locale} />
+            )}
+          </SplitLayout>
+        ) : null}
+
+        {activeTab === "profiles" ? (
+          <SplitLayout
+            listTitle={t(locale, "profiles")}
+            listItems={profileEntries.map(([name]) => name)}
+            dirtyItems={dirtyProfiles}
+            dirtyLabel={t(locale, "editedBadge")}
+            selectedItem={selectedProfile}
+            highlightedItem={state.activeProfile}
+            onSelect={(item) => runAfterUnsavedHandled(() => setSelectedProfile(item))}
+            copyLabel={t(locale, "clone")}
+            onCopy={(name) =>
+              updateState((draft) => {
+                const profile = draft.profiles[name];
+                if (!profile) return;
+                const copyName = createCopyName(name, draft.profiles);
+                cloneProfile(draft, name, copyName, `${profile.label} Copy`);
+                setSelectedProfile(copyName);
+              }, { persist: false })
+            }
+            addLabel={t(locale, "newProfile")}
+            addButtonClassName="action-button compact icon-only"
+            addButtonTitle={t(locale, "newProfile")}
+            addButtonContent={<Plus size={15} />}
+            onAdd={() =>
+              updateState((draft) => {
+                const firstModel = Object.keys(draft.mainConfig.models)[0];
+                if (!firstModel) {
+                  throw new Error("Please create a model first.");
+                }
+                const name = createUniqueName("profile", Object.keys(draft.profiles));
+                upsertProfile(draft, {
+                  name,
+                  label: "New Profile",
+                  default_model: firstModel,
+                  default_thinking: true,
+                  default_yolo: false,
+                  default_plan_mode: false,
+                  default_editor: "",
+                  theme: "dark",
+                  show_thinking_stream: false,
+                  merge_all_available_skills: false,
+                });
+                setSelectedProfile(name);
+              }, { persist: false })
+            }
+            renderItemAction={(name) =>
+              name === state.activeProfile ? (
+                <span className="list-current-badge" aria-label={t(locale, "summaryActive")} title={t(locale, "summaryActive")}>
+                  {locale === "zh-CN" ? "已激活" : "Active"}
+                </span>
+              ) : (
+                <button
+                  className="list-activate-button"
+                  type="button"
+                  aria-label={`${t(locale, "activate")} ${name}`}
+                  title={t(locale, "activate")}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    updateState((draft) => {
+                      applyProfile(draft, name);
+                    });
+                  }}
+                >
+                  {t(locale, "activate")}
+                </button>
+              )
+            }
+          >
+            {selectedProfileData ? (
+              <ProfileForm
+                locale={locale}
+                models={Object.keys(state.mainConfig.models)}
+                name={selectedProfileName}
+                nameEditable={isProfileNameEditable}
+                value={selectedProfileData}
+                isActive={selectedProfileName === state.activeProfile}
+                isTesting={profileTestingName === selectedProfileName}
+                onChange={(name, nextProfile) =>
+                  updateState((draft) => {
+                    const currentName = selectedProfileName;
+                    const normalizedName = isProfileNameEditable
+                      ? ensureUniqueEntryName({
+                          kind: "Profile",
+                          name,
+                          currentName,
+                          existingNames: Object.keys(draft.profiles),
+                        })
+                      : currentName;
+                    const normalizedProfile = {
+                      ...nextProfile,
+                      default_editor: "",
+                      theme: "dark",
+                    };
+                    const nextProfiles = { ...draft.profiles };
+                    delete nextProfiles[currentName];
+                    nextProfiles[normalizedName] = { ...normalizedProfile, name: normalizedName };
+                    if (draft.activeProfile === currentName) {
+                      draft.activeProfile = normalizedName;
+                    }
+                    draft.profiles = nextProfiles;
+                    setSelectedProfile(normalizedName);
+                  }, { persist: false })
+                }
+                onSave={() => void onSave()}
+                onTest={async () => {
+                  const api = getApi();
+                  if (!api || typeof api.testProfileConnectivity !== "function") {
+                    setNotice("");
+                    setError(t(locale, "profileRuntimeOutdated"));
+                    return;
+                  }
+                  try {
+                    setProfileTestingName(selectedProfileName);
+                    await api.testProfileConnectivity(state, selectedProfileName);
+                    setError("");
+                    setNotice(t(locale, "profileTestSuccess"));
+                  } catch (testError) {
+                    const message = testError instanceof Error ? testError.message : String(testError);
+                    setNotice("");
+                    setError(translateError(locale, message));
+                  } finally {
+                    setProfileTestingName("");
+                  }
+                }}
+                onActivate={() =>
+                  updateState((draft) => {
+                    applyProfile(draft, selectedProfileName);
+                  })
+                }
+                onClone={() =>
+                  updateState((draft) => {
+                    const source = selectedProfileName;
+                    cloneProfile(draft, source, `${source}-copy`, `${selectedProfileData.label} Copy`);
+                    setSelectedProfile(`${source}-copy`);
+                  }, { persist: false })
+                }
+                onDelete={() => {
+                  void (async () => {
+                    if (!(await confirmDeleteResource(getResourceLabel(locale, "profile"), selectedProfileName))) return;
+                    updateState((draft) => {
+                      deleteProfile(draft, selectedProfileName);
+                      setSelectedProfile(Object.keys(draft.profiles)[0] ?? "");
+                    });
+                  })();
+                }}
+              />
+            ) : (
+              <EmptyState locale={locale} />
+            )}
+          </SplitLayout>
+        ) : null}
+
+        {activeTab === "mcp" ? (
+          <SplitLayout
+            listTitle={t(locale, "mcpServers")}
+            listItems={mcpEntries.map(([name]) => name)}
+            dirtyItems={dirtyMcpServers}
+            dirtyLabel={t(locale, "editedBadge")}
+            selectedItem={selectedMcpServer}
+            onSelect={(item) => runAfterUnsavedHandled(() => setSelectedMcpServer(item))}
+            addLabel={t(locale, "newMcpServer")}
+            onAdd={() =>
+              updateState((draft) => {
+                const name = createUniqueName("mcp", Object.keys(draft.mcpConfig.mcpServers));
+                draft.mcpConfig.mcpServers[name] = createDefaultMcpServer();
+                setSelectedMcpServer(name);
+              }, { persist: false })
+            }
+            headerActions={
+              <button
+                className="action-button compact icon-only"
+                type="button"
+                aria-label={t(locale, "importMcpJson")}
+                title={t(locale, "importMcpJson")}
+                onClick={() => {
+                  const initialDraft = t(locale, "mcpImportPlaceholder");
+                  setIsMcpImportOpen(true);
+                  setMcpImportDraft(initialDraft);
+                  setMcpImportInitialDraft(initialDraft);
+                }}
+              >
+                <FileInput size={15} />
+              </button>
+            }
+            addButtonClassName="action-button compact icon-only"
+            addButtonTitle={t(locale, "newMcpServer")}
+            addButtonContent={<Plus size={15} />}
+            itemClassName={(name) =>
+              state.mcpConfig.mcpServers[name]?.enabled === false ? "disabled" : null
+            }
+            renderItemAction={(name) => {
+              const server = state.mcpConfig.mcpServers[name];
+              if (!server) {
+                return null;
+              }
+              return (
+                <>
+                  <button
+                    className={server.enabled ? "list-toggle-button" : "list-toggle-button disabled"}
+                    type="button"
+                    aria-label={server.enabled ? (locale === "zh-CN" ? "禁用 MCP" : "Disable MCP") : (locale === "zh-CN" ? "启用 MCP" : "Enable MCP")}
+                    title={server.enabled ? (locale === "zh-CN" ? "禁用 MCP" : "Disable MCP") : (locale === "zh-CN" ? "启用 MCP" : "Enable MCP")}
+                    onClick={() =>
+                      updateState((draft) => {
+                        const target = draft.mcpConfig.mcpServers[name];
+                        if (!target) return;
+                        target.enabled = !target.enabled;
+                      })
+                    }
+                  >
+                    <Power size={15} />
+                  </button>
+                  <button
+                    className="list-delete-button"
+                    type="button"
+                    aria-label={`${t(locale, "delete")} ${name}`}
+                    title={t(locale, "delete")}
+                    onClick={() => {
+                      void (async () => {
+                        if (!(await confirmDeleteResource(getResourceLabel(locale, "mcp"), name))) return;
+                        updateState((draft) => {
+                          delete draft.mcpConfig.mcpServers[name];
+                          if (selectedMcpServer === name) {
+                            setSelectedMcpServer(Object.keys(draft.mcpConfig.mcpServers)[0] ?? "");
+                          }
+                        });
+                      })();
+                    }}
+                  >
+                    <Trash2 size={15} />
+                  </button>
+                </>
+              );
+            }}
+          >
+            <div className="mcp-workspace">
+              {selectedMcpServerData ? (
+                <McpServerForm
+                  locale={locale}
+                  name={selectedMcpServerName}
+                  nameEditable={isMcpServerNameEditable}
+                  value={selectedMcpServerData}
+                  isTesting={mcpTestingName === selectedMcpServerName}
+                  onRunAction={async (action, serverName) => {
+                    const api = getApi();
+                    const runAction = getMcpAction(api, action);
+                    if (!api) {
+                      setError("Electron preload API is unavailable. MCP command cannot continue.");
+                      return;
+                    }
+                    if (!runAction) {
+                      setNotice("");
+                      setError(t(locale, "mcpRuntimeOutdated"));
+                      return;
+                    }
+                    try {
+                      if (action === "test") {
+                        setMcpTestingName(serverName);
+                      }
+                      await persistState(state);
+                      await runAction(serverName);
+                      setError("");
+                      setNotice(getMcpActionNotice(locale, action));
+                    } catch (commandError) {
+                      const message = commandError instanceof Error ? commandError.message : String(commandError);
+                      setNotice("");
+                      setError(translateError(locale, message));
+                    } finally {
+                      if (action === "test") {
+                        setMcpTestingName("");
+                      }
+                    }
+                  }}
+                  onChange={(name, nextServer) =>
+                    updateState((draft) => {
+                      const currentName = selectedMcpServerName;
+                      const normalizedName = isMcpServerNameEditable
+                        ? ensureUniqueEntryName({
+                            kind: "MCP server",
+                            name,
+                            currentName,
+                            existingNames: Object.keys(draft.mcpConfig.mcpServers),
+                          })
+                        : currentName;
+                      const nextServers = { ...draft.mcpConfig.mcpServers };
+                      delete nextServers[currentName];
+                      nextServers[normalizedName] = nextServer;
+                      draft.mcpConfig.mcpServers = nextServers;
+                      setSelectedMcpServer(normalizedName);
+                    }, { persist: false })
+                  }
+                  onSave={() => void onSave()}
+                  onDelete={() => {
+                    void (async () => {
+                      if (!(await confirmDeleteResource(getResourceLabel(locale, "mcp"), selectedMcpServerName))) return;
+                      updateState((draft) => {
+                        delete draft.mcpConfig.mcpServers[selectedMcpServerName];
+                        setSelectedMcpServer(Object.keys(draft.mcpConfig.mcpServers)[0] ?? "");
+                      });
+                    })();
+                  }}
+                />
+              ) : (
+                <EmptyState locale={locale} />
+              )}
+            </div>
+          </SplitLayout>
+        ) : null}
+
+        {activeTab === "skills" ? (
+          <SplitLayout
+            listTitle={t(locale, "skillsDirectory")}
+            listItems={sortedSkillPathEntries.map((path) => path.id)}
+            itemLabel={(item) => {
+              const path = sortedSkillPathEntries.find((entry) => entry.id === item);
+              return path ? formatSkillPathLabel(path) : item;
+            }}
+            renderItemLabel={(item) => {
+              const path = sortedSkillPathEntries.find((entry) => entry.id === item);
+              return path ? renderSkillPathLabel(path) : item;
+            }}
+            itemTitle={(item) => {
+              const path = sortedSkillPathEntries.find((entry) => entry.id === item);
+              return path ? path.path : item;
+            }}
+            selectedItem={selectedSkillPathId}
+            onSelect={(item) => {
+              setSelectedSkillPath(item);
+              setSelectedSkill("");
+            }}
+            addLabel={t(locale, "skillsRefresh")}
+            onAdd={() => void refreshSkills(state)}
+            addButtonTitle={t(locale, "skillsRefresh")}
+            addButtonContent={
+              isSkillsLoading ? <LoaderCircle size={15} className="button-spinner" /> : <RefreshCw size={15} />
+            }
+            addButtonClassName={isSkillsLoading ? "action-button compact icon-only is-loading" : "action-button compact icon-only"}
+            itemClassName={(item) => {
+              const path = skillPathEntries.find((entry) => entry.id === item);
+              if (!path) {
+                return null;
+              }
+              if (!path.exists || !path.selected) {
+                return "disabled";
+              }
+              return null;
+            }}
+            renderItemAction={(item) => {
+              const path = skillPathEntries.find((entry) => entry.id === item);
+              if (!path) {
+                return null;
+              }
+              const pathSkills = skillEntries.filter((skill) => skill.sourcePathId === item);
+              return (
+                <>
+                  <span className="list-current-badge">{pathSkills.length}</span>
+                </>
+              );
+            }}
+          >
+            <SkillsWorkspace
+              locale={locale}
+              report={skillsReport}
+              selectedPath={selectedSkillPathData}
+              visibleSkills={visibleSkillEntries}
+              selectedSkill={selectedSkillData}
+              viewMode={skillsViewMode}
+              onViewModeChange={setSkillsViewMode}
+              onSelectSkill={setSelectedSkill}
+              isLoading={isSkillsLoading}
+            />
+          </SplitLayout>
+        ) : null}
+
+        {activeTab === "settings" ? (
+          <section className="glass-panel form-panel settings-grid">
+            <div className="section-title">{t(locale, "settings")}</div>
+            <SettingsGroup title={t(locale, "settingsGroupPaths")}>
+              <PathField
+                locale={locale}
+                label={t(locale, "configPath")}
+                value={state.configPath}
+                onView={() => openDocumentViewer("config")}
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.configPath = value;
+                    draft.panelSettings.config_path = value;
+                  })
+                }
+              />
+              <PathField
+                locale={locale}
+                label={t(locale, "profilesPath")}
+                value={state.profilesPath}
+                onView={() => openDocumentViewer("profiles")}
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.profilesPath = value;
+                    draft.panelSettings.profiles_path = value;
+                    draft.panelSettings.follow_config_profiles = false;
+                  })
+                }
+              />
+              <PathField
+                locale={locale}
+                label={t(locale, "panelSettingsPath")}
+                value={state.panelSettingsPath}
+                onView={() => openDocumentViewer("panel")}
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.panelSettingsPath = value;
+                  })
+                }
+              />
+              <PathField
+                locale={locale}
+                label={t(locale, "mcpConfigPathLabel")}
+                value={state.mcpConfigPath}
+                readOnly
+                fileType="json"
+                onView={() => openDocumentViewer("mcp")}
+                onChange={() => {}}
+              />
+            </SettingsGroup>
+            <SettingsGroup title={t(locale, "settingsGroupAppearance")}>
+              <SelectField
+                label={t(locale, "locale")}
+                value={state.panelSettings.locale}
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.panelSettings.locale = value as Locale;
+                  })
+                }
+                options={LOCALE_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: option.longLabel,
+                  badge: option.shortLabel,
+                  badgeClassName: "flag",
+                }))}
+              />
+              <SelectField
+                label={t(locale, "theme")}
+                value={state.panelSettings.theme}
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.panelSettings.theme = value as AppearanceMode;
+                  })
+                }
+                selectedIcon={(THEME_OPTIONS.find((option) => option.value === state.panelSettings.theme) ?? THEME_OPTIONS[0]).icon}
+                options={THEME_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: option.label[locale],
+                  icon: option.icon,
+                }))}
+              />
+              <FontSizeSliderField
+                locale={locale}
+                label={t(locale, "uiFontSize")}
+                value={state.panelSettings.ui_font_size ?? "standard"}
+                options={UI_FONT_SIZE_OPTIONS}
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.panelSettings.ui_font_size = value;
+                  })
+                }
+              />
+              <SelectField
+                label={t(locale, "displayOpenMode")}
+                value={state.panelSettings.display_open_mode}
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.panelSettings.display_open_mode = value as DisplayOpenMode;
+                  })
+                }
+                options={DISPLAY_OPEN_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: option.label[locale],
+                }))}
+              />
+            </SettingsGroup>
+            <SettingsGroup title={t(locale, "settingsGroupBehavior")}>
+              <label className="toggle-row">
+                <span>{t(locale, "trayIcon")}</span>
+                <input
+                  type="checkbox"
+                  checked={state.panelSettings.tray_icon}
+                  onChange={(event) => {
+                    const enabled = event.target.checked;
+                    updateImmediateState((draft) => {
+                      draft.panelSettings.tray_icon = enabled;
+                      draft.panelSettings.close_behavior = enabled ? "keep-in-tray" : "quit";
+                    });
+                  }}
+                />
+              </label>
+              {state.panelSettings.tray_icon ? (
+                <SelectField
+                  label={t(locale, "closeBehavior")}
+                  value={state.panelSettings.close_behavior}
+                  onChange={(value) =>
+                    updateImmediateState((draft) => {
+                      draft.panelSettings.close_behavior = value as CloseBehavior;
+                    })
+                  }
+                  options={CLOSE_BEHAVIOR_OPTIONS.map((option) => ({
+                    value: option.value,
+                    label: option.label[locale],
+                  }))}
+                />
+              ) : null}
+              <label className="toggle-row">
+                <span>{t(locale, "followConfigProfiles")}</span>
+                <input
+                  type="checkbox"
+                  checked={state.panelSettings.follow_config_profiles}
+                  onChange={(event) =>
+                    updateImmediateState((draft) => {
+                      draft.panelSettings.follow_config_profiles = event.target.checked;
+                    })
+                  }
+                />
+              </label>
+            </SettingsGroup>
+            <SettingsGroup title={t(locale, "settingsGroupBackup")}>
+              <SelectField
+                label={t(locale, "backupStrategy")}
+                value={state.panelSettings.backup_strategy}
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.panelSettings.backup_strategy = value as BackupStrategy;
+                  })
+                }
+                options={BACKUP_STRATEGY_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: t(locale, option.labelKey),
+                }))}
+              />
+              {state.panelSettings.backup_strategy === "scheduled" ? (
+                <SelectField
+                  label={t(locale, "backupFrequency")}
+                  value={state.panelSettings.backup_frequency}
+                  onChange={(value) =>
+                    updateImmediateState((draft) => {
+                      draft.panelSettings.backup_frequency = value as BackupFrequency;
+                    })
+                  }
+                  options={BACKUP_FREQUENCY_OPTIONS.map((option) => ({
+                    value: option.value,
+                    label: t(locale, option.labelKey),
+                  }))}
+                />
+              ) : null}
+              <Field
+                label={t(locale, "backupRetentionCount")}
+                value={String(state.panelSettings.backup_retention_count)}
+                onChange={(value) => {
+                  const nextCount = Number.parseInt(value, 10);
+                  if (Number.isNaN(nextCount)) {
+                    return;
+                  }
+                  updateImmediateState((draft) => {
+                    draft.panelSettings.backup_retention_count = Math.max(1, Math.min(99, nextCount));
+                  });
+                }}
+                inputMode="numeric"
+              />
+              <SelectField
+                label={t(locale, "backupDestinationType")}
+                value={state.panelSettings.backup_destination_type}
+                onChange={(value) =>
+                  updateImmediateState((draft) => {
+                    draft.panelSettings.backup_destination_type = value as BackupDestinationType;
+                  })
+                }
+                options={BACKUP_DESTINATION_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: t(locale, option.labelKey),
+                }))}
+              />
+              {state.panelSettings.backup_destination_type === "local" ? (
+                <PathField
+                  locale={locale}
+                  label={t(locale, "backupLocalPath")}
+                  value={state.panelSettings.backup_local_path}
+                  pickerProperties={["openDirectory", "createDirectory"]}
+                  onChange={(value) =>
+                    updateImmediateState((draft) => {
+                      draft.panelSettings.backup_local_path = value;
+                    })
+                  }
+                />
+              ) : (
+                <>
+                  <Field
+                    label={t(locale, "backupWebdavUrl")}
+                    value={state.panelSettings.backup_webdav_url}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.panelSettings.backup_webdav_url = value;
+                      })
+                    }
+                  />
+                  <Field
+                    label={t(locale, "backupWebdavUsername")}
+                    value={state.panelSettings.backup_webdav_username}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.panelSettings.backup_webdav_username = value;
+                      })
+                    }
+                  />
+                  <SecretField
+                    label={t(locale, "backupWebdavPassword")}
+                    value={state.panelSettings.backup_webdav_password}
+                    visible={isBackupPasswordVisible}
+                    onToggleVisible={() => setIsBackupPasswordVisible((current) => !current)}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.panelSettings.backup_webdav_password = value;
+                      })
+                    }
+                  />
+                  <Field
+                    label={t(locale, "backupWebdavPath")}
+                    value={state.panelSettings.backup_webdav_path}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.panelSettings.backup_webdav_path = value;
+                      })
+                    }
+                  />
+                </>
+              )}
+              <div className="button-row settings-action-row">
+                <button
+                  className={isBackupRunning ? "action-button action-button-primary is-loading" : "action-button action-button-primary"}
+                  type="button"
+                  disabled={isBackupRunning}
+                  onClick={runManualBackup}
+                >
+                  {isBackupRunning ? <LoaderCircle size={16} className="button-spinner" /> : <History size={16} />}
+                  <span>{isBackupRunning ? t(locale, "backupRunning") : t(locale, "backupNow")}</span>
+                </button>
+                <button
+                  className={
+                    backupRecordsDialog?.isLoading ? "action-button is-loading" : "action-button"
+                  }
+                  type="button"
+                  disabled={backupRecordsDialog?.isLoading}
+                  onClick={openBackupRecords}
+                >
+                  {backupRecordsDialog?.isLoading ? <LoaderCircle size={16} className="button-spinner" /> : <FolderOpen size={16} />}
+                  <span>{t(locale, "backupViewRecords")}</span>
+                </button>
+                {state.panelSettings.backup_destination_type === "webdav" ? (
+                  <button
+                    className={isWebDavTesting ? "action-button is-loading" : "action-button"}
+                    type="button"
+                    disabled={isWebDavTesting}
+                    onClick={runWebDavTest}
+                  >
+                    {isWebDavTesting ? <LoaderCircle size={16} className="button-spinner" /> : <Bug size={16} />}
+                    <span>{isWebDavTesting ? t(locale, "backupWebdavTesting") : t(locale, "backupWebdavTest")}</span>
+                  </button>
+                ) : null}
+              </div>
+            </SettingsGroup>
+          </section>
+        ) : null}
+
+        {activeTab === "about" ? (
+          <AboutPage locale={locale} />
+        ) : null}
+    </ErrorBoundary>
+  );
+}

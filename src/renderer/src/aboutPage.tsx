@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Bug, Check, ExternalLink, Github, History, LoaderCircle, Mail, RefreshCw } from "lucide-react";
 
+import { compareReleaseVersions, normalizeReleaseVersion } from "@shared/versionUtils";
 import type { Locale } from "@shared/types";
 
 import { t } from "./i18n";
@@ -37,26 +38,6 @@ const UPDATE_CHECK_COOLDOWN_MS = 30 * 1000;
 
 function getApi() {
   return typeof window !== "undefined" ? window.kimiSwitch : undefined;
-}
-
-function normalizeReleaseVersion(value: string): string {
-  return value.trim().replace(/^v/i, "");
-}
-
-function compareReleaseVersions(left: string, right: string): number {
-  const leftParts = normalizeReleaseVersion(left).split(".").map((part) => Number.parseInt(part, 10) || 0);
-  const rightParts = normalizeReleaseVersion(right).split(".").map((part) => Number.parseInt(part, 10) || 0);
-  const maxLength = Math.max(leftParts.length, rightParts.length);
-
-  for (let index = 0; index < maxLength; index += 1) {
-    const leftValue = leftParts[index] ?? 0;
-    const rightValue = rightParts[index] ?? 0;
-    if (leftValue !== rightValue) {
-      return leftValue - rightValue;
-    }
-  }
-
-  return 0;
 }
 
 function loadPendingUpdateVersion(): string {

@@ -78,7 +78,7 @@ export function createDefaultPanelSettings(
 }
 
 export function cloneState(state: AppState): AppState {
-  return JSON.parse(JSON.stringify(state)) as AppState;
+  return structuredClone(state) as AppState;
 }
 
 export async function loadAppState(
@@ -450,11 +450,7 @@ function profileFromUnknown(name: string, raw: unknown): Profile {
 }
 
 function normalizeProfile(profile: Profile): Profile {
-  return {
-    ...profile,
-    default_editor: "",
-    theme: "dark",
-  };
+  return { ...profile };
 }
 
 function pickActiveProfile(mainConfig: MainConfig, profiles: Record<string, Profile>): string {

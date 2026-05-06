@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { HTMLAttributes, ReactNode } from "react";
 import { Check, ChevronDown, Globe, Plus, X } from "lucide-react";
 
 import type { Locale, UiFontSize } from "@shared/types";
@@ -25,7 +25,7 @@ export function Field(props: {
   label: string;
   value: string;
   onChange: (value: string) => void;
-  inputMode?: string;
+  inputMode?: HTMLAttributes<HTMLInputElement>["inputMode"];
 }): JSX.Element {
   return (
     <label className="field">
