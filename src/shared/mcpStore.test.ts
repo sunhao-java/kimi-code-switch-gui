@@ -114,4 +114,8 @@ describe("mcpStore", () => {
       },
     });
   });
+
+  it("throws on invalid MCP config instead of silently returning empty config", () => {
+    expect(() => parseMcpConfig("{not-json}")).toThrow(/Invalid MCP config/);
+  });
 });

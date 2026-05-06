@@ -451,6 +451,53 @@ url = "https://mcp.context7.com/mcp"
     expect(loaded.profiles.default).toBeDefined();
   });
 
+  it("throws when panel settings file read fails for reasons other than missing content", async () => {
+    const files = createMemoryFs({});
+    files.readText = async () => {
+      throw new Error("EACCES");
+    };
+
+    await expect(loadPanelSettings(files, "/tmp/config.panel.toml")).rejects.toThrow(
+      /Failed to read panel settings/,
+    );
+  });
+
+  it("throws when config TOML is invalid instead of treating it as empty", async () => {
+    const files = createMemoryFs({
+      "/tmp/config.toml": "default_model = ",
+      "/tmp/config.panel.toml": buildPanelSettingsDocument(
+        createDefaultPanelSettings("/tmp/config.toml", "/tmp/config.panel.toml"),
+      ),
+      "/tmp/config.profiles.toml": buildProfilesDocument(createState()),
+      "/tmp/mcp.json": buildMcpConfigDocument(createState().mcpConfig),
+    });
+
+    await expect(loadAppState(files, {
+      configPath: "/tmp/config.toml",
+      profilesPath: "/tmp/config.profiles.toml",
+      panelSettingsPath: "/tmp/config.panel.toml",
+      mcpConfigPath: "/tmp/mcp.json",
+    })).rejects.toThrow(/Invalid main config TOML/);
+  });
+
+  it("throws when MCP config is invalid instead of silently dropping servers", async () => {
+    const files = createMemoryFs({
+      "/tmp/config.toml": buildConfigDocument(createState()),
+      "/tmp/config.panel.toml": buildPanelSettingsDocument(
+        createDefaultPanelSettings("/tmp/config.toml", "/tmp/config.panel.toml"),
+      ),
+      "/tmp/config.profiles.toml": buildProfilesDocument(createState()),
+      "/tmp/mcp.json": "{invalid-json}",
+    });
+
+    await expect(loadAppState(files, {
+      configPath: "/tmp/config.toml",
+      profilesPath: "/tmp/config.profiles.toml",
+      panelSettingsPath: "/tmp/config.panel.toml",
+      mcpConfigPath: "/tmp/mcp.json",
+    })).rejects.toThrow(/Invalid MCP config/);
+  });
+
   it("falls back to first profile when active profile is invalid", async () => {
     const state = createState();
     const files = createMemoryFs({

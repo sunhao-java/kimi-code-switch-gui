@@ -12,19 +12,25 @@ export async function loadMcpConfig(
   files: { readText(path: string): Promise<string | null> },
   path: string,
 ): Promise<McpConfig> {
-  const document = await files.readText(path);
-  return parseMcpConfig(document);
+  let document: string | null;
+  try {
+    document = await files.readText(path);
+  } catch (error) {
+    throw new Error(`Failed to read MCP config at ${path}: ${formatErrorMessage(error)}`);
+  }
+  return parseMcpConfig(document, { sourcePath: path });
 }
 
-export function parseMcpConfig(document: string | null): McpConfig {
+export function parseMcpConfig(document: string | null, options?: { sourcePath?: string }): McpConfig {
   if (!document?.trim()) {
     return createDefaultMcpConfig();
   }
 
   try {
     return parseMcpConfigStrict(document);
-  } catch {
-    return createDefaultMcpConfig();
+  } catch (error) {
+    const location = options?.sourcePath ? ` at ${options.sourcePath}` : "";
+    throw new Error(`Invalid MCP config${location}: ${formatErrorMessage(error)}`);
   }
 }
 
@@ -148,4 +154,8 @@ function asStringRecord(value: unknown): Record<string, string> {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

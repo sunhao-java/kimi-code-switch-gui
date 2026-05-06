@@ -5,28 +5,35 @@ import type { AppState, BackupDestinationType, BackupRecord, Locale } from "@sha
 import type { BackupRecordsDialogState, ConfirmDialogState } from "./dialogs";
 import { getApi } from "./appHelpers";
 import { t, translateError } from "./i18n";
-import { formatMessage, applyAppearanceMode, applyUiFontSize } from "./tabComponents";
+import { applyPrimarySelections, getRetainedPrimarySelections } from "./primarySelections";
+import { applyAppearanceMode, applyUiFontSize, formatMessage } from "./tabComponents";
 
-interface BackupContext {
+interface BackupActionsContext {
   state: AppState;
   locale: Locale;
-  setState: Dispatch<SetStateAction<AppState | null>>;
+  setState: Dispatch<SetStateAction<AppState>>;
   setSavedState: Dispatch<SetStateAction<AppState | null>>;
   setError: Dispatch<SetStateAction<string>>;
   setNotice: Dispatch<SetStateAction<string>>;
-  setIsBackupRunning: (v: boolean) => void;
-  setIsWebDavTesting: (v: boolean) => void;
+  setIsBackupRunning: (value: boolean) => void;
+  setIsWebDavTesting: (value: boolean) => void;
   setBackupRecordsDialog: Dispatch<SetStateAction<BackupRecordsDialogState | null>>;
   confirmDeleteResource: (label: string, name: string) => Promise<boolean>;
-  requestConfirm: (opts: ConfirmDialogState) => Promise<boolean>;
+  requestConfirm: (options: ConfirmDialogState) => Promise<boolean>;
   refreshPreview: (draft?: AppState) => Promise<void>;
+  currentSelections: {
+    provider: string;
+    model: string;
+    profile: string;
+    mcpServer: string;
+  };
   setSelectedProvider: Dispatch<SetStateAction<string>>;
   setSelectedModel: Dispatch<SetStateAction<string>>;
   setSelectedProfile: Dispatch<SetStateAction<string>>;
   setSelectedMcpServer: Dispatch<SetStateAction<string>>;
 }
 
-export function useBackup(ctx: BackupContext) {
+export function useBackupActions(ctx: BackupActionsContext) {
   const {
     state,
     locale,
@@ -40,6 +47,7 @@ export function useBackup(ctx: BackupContext) {
     confirmDeleteResource,
     requestConfirm,
     refreshPreview,
+    currentSelections,
     setSelectedProvider,
     setSelectedModel,
     setSelectedProfile,
@@ -242,25 +250,14 @@ export function useBackup(ctx: BackupContext) {
         setSavedState(normalized);
         applyAppearanceMode(normalized.panelSettings.theme);
         applyUiFontSize(normalized.panelSettings.ui_font_size);
-        setSelectedProvider((current) =>
-          normalized.mainConfig.providers[current]
-            ? current
-            : Object.keys(normalized.mainConfig.providers)[0] ?? "",
-        );
-        setSelectedModel((current) =>
-          normalized.mainConfig.models[current]
-            ? current
-            : Object.keys(normalized.mainConfig.models)[0] ?? "",
-        );
-        setSelectedProfile((current) =>
-          normalized.profiles[current]
-            ? current
-            : normalized.activeProfile || Object.keys(normalized.profiles)[0] || "",
-        );
-        setSelectedMcpServer((current) =>
-          normalized.mcpConfig.mcpServers[current]
-            ? current
-            : Object.keys(normalized.mcpConfig.mcpServers)[0] ?? "",
+        applyPrimarySelections(
+          getRetainedPrimarySelections(normalized, currentSelections),
+          {
+            setSelectedProvider,
+            setSelectedModel,
+            setSelectedProfile,
+            setSelectedMcpServer,
+          },
         );
         void refreshPreview(normalized);
         setError("");
@@ -282,5 +279,12 @@ export function useBackup(ctx: BackupContext) {
     })();
   };
 
-  return { runManualBackup, runWebDavTest, loadBackupRecords, openBackupRecords, deleteBackupRecord, restoreBackupRecord };
+  return {
+    runManualBackup,
+    runWebDavTest,
+    loadBackupRecords,
+    openBackupRecords,
+    deleteBackupRecord,
+    restoreBackupRecord,
+  };
 }

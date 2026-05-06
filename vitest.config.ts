@@ -8,7 +8,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
-      include: ["src/shared/configStore.ts"],
+      include: ["src/shared/**/*.ts"],
       thresholds: {
         lines: 80,
         functions: 80,

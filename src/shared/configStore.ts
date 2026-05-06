@@ -106,10 +106,10 @@ export async function loadAppState(
     panelSettingsPath,
     defaultPanelSettingsPath(configPath),
   );
-  const mainConfig = normalizeMainConfig(parseDocument(await files.readText(configPath)));
+  const mainConfig = normalizeMainConfig(await loadTomlFile(files, configPath, "main config"));
   const fileMcpConfig = await loadMcpConfig(files, mcpConfigPath);
   const mcpConfig = mergePanelMcpServers(panelSettings.mcp_servers, fileMcpConfig.mcpServers);
-  const rawProfiles = parseDocument(await files.readText(profilesPath));
+  const rawProfiles = await loadTomlFile(files, profilesPath, "profiles config");
   const profiles = parseProfiles(mainConfig, rawProfiles);
   const activeProfile = ensureActiveProfile(
     typeof rawProfiles.active_profile === "string"
@@ -141,7 +141,7 @@ export async function loadPanelSettings(
   panelSettingsPath: string,
 ): Promise<PanelSettings> {
   const fallback = createDefaultPanelSettings(DEFAULT_CONFIG_PATH, panelSettingsPath);
-  const data = parseDocument(await files.readText(panelSettingsPath));
+  const data = await loadTomlFile(files, panelSettingsPath, "panel settings");
   return panelSettingsFromUnknown(data, fallback);
 }
 
@@ -486,6 +486,29 @@ function parseDocument(document: string | null): Record<string, unknown> {
     return {};
   }
   return (parse(document) as Record<string, unknown>) ?? {};
+}
+
+async function loadTomlFile(
+  files: FileAccess,
+  path: string,
+  label: string,
+): Promise<Record<string, unknown>> {
+  let document: string | null;
+  try {
+    document = await files.readText(path);
+  } catch (error) {
+    throw new Error(`Failed to read ${label} at ${path}: ${formatErrorMessage(error)}`);
+  }
+
+  try {
+    return parseDocument(document);
+  } catch (error) {
+    throw new Error(`Invalid ${label} TOML at ${path}: ${formatErrorMessage(error)}`);
+  }
+}
+
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function normalizeMainConfig(input: Record<string, unknown>): MainConfig {

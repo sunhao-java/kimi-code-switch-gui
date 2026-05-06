@@ -9,8 +9,11 @@ export const fileAccess = {
   async readText(path: string): Promise<string | null> {
     try {
       return await readFile(resolveHome(path), "utf-8");
-    } catch {
-      return null;
+    } catch (error) {
+      if (isMissingPathError(error)) {
+        return null;
+      }
+      throw error;
     }
   },
   async writeText(path: string, content: string): Promise<void> {
@@ -25,8 +28,11 @@ export const skillFileAccess = {
   async readText(path: string): Promise<string | null> {
     try {
       return await readFile(resolveHome(path), "utf-8");
-    } catch {
-      return null;
+    } catch (error) {
+      if (isMissingPathError(error)) {
+        return null;
+      }
+      throw error;
     }
   },
   async listDir(path: string): Promise<Array<{ name: string; isDirectory: boolean }>> {
@@ -38,19 +44,37 @@ export const skillFileAccess = {
           isDirectory: await isDirectoryEntry(resolveHome(path), entry),
         })),
       );
-    } catch {
-      return [];
+    } catch (error) {
+      if (isMissingPathError(error) || isNotDirectoryError(error)) {
+        return [];
+      }
+      throw error;
     }
   },
   async pathExists(path: string): Promise<boolean> {
     try {
       await stat(resolveHome(path));
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      if (isMissingPathError(error)) {
+        return false;
+      }
+      throw error;
     }
   },
 };
+
+function isMissingPathError(error: unknown): boolean {
+  return isNodeError(error) && error.code === "ENOENT";
+}
+
+function isNotDirectoryError(error: unknown): boolean {
+  return isNodeError(error) && error.code === "ENOTDIR";
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error;
+}
 
 export async function isDirectoryEntry(
   rootPath: string,

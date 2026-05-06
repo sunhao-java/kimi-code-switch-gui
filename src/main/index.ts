@@ -1,10 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, safeStorage, screen, shell, Tray } from "electron";
 import type { NativeImage } from "electron";
-import { delimiter, dirname, join, resolve } from "node:path";
-import { homedir, hostname } from "node:os";
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { dirname, join, resolve } from "node:path";
+import { hostname } from "node:os";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 
@@ -27,6 +25,8 @@ import {
 import { buildMcpConfigDocument } from "@shared/mcpStore";
 import { scanSkills } from "@shared/skillsStore";
 import { normalizeShortcuts } from "@shared/shortcutStore";
+import { getCliEnv, runKimiConnectivityTest, runKimiMcpCommand } from "./modules/cli";
+import { fileAccess, resolveHome, skillFileAccess } from "./modules/fileAccess";
 import { registerGlobalShortcuts, unregisterGlobalShortcuts } from "./modules/shortcuts";
 import {
   buildWebDavUrl,
@@ -58,6 +58,7 @@ let changeBackupTimer: NodeJS.Timeout | null = null;
 let latestAppState: AppState | null = null;
 let backupInFlight = false;
 let isQuitting = false;
+let trayThemeListenerRegistered = false;
 
 const WINDOW_WIDTH = 1500;
 const WINDOW_HEIGHT = 980;
@@ -65,13 +66,6 @@ const WINDOW_SHOW_TIMEOUT_MS = 1500;
 const DISPLAY_REMEMBER_DELAY_MS = 400;
 const DEFAULT_PANEL_SETTINGS_PATH = DEFAULT_CONFIG_PATH.replace("config.toml", PANEL_SETTINGS_FILENAME);
 const CHANGE_BACKUP_DELAY_MS = 4000;
-const execFileAsync = promisify(execFile);
-const EXTRA_CLI_PATHS = [
-  "/opt/homebrew/bin",
-  "/usr/local/bin",
-  join(homedir(), ".local", "bin"),
-  join(homedir(), ".cargo", "bin"),
-];
 
 const ENCRYPTED_PASSWORD_PREFIX = "__enc__";
 const SHORTCUTS_BACKUP_FILENAME = "shortcuts.json";
@@ -102,123 +96,6 @@ function decryptWebDavPassword(state: AppState): AppState {
     console.warn("Failed to decrypt WebDAV password, keychain may have changed");
   }
   return state;
-}
-
-const resolveHome = (value: string): string =>
-  value.startsWith("~/") ? join(homedir(), value.slice(2)) : value;
-
-function getCliEnv(): NodeJS.ProcessEnv {
-  const pathEntries = new Set(
-    [process.env.PATH ?? "", ...EXTRA_CLI_PATHS]
-      .flatMap((value) => value.split(delimiter))
-      .map((value) => value.trim())
-      .filter(Boolean),
-  );
-
-  return {
-    ...process.env,
-    PATH: [...pathEntries].join(delimiter),
-  };
-}
-
-const fileAccess = {
-  async readText(path: string): Promise<string | null> {
-    try {
-      return await readFile(resolveHome(path), "utf-8");
-    } catch {
-      return null;
-    }
-  },
-  async writeText(path: string, content: string): Promise<void> {
-    await writeFile(resolveHome(path), content, "utf-8");
-  },
-  async ensureDir(path: string): Promise<void> {
-    await mkdir(resolveHome(path), { recursive: true });
-  },
-};
-
-const skillFileAccess = {
-  async readText(path: string): Promise<string | null> {
-    try {
-      return await readFile(resolveHome(path), "utf-8");
-    } catch {
-      return null;
-    }
-  },
-  async listDir(path: string): Promise<Array<{ name: string; isDirectory: boolean }>> {
-    try {
-      const entries = await readdir(resolveHome(path), { withFileTypes: true });
-      return await Promise.all(
-        entries.map(async (entry) => ({
-          name: entry.name,
-          isDirectory: await isDirectoryEntry(resolveHome(path), entry),
-        })),
-      );
-    } catch {
-      return [];
-    }
-  },
-  async pathExists(path: string): Promise<boolean> {
-    try {
-      await stat(resolveHome(path));
-      return true;
-    } catch {
-      return false;
-    }
-  },
-};
-
-async function isDirectoryEntry(rootPath: string, entry: { name: string; isDirectory(): boolean; isSymbolicLink(): boolean }): Promise<boolean> {
-  if (entry.isDirectory()) {
-    return true;
-  }
-  if (!entry.isSymbolicLink()) {
-    return false;
-  }
-  try {
-    return (await stat(resolve(rootPath, entry.name))).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-async function runKimiMcpCommand(args: string[]): Promise<{ ok: true; stdout: string; stderr: string }> {
-  const { stdout, stderr } = await execFileAsync("kimi", ["mcp", ...args], {
-    env: getCliEnv(),
-    windowsHide: true,
-  });
-  return {
-    ok: true,
-    stdout: stdout.trim(),
-    stderr: stderr.trim(),
-  };
-}
-
-async function runKimiConnectivityTest(state: AppState, modelName: string): Promise<{ ok: true; stdout: string; stderr: string }> {
-  const configDocument = buildConfigDocument(state);
-  const { stdout, stderr } = await execFileAsync(
-    "kimi",
-    [
-      "--config",
-      configDocument,
-      "--model",
-      modelName,
-      "--quiet",
-      "--print",
-      "--command",
-      "Reply with exactly OK.",
-    ],
-    {
-      env: getCliEnv(),
-      windowsHide: true,
-      maxBuffer: 10 * 1024 * 1024,
-    },
-  );
-  return {
-    ok: true,
-    stdout: stdout.trim(),
-    stderr: stderr.trim(),
-  };
 }
 
 function backupFrequencyToMs(frequency: BackupFrequency): number {
@@ -674,11 +551,7 @@ function createTray(): void {
     tray?.popUpContextMenu();
   });
 
-  nativeTheme.on("updated", () => {
-    if (tray) {
-      tray.setImage(getTrayIcon());
-    }
-  });
+  ensureTrayThemeListener();
 }
 
 function showMainWindow(): void {
@@ -906,6 +779,18 @@ function destroyTray(): void {
     tray.destroy();
     tray = null;
   }
+}
+
+function ensureTrayThemeListener(): void {
+  if (trayThemeListenerRegistered) {
+    return;
+  }
+  nativeTheme.on("updated", () => {
+    if (tray) {
+      tray.setImage(getTrayIcon());
+    }
+  });
+  trayThemeListenerRegistered = true;
 }
 
 async function loadWindowPanelSettings(): Promise<PanelSettings> {
