@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bug, ExternalLink, Github, History, LoaderCircle, Mail, RefreshCw } from "lucide-react";
+import { Bug, Check, ExternalLink, Github, History, LoaderCircle, Mail, RefreshCw } from "lucide-react";
 
 import type { Locale } from "@shared/types";
 
@@ -217,14 +217,14 @@ function UpdateDialog(props: {
       }}
     >
       <section
-        className={isUpToDate ? "confirm-dialog update-dialog update-dialog-compact glass-panel" : "confirm-dialog update-dialog glass-panel"}
+        className={isUpToDate ? "confirm-dialog update-dialog update-dialog-compact update-dialog-current glass-panel" : "confirm-dialog update-dialog glass-panel"}
         role="dialog"
         aria-modal="true"
         aria-labelledby="update-dialog-title"
       >
         <div className="confirm-dialog-header update-dialog-header">
-          <div className="confirm-dialog-icon update-dialog-icon">
-            <RefreshCw size={20} />
+          <div className={isUpToDate ? "confirm-dialog-icon update-dialog-icon update-dialog-icon-current" : "confirm-dialog-icon update-dialog-icon"}>
+            {isUpToDate ? <Check size={22} strokeWidth={2.6} /> : <RefreshCw size={20} />}
           </div>
           <div className="confirm-dialog-copy update-dialog-copy">
             <div className="update-dialog-title-row">
