@@ -17,18 +17,17 @@ import {
   BACKUP_DESTINATION_OPTIONS, BACKUP_FREQUENCY_OPTIONS, BACKUP_STRATEGY_OPTIONS,
   CLOSE_BEHAVIOR_OPTIONS, DISPLAY_OPEN_OPTIONS, LOCALE_OPTIONS, THEME_OPTIONS, UI_FONT_SIZE_OPTIONS,
 } from "../appOptions";
-import type { PreviewFileId } from "../appOptions";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { Field, FontSizeSliderField, SelectField, SettingsGroup } from "../formControls";
 import { t, translateError } from "../i18n";
 import { EmptyState, SplitLayout } from "../layoutComponents";
-import { OverviewDashboard, type DiagnosticsState } from "../overviewDashboard";
-import { SkillsWorkspace, type SkillsViewMode } from "../skillsWorkspace";
+import { OverviewDashboard } from "../overviewDashboard";
+import { SkillsWorkspace } from "../skillsWorkspace";
 import type { AppContext } from "./appContext";
 import {
-  ProviderForm, ModelForm, ProfileForm, McpServerForm, McpImportDialog,
+  ProviderForm, ModelForm, ProfileForm, McpServerForm,
   SecretField, PathField, createCopyName, createDefaultMcpServer,
-  formatMessage, formatSkillPathLabel, renderSkillPathLabel,
+  formatSkillPathLabel, renderSkillPathLabel,
 } from "../tabComponents";
 
 type TabPanelsProps = Pick<
@@ -45,9 +44,7 @@ type TabPanelsProps = Pick<
   | "setSelectedProfile"
   | "selectedMcpServer"
   | "setSelectedMcpServer"
-  | "selectedSkill"
   | "setSelectedSkill"
-  | "selectedSkillPath"
   | "setSelectedSkillPath"
   | "skillsViewMode"
   | "setSkillsViewMode"
@@ -79,11 +76,8 @@ type TabPanelsProps = Pick<
   | "dirtyModels"
   | "dirtyProfiles"
   | "dirtyMcpServers"
-  | "isMcpImportOpen"
   | "setIsMcpImportOpen"
-  | "mcpImportDraft"
   | "setMcpImportDraft"
-  | "mcpImportInitialDraft"
   | "setMcpImportInitialDraft"
   | "mcpTestingName"
   | "setMcpTestingName"
@@ -100,15 +94,11 @@ type TabPanelsProps = Pick<
   | "onSave"
   | "persistState"
   | "confirmDeleteResource"
-  | "closeMcpImportDialog"
-  | "requestCloseMcpImportDialog"
   | "refreshSkills"
   | "openDocumentViewer"
   | "runManualBackup"
   | "runWebDavTest"
   | "openBackupRecords"
-  | "deleteBackupRecord"
-  | "restoreBackupRecord"
   | "setActiveTab"
   | "setError"
   | "setNotice"
@@ -128,9 +118,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     setSelectedProfile,
     selectedMcpServer,
     setSelectedMcpServer,
-    selectedSkill,
     setSelectedSkill,
-    selectedSkillPath,
     setSelectedSkillPath,
     skillsViewMode,
     setSkillsViewMode,
@@ -162,11 +150,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     dirtyModels,
     dirtyProfiles,
     dirtyMcpServers,
-    isMcpImportOpen,
     setIsMcpImportOpen,
-    mcpImportDraft,
     setMcpImportDraft,
-    mcpImportInitialDraft,
     setMcpImportInitialDraft,
     mcpTestingName,
     setMcpTestingName,
@@ -183,15 +168,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     onSave,
     persistState,
     confirmDeleteResource,
-    closeMcpImportDialog,
-    requestCloseMcpImportDialog,
     refreshSkills,
     openDocumentViewer,
     runManualBackup,
     runWebDavTest,
     openBackupRecords,
-    deleteBackupRecord,
-    restoreBackupRecord,
     setActiveTab,
     setError,
     setNotice
@@ -343,7 +324,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                 providers={Object.keys(state.mainConfig.providers)}
                 name={selectedModelName}
                 value={selectedModelData}
-                onChange={(name, patch) =>
+                onChange={(_name, patch) =>
                   updateState((draft) => {
                     const currentName = selectedModelName;
                     const currentModel = draft.mainConfig.models[currentName];

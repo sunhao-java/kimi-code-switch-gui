@@ -1,107 +1,19 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Boxes,
-  Bug,
-  FileInput,
-  FileText,
-  Globe,
-  Eye,
-  EyeOff,
-  FolderOpen,
-  History,
-  Info,
-  Layers3,
-  LoaderCircle,
-  MonitorCog,
-  MoonStar,
-  PenSquare,
-  Plus,
-  Power,
-  RefreshCw,
-  Save,
-  Settings2,
-  Sparkles,
-  SunMedium,
-  Trash2,
-  X,
-  Zap,
-} from "lucide-react";
+import { X } from "lucide-react";
 
-import {
-  applyProfile,
-  cloneProfile,
-  cloneState,
-  deleteModel,
-  deleteProfile,
-  deleteProvider,
-  normalizeStatePaths,
-  upsertModel,
-  upsertProfile,
-  upsertProvider,
-} from "@shared/configStore";
-import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
-import type { SkillsScanReport } from "@shared/skillsStore";
-import type {
-  AppState,
-  BackupDestinationType,
-  BackupRecord,
-  Locale,
-  PreviewBundle,
-  Profile,
-  AppearanceMode,
-  DisplayOpenMode,
-  BackupFrequency,
-  BackupStrategy,
-  CloseBehavior,
-  McpServerConfig,
-  McpTransport,
-  UiFontSize,
-} from "@shared/types";
+import type { McpServerConfig } from "@shared/types";
 import { parseMcpConfigStrict } from "@shared/mcpStore";
 
-import { AboutPage } from "./aboutPage";
-import { getApi, getMcpAction, getMcpActionNotice, getResourceLabel, isDraftEntry, isEqualValue, collectDirtyKeys, createUniqueName, updateModelReferences, renameModelInState, renameProviderInState } from "./appHelpers";
 import { TabPanels } from "./tabs/TabPanels";
 import { useAppHandlers } from "./useAppHandlers";
-import {
-  emptyPreview, TAB_ITEMS, ABOUT_TAB,
-  LOCALE_OPTIONS, THEME_OPTIONS, UI_FONT_SIZE_OPTIONS,
-  PROVIDER_TYPE_OPTIONS, MODEL_CAPABILITY_OPTIONS, MCP_TRANSPORT_OPTIONS,
-  DISPLAY_OPEN_OPTIONS, CLOSE_BEHAVIOR_OPTIONS,
-  BACKUP_FREQUENCY_OPTIONS, BACKUP_DESTINATION_OPTIONS, BACKUP_STRATEGY_OPTIONS,
-} from "./appOptions";
-import type { TabId, PreviewFileId } from "./appOptions";
+import { TAB_ITEMS, ABOUT_TAB, LOCALE_OPTIONS, THEME_OPTIONS } from "./appOptions";
 import {
   BackupRecordsDialog,
   ConfirmDialog,
   DocumentViewerDialog,
-  type BackupRecordsDialogState,
-  type ConfirmDialogState,
-  type DocumentViewerState,
 } from "./dialogs";
-import { ErrorBoundary } from "./ErrorBoundary";
-import {
-  Field,
-  FontSizeSliderField,
-  KeyValueListField,
-  MultiSelectField,
-  ReadOnlyField,
-  SelectField,
-  SettingsGroup,
-  TextAreaField,
-  Toggle,
-} from "./formControls";
-import { t, translateError } from "./i18n";
-import { EmptyState, SplitLayout } from "./layoutComponents";
-import {
-  ProviderForm, ModelForm, ProfileForm, McpServerForm, McpImportDialog,
-  SecretField, PathField, createCopyName, createDefaultMcpServer, switchMcpTransport,
-  parseListLines, formatListLines, isRemoteMcpTransport, createFallbackState,
-  ensureEnumOptions, applyAppearanceMode, applyUiFontSize, formatMessage,
-  formatSkillPathLabel, renderSkillPathLabel, useDialogEscape,
-} from "./tabComponents";
-import { OverviewDashboard, SummaryCard, type DiagnosticsState } from "./overviewDashboard";
-import { SkillsWorkspace, type SkillsViewMode } from "./skillsWorkspace";
+import { t } from "./i18n";
+import { McpImportDialog, formatMessage } from "./tabComponents";
+import { SummaryCard } from "./overviewDashboard";
 import { TopbarControls } from "./topbarControls";
 import logoLight from "./assets/logo-light.png";
 import logoDark from "./assets/logo-dark.png";
@@ -109,9 +21,9 @@ import logoDark from "./assets/logo-dark.png";
 export function App(): JSX.Element {
   const app = useAppHandlers();
   const {
-    state, setState, savedState, setSavedState,
+    state,
     activeTab, setActiveTab,
-    locale, title, diagnostics, setDiagnostics,
+    locale, title, diagnostics,
     closeConfirmDialog,
     selectedProvider, setSelectedProvider,
     selectedModel, setSelectedModel,
@@ -120,8 +32,8 @@ export function App(): JSX.Element {
     selectedSkill, setSelectedSkill,
     selectedSkillPath, setSelectedSkillPath,
     skillsViewMode, setSkillsViewMode,
-    preview, setPreview, skillsReport, setSkillsReport,
-    isSkillsLoading, setIsSkillsLoading,
+    skillsReport,
+    isSkillsLoading,
     documentViewer, setDocumentViewer,
     backupRecordsDialog, setBackupRecordsDialog,
     error, setError, notice, setNotice,
@@ -130,11 +42,10 @@ export function App(): JSX.Element {
     mcpImportInitialDraft, setMcpImportInitialDraft,
     mcpTestingName, setMcpTestingName,
     profileTestingName, setProfileTestingName,
-    isBackupRunning, setIsBackupRunning,
-    isWebDavTesting, setIsWebDavTesting,
+    isBackupRunning,
+    isWebDavTesting,
     isBackupPasswordVisible, setIsBackupPasswordVisible,
-    confirmDialog, setConfirmDialog,
-    hasUnsavedChanges,
+    confirmDialog,
     dirtyProviders, dirtyModels, dirtyProfiles, dirtyMcpServers,
     providerEntries, modelEntries, profileEntries, mcpEntries,
     skillPathEntries, skillEntries, sortedSkillPathEntries,
@@ -147,7 +58,7 @@ export function App(): JSX.Element {
     isProviderNameEditable, isProfileNameEditable, isMcpServerNameEditable,
     updateState, updateImmediateState,
     runAfterUnsavedHandled, onSave, persistState,
-    confirmDeleteResource, requestConfirm,
+    confirmDeleteResource,
     closeMcpImportDialog, requestCloseMcpImportDialog,
     refreshSkills, openDocumentViewer,
     runManualBackup, runWebDavTest,
@@ -301,9 +212,7 @@ export function App(): JSX.Element {
           setSelectedProfile={setSelectedProfile}
           selectedMcpServer={selectedMcpServer}
           setSelectedMcpServer={setSelectedMcpServer}
-          selectedSkill={selectedSkill}
           setSelectedSkill={setSelectedSkill}
-          selectedSkillPath={selectedSkillPath}
           setSelectedSkillPath={setSelectedSkillPath}
           skillsViewMode={skillsViewMode}
           setSkillsViewMode={setSkillsViewMode}
@@ -335,11 +244,8 @@ export function App(): JSX.Element {
           dirtyModels={dirtyModels}
           dirtyProfiles={dirtyProfiles}
           dirtyMcpServers={dirtyMcpServers}
-          isMcpImportOpen={isMcpImportOpen}
           setIsMcpImportOpen={setIsMcpImportOpen}
-          mcpImportDraft={mcpImportDraft}
           setMcpImportDraft={setMcpImportDraft}
-          mcpImportInitialDraft={mcpImportInitialDraft}
           setMcpImportInitialDraft={setMcpImportInitialDraft}
           mcpTestingName={mcpTestingName}
           setMcpTestingName={setMcpTestingName}
@@ -356,15 +262,11 @@ export function App(): JSX.Element {
           onSave={onSave}
           persistState={persistState}
           confirmDeleteResource={confirmDeleteResource}
-          closeMcpImportDialog={closeMcpImportDialog}
-          requestCloseMcpImportDialog={requestCloseMcpImportDialog}
           refreshSkills={refreshSkills}
           openDocumentViewer={openDocumentViewer}
           runManualBackup={runManualBackup}
           runWebDavTest={runWebDavTest}
           openBackupRecords={openBackupRecords}
-          deleteBackupRecord={deleteBackupRecord}
-          restoreBackupRecord={restoreBackupRecord}
           setActiveTab={setActiveTab}
           setError={setError}
           setNotice={setNotice}

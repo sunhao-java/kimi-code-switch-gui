@@ -1,14 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { normalizeStatePaths, cloneState, applyProfile } from "@shared/configStore";
-import { normalizeEntryName } from "@shared/nameRules";
-import { parseMcpConfigStrict } from "@shared/mcpStore";
+import { normalizeStatePaths, cloneState } from "@shared/configStore";
 import type { SkillsScanReport } from "@shared/skillsStore";
-import type { AppState, BackupDestinationType, BackupRecord, Locale, PreviewBundle, BackupResult, FileDialogResult, AppearanceMode, DisplayOpenMode, BackupFrequency, BackupStrategy, CloseBehavior, McpServerConfig, McpTransport, UiFontSize, Profile } from "@shared/types";
+import type { AppState, BackupDestinationType, BackupRecord, PreviewBundle } from "@shared/types";
 import type { BackupRecordsDialogState, ConfirmDialogState, DocumentViewerState } from "./dialogs";
 import type { DiagnosticsState } from "./overviewDashboard";
 import { SkillsViewMode } from "./skillsWorkspace";
 import { TabId, PreviewFileId, emptyPreview } from "./appOptions";
-import { getApi, isDraftEntry, isEqualValue, collectDirtyKeys, getResourceLabel } from "./appHelpers";
+import { getApi, isDraftEntry, isEqualValue, collectDirtyKeys } from "./appHelpers";
 import { t, translateError } from "./i18n";
 import { createFallbackState, applyAppearanceMode, applyUiFontSize, formatMessage } from "./tabComponents";
 

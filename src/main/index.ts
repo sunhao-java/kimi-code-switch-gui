@@ -37,7 +37,6 @@ import {
   uploadWebDavFile,
 } from "./modules/webdav";
 import { checkForUpdates, detectInstallSource } from "./modules/updates";
-import type { UpdateCheckResult } from "./modules/updates";
 import type {
   AppState,
   AppearanceMode,
@@ -47,7 +46,6 @@ import type {
   FileDialogResult,
   Locale,
   PanelSettings,
-  TrayCommand,
 } from "@shared/types";
 
 let mainWindow: BrowserWindow | null = null;
@@ -63,7 +61,6 @@ const WINDOW_WIDTH = 1500;
 const WINDOW_HEIGHT = 980;
 const WINDOW_SHOW_TIMEOUT_MS = 1500;
 const DISPLAY_REMEMBER_DELAY_MS = 400;
-const ERROR_NOTICE_DURATION_MS = 5000;
 const DEFAULT_PANEL_SETTINGS_PATH = DEFAULT_CONFIG_PATH.replace("config.toml", PANEL_SETTINGS_FILENAME);
 const CHANGE_BACKUP_DELAY_MS = 4000;
 const execFileAsync = promisify(execFile);
@@ -682,18 +679,7 @@ function hideDockIcon(): void {
   }
 }
 
-function sendTrayCommand(command: TrayCommand): void {
-  if (!mainWindow) {
-    void createWindow().then(() => {
-      queueTrayCommand(command);
-    });
-    return;
-  }
-  showMainWindow();
-  queueTrayCommand(command);
-}
-
-function queueTrayCommand(command: TrayCommand): void {
+function queueTrayCommand(command: "reload"): void {
   if (!mainWindow) {
     return;
   }
