@@ -199,7 +199,7 @@ npm run dist:win
 
 ## 当前版本
 
-- 应用版本：`1.1.0`
+- 应用版本：`1.1.1`
 - 变更记录见 [CHANGELOG.md](CHANGELOG.md)
 
 ## 许可证

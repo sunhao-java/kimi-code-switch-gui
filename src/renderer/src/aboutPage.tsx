@@ -25,7 +25,7 @@ interface UpdateCheckResult {
 }
 
 const ABOUT_INFO = {
-  version: "1.1.0",
+  version: "1.1.1",
   author: "Hulk Sun",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",
@@ -389,6 +389,13 @@ export function AboutPage(props: {
     },
   ];
   const history = [
+    {
+      version: "v1.1.1",
+      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.1`,
+      text: isZh
+        ? "新增快捷键管理与快捷键备份，继续拆分主进程和渲染层模块，并优化更新检查弹框状态、GitHub Release 兜底检查与 README 功能说明。"
+        : "Added shortcut management and shortcut backups, continued splitting main and renderer modules, and refined update dialog states, GitHub Release fallback checks, and README feature coverage.",
+    },
     {
       version: "v1.1.0",
       url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.0`,
