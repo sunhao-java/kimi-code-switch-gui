@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Bug, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
 import { applyProfile, cloneProfile, deleteModel, deleteProfile, deleteProvider, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
 import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
@@ -118,6 +119,8 @@ type TabPanelsProps = Pick<
   shortcuts: Record<ShortcutAction, ShortcutBinding>;
 };
 
+type SettingsSubTab = "general" | "shortcuts" | "backup" | "doctor";
+
 export function TabPanels(props: TabPanelsProps): JSX.Element {
   const {
     state,
@@ -212,6 +215,29 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
       title: t(locale, "shortcutWindowGroup"),
       description: t(locale, "shortcutWindowDescription"),
       actions: SHORTCUT_ACTIONS.filter((definition) => definition.scope === "window"),
+    },
+  ];
+  const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>("general");
+  const settingsSubTabs: Array<{ id: SettingsSubTab; label: string; description: string }> = [
+    {
+      id: "general",
+      label: t(locale, "settingsTabGeneral"),
+      description: t(locale, "settingsTabGeneralDescription"),
+    },
+    {
+      id: "shortcuts",
+      label: t(locale, "settingsTabShortcuts"),
+      description: t(locale, "settingsTabShortcutsDescription"),
+    },
+    {
+      id: "backup",
+      label: t(locale, "settingsTabBackup"),
+      description: t(locale, "settingsTabBackupDescription"),
+    },
+    {
+      id: "doctor",
+      label: t(locale, "settingsTabDoctor"),
+      description: t(locale, "settingsTabDoctorDescription"),
     },
   ];
 
@@ -771,153 +797,173 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
         {activeTab === "settings" ? (
           <section className="glass-panel form-panel settings-grid">
             <div className="section-title">{t(locale, "settings")}</div>
-            <SettingsGroup title={t(locale, "settingsGroupPaths")}>
-              <PathField
-                locale={locale}
-                label={t(locale, "configPath")}
-                value={state.configPath}
-                onView={() => openDocumentViewer("config")}
-                onChange={(value) =>
-                  updateImmediateState((draft) => {
-                    draft.configPath = value;
-                    draft.panelSettings.config_path = value;
-                  })
-                }
-              />
-              <PathField
-                locale={locale}
-                label={t(locale, "profilesPath")}
-                value={state.profilesPath}
-                onView={() => openDocumentViewer("profiles")}
-                onChange={(value) =>
-                  updateImmediateState((draft) => {
-                    draft.profilesPath = value;
-                    draft.panelSettings.profiles_path = value;
-                    draft.panelSettings.follow_config_profiles = false;
-                  })
-                }
-              />
-              <PathField
-                locale={locale}
-                label={t(locale, "panelSettingsPath")}
-                value={state.panelSettingsPath}
-                onView={() => openDocumentViewer("panel")}
-                onChange={(value) =>
-                  updateImmediateState((draft) => {
-                    draft.panelSettingsPath = value;
-                  })
-                }
-              />
-              <PathField
-                locale={locale}
-                label={t(locale, "mcpConfigPathLabel")}
-                value={state.mcpConfigPath}
-                readOnly
-                fileType="json"
-                onView={() => openDocumentViewer("mcp")}
-                onChange={() => {}}
-              />
-            </SettingsGroup>
-            <SettingsGroup title={t(locale, "settingsGroupAppearance")}>
-              <SelectField
-                label={t(locale, "locale")}
-                value={state.panelSettings.locale}
-                onChange={(value) =>
-                  updateImmediateState((draft) => {
-                    draft.panelSettings.locale = value as Locale;
-                  })
-                }
-                options={LOCALE_OPTIONS.map((option) => ({
-                  value: option.value,
-                  label: option.longLabel,
-                  badge: option.shortLabel,
-                  badgeClassName: "flag",
-                }))}
-              />
-              <SelectField
-                label={t(locale, "theme")}
-                value={state.panelSettings.theme}
-                onChange={(value) =>
-                  updateImmediateState((draft) => {
-                    draft.panelSettings.theme = value as AppearanceMode;
-                  })
-                }
-                selectedIcon={(THEME_OPTIONS.find((option) => option.value === state.panelSettings.theme) ?? THEME_OPTIONS[0]).icon}
-                options={THEME_OPTIONS.map((option) => ({
-                  value: option.value,
-                  label: option.label[locale],
-                  icon: option.icon,
-                }))}
-              />
-              <FontSizeSliderField
-                locale={locale}
-                label={t(locale, "uiFontSize")}
-                value={state.panelSettings.ui_font_size ?? "standard"}
-                options={UI_FONT_SIZE_OPTIONS}
-                onChange={(value) =>
-                  updateImmediateState((draft) => {
-                    draft.panelSettings.ui_font_size = value;
-                  })
-                }
-              />
-              <SelectField
-                label={t(locale, "displayOpenMode")}
-                value={state.panelSettings.display_open_mode}
-                onChange={(value) =>
-                  updateImmediateState((draft) => {
-                    draft.panelSettings.display_open_mode = value as DisplayOpenMode;
-                  })
-                }
-                options={DISPLAY_OPEN_OPTIONS.map((option) => ({
-                  value: option.value,
-                  label: option.label[locale],
-                }))}
-              />
-            </SettingsGroup>
-            <SettingsGroup title={t(locale, "settingsGroupBehavior")}>
-              <label className="toggle-row">
-                <span>{t(locale, "trayIcon")}</span>
-                <input
-                  type="checkbox"
-                  checked={state.panelSettings.tray_icon}
-                  onChange={(event) => {
-                    const enabled = event.target.checked;
-                    updateImmediateState((draft) => {
-                      draft.panelSettings.tray_icon = enabled;
-                      draft.panelSettings.close_behavior = enabled ? "keep-in-tray" : "quit";
-                    });
-                  }}
-                />
-              </label>
-              {state.panelSettings.tray_icon ? (
-                <SelectField
-                  label={t(locale, "closeBehavior")}
-                  value={state.panelSettings.close_behavior}
-                  onChange={(value) =>
-                    updateImmediateState((draft) => {
-                      draft.panelSettings.close_behavior = value as CloseBehavior;
-                    })
-                  }
-                  options={CLOSE_BEHAVIOR_OPTIONS.map((option) => ({
-                    value: option.value,
-                    label: option.label[locale],
-                  }))}
-                />
-              ) : null}
-              <label className="toggle-row">
-                <span>{t(locale, "followConfigProfiles")}</span>
-                <input
-                  type="checkbox"
-                  checked={state.panelSettings.follow_config_profiles}
-                  onChange={(event) =>
-                    updateImmediateState((draft) => {
-                      draft.panelSettings.follow_config_profiles = event.target.checked;
-                    })
-                  }
-                />
-              </label>
-            </SettingsGroup>
-            <SettingsGroup title={t(locale, "settingsGroupShortcuts")} className="settings-group-wide">
+            <div className="settings-tabs" role="tablist" aria-label={t(locale, "settings")}>
+              {settingsSubTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  className={activeSettingsSubTab === tab.id ? "settings-tab is-active" : "settings-tab"}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeSettingsSubTab === tab.id}
+                  onClick={() => setActiveSettingsSubTab(tab.id)}
+                >
+                  <strong>{tab.label}</strong>
+                  <span>{tab.description}</span>
+                </button>
+              ))}
+            </div>
+            {activeSettingsSubTab === "general" ? (
+              <div className="settings-tab-panel">
+                <SettingsGroup title={t(locale, "settingsGroupPaths")}>
+                  <PathField
+                    locale={locale}
+                    label={t(locale, "configPath")}
+                    value={state.configPath}
+                    onView={() => openDocumentViewer("config")}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.configPath = value;
+                        draft.panelSettings.config_path = value;
+                      })
+                    }
+                  />
+                  <PathField
+                    locale={locale}
+                    label={t(locale, "profilesPath")}
+                    value={state.profilesPath}
+                    onView={() => openDocumentViewer("profiles")}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.profilesPath = value;
+                        draft.panelSettings.profiles_path = value;
+                        draft.panelSettings.follow_config_profiles = false;
+                      })
+                    }
+                  />
+                  <PathField
+                    locale={locale}
+                    label={t(locale, "panelSettingsPath")}
+                    value={state.panelSettingsPath}
+                    onView={() => openDocumentViewer("panel")}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.panelSettingsPath = value;
+                      })
+                    }
+                  />
+                  <PathField
+                    locale={locale}
+                    label={t(locale, "mcpConfigPathLabel")}
+                    value={state.mcpConfigPath}
+                    readOnly
+                    fileType="json"
+                    onView={() => openDocumentViewer("mcp")}
+                    onChange={() => {}}
+                  />
+                </SettingsGroup>
+                <SettingsGroup title={t(locale, "settingsGroupAppearance")}>
+                  <SelectField
+                    label={t(locale, "locale")}
+                    value={state.panelSettings.locale}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.panelSettings.locale = value as Locale;
+                      })
+                    }
+                    options={LOCALE_OPTIONS.map((option) => ({
+                      value: option.value,
+                      label: option.longLabel,
+                      badge: option.shortLabel,
+                      badgeClassName: "flag",
+                    }))}
+                  />
+                  <SelectField
+                    label={t(locale, "theme")}
+                    value={state.panelSettings.theme}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.panelSettings.theme = value as AppearanceMode;
+                      })
+                    }
+                    selectedIcon={(THEME_OPTIONS.find((option) => option.value === state.panelSettings.theme) ?? THEME_OPTIONS[0]).icon}
+                    options={THEME_OPTIONS.map((option) => ({
+                      value: option.value,
+                      label: option.label[locale],
+                      icon: option.icon,
+                    }))}
+                  />
+                  <FontSizeSliderField
+                    locale={locale}
+                    label={t(locale, "uiFontSize")}
+                    value={state.panelSettings.ui_font_size ?? "standard"}
+                    options={UI_FONT_SIZE_OPTIONS}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.panelSettings.ui_font_size = value;
+                      })
+                    }
+                  />
+                  <SelectField
+                    label={t(locale, "displayOpenMode")}
+                    value={state.panelSettings.display_open_mode}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.panelSettings.display_open_mode = value as DisplayOpenMode;
+                      })
+                    }
+                    options={DISPLAY_OPEN_OPTIONS.map((option) => ({
+                      value: option.value,
+                      label: option.label[locale],
+                    }))}
+                  />
+                </SettingsGroup>
+                <SettingsGroup title={t(locale, "settingsGroupBehavior")}>
+                  <label className="toggle-row">
+                    <span>{t(locale, "trayIcon")}</span>
+                    <input
+                      type="checkbox"
+                      checked={state.panelSettings.tray_icon}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        updateImmediateState((draft) => {
+                          draft.panelSettings.tray_icon = enabled;
+                          draft.panelSettings.close_behavior = enabled ? "keep-in-tray" : "quit";
+                        });
+                      }}
+                    />
+                  </label>
+                  {state.panelSettings.tray_icon ? (
+                    <SelectField
+                      label={t(locale, "closeBehavior")}
+                      value={state.panelSettings.close_behavior}
+                      onChange={(value) =>
+                        updateImmediateState((draft) => {
+                          draft.panelSettings.close_behavior = value as CloseBehavior;
+                        })
+                      }
+                      options={CLOSE_BEHAVIOR_OPTIONS.map((option) => ({
+                        value: option.value,
+                        label: option.label[locale],
+                      }))}
+                    />
+                  ) : null}
+                  <label className="toggle-row">
+                    <span>{t(locale, "followConfigProfiles")}</span>
+                    <input
+                      type="checkbox"
+                      checked={state.panelSettings.follow_config_profiles}
+                      onChange={(event) =>
+                        updateImmediateState((draft) => {
+                          draft.panelSettings.follow_config_profiles = event.target.checked;
+                        })
+                      }
+                    />
+                  </label>
+                </SettingsGroup>
+              </div>
+            ) : null}
+            {activeSettingsSubTab === "shortcuts" ? (
+              <SettingsGroup title={t(locale, "settingsGroupShortcuts")} className="settings-group-wide">
               <div className="shortcut-settings-list">
                 {shortcutGroups.map((group) => (
                   <section className={`shortcut-section ${group.scope}`} key={group.scope}>
@@ -1034,8 +1080,10 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                   {t(locale, "shortcutResetAll")}
                 </button>
               </div>
-            </SettingsGroup>
-            <SettingsGroup title={t(locale, "settingsGroupDoctor")} className="settings-group-wide">
+              </SettingsGroup>
+            ) : null}
+            {activeSettingsSubTab === "doctor" ? (
+              <SettingsGroup title={t(locale, "settingsGroupDoctor")} className="settings-group-wide">
               <DoctorReportPanel locale={locale} report={doctorReport} />
               <div className="button-row settings-action-row">
                 <button
@@ -1047,8 +1095,10 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                   <span>{t(locale, "doctorRun")}</span>
                 </button>
               </div>
-            </SettingsGroup>
-            <SettingsGroup title={t(locale, "settingsGroupBackup")}>
+              </SettingsGroup>
+            ) : null}
+            {activeSettingsSubTab === "backup" ? (
+              <SettingsGroup title={t(locale, "settingsGroupBackup")} className="settings-group-wide">
               <SelectField
                 label={t(locale, "backupStrategy")}
                 value={state.panelSettings.backup_strategy}
@@ -1191,7 +1241,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                   </button>
                 ) : null}
               </div>
-            </SettingsGroup>
+              </SettingsGroup>
+            ) : null}
           </section>
         ) : null}
 
