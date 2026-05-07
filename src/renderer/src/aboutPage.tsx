@@ -10,6 +10,7 @@ import logoLight from "./assets/logo-light.png";
 import logoDark from "./assets/logo-dark.png";
 
 type InstallSource = "homebrew" | "manual" | "development";
+type UpdateDialogPreviewKind = "error" | "available-homebrew" | "available-manual" | "current";
 
 interface UpdateCheckResult {
   currentVersion: string;
@@ -164,6 +165,52 @@ function getUpdateDescription(locale: Locale, result: UpdateCheckResult, hasUpda
     : `You're on v${result.currentVersion}. The latest release is ${result.releaseName}. Download the installer from the GitHub release page.`;
 }
 
+function createPreviewUpdateResult(locale: Locale, kind: UpdateDialogPreviewKind): UpdateCheckResult {
+  const isZh = locale === "zh-CN";
+  const baseResult: UpdateCheckResult = {
+    currentVersion: ABOUT_INFO.version,
+    latestVersion: "1.2.0",
+    hasUpdate: true,
+    releaseUrl: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.2.0`,
+    releaseName: "v1.2.0",
+    publishedAt: "",
+    homebrewCommand: "brew upgrade --cask kimi-code-switch-gui",
+    installSource: "manual",
+  };
+
+  if (kind === "current") {
+    return {
+      ...baseResult,
+      latestVersion: ABOUT_INFO.version,
+      hasUpdate: false,
+      releaseUrl: `${ABOUT_INFO.repositoryUrl}/releases/tag/v${ABOUT_INFO.version}`,
+      releaseName: `v${ABOUT_INFO.version}`,
+    };
+  }
+
+  if (kind === "available-homebrew") {
+    return {
+      ...baseResult,
+      installSource: "homebrew",
+    };
+  }
+
+  if (kind === "error") {
+    return {
+      ...baseResult,
+      latestVersion: "",
+      hasUpdate: false,
+      releaseUrl: `${ABOUT_INFO.repositoryUrl}/releases`,
+      releaseName: "",
+      errorMessage: isZh
+        ? "GitHub 请求已被限流，已切换到手动查看模式。"
+        : "GitHub API rate limit exceeded. Please check the release page manually.",
+    };
+  }
+
+  return baseResult;
+}
+
 function UpdateDialog(props: {
   locale: Locale;
   result: UpdateCheckResult;
@@ -198,13 +245,37 @@ function UpdateDialog(props: {
       }}
     >
       <section
-        className={isUpToDate ? "confirm-dialog update-dialog update-dialog-compact update-dialog-current glass-panel" : "confirm-dialog update-dialog glass-panel"}
+        className={[
+          "confirm-dialog",
+          "update-dialog",
+          "glass-panel",
+          isUpToDate ? "update-dialog-compact update-dialog-current" : "",
+          hasError ? "update-dialog-error" : "",
+          hasUpdate ? "update-dialog-available" : "",
+        ].filter(Boolean).join(" ")}
         role="dialog"
         aria-modal="true"
         aria-labelledby="update-dialog-title"
       >
+        <div className="update-dialog-topline" aria-hidden="true">
+          <span className="update-dialog-topline-label">
+            {hasError ? (isZh ? "状态: 检查失败" : "Status: Check Failed") : hasUpdate ? (isZh ? "状态: 可更新" : "Status: Update Available") : (isZh ? "状态: 已最新" : "Status: Up To Date")}
+          </span>
+          {!isUpToDate ? (
+            <span className="update-dialog-topline-version">
+              v{props.result.currentVersion}
+            </span>
+          ) : null}
+        </div>
         <div className="confirm-dialog-header update-dialog-header">
-          <div className={isUpToDate ? "confirm-dialog-icon update-dialog-icon update-dialog-icon-current" : "confirm-dialog-icon update-dialog-icon"}>
+          <div
+            className={[
+              "confirm-dialog-icon",
+              "update-dialog-icon",
+              isUpToDate ? "update-dialog-icon-current" : "",
+              hasError ? "update-dialog-icon-error" : "",
+            ].filter(Boolean).join(" ")}
+          >
             {isUpToDate ? <Check size={22} strokeWidth={2.6} /> : <RefreshCw size={20} />}
           </div>
           <div className="confirm-dialog-copy update-dialog-copy">
@@ -215,8 +286,13 @@ function UpdateDialog(props: {
                   {isZh ? "建议更新" : "Update Recommended"}
                 </span>
               ) : null}
+              {hasError ? (
+                <span className="update-dialog-badge update-dialog-badge-error">
+                  {isZh ? "需要人工处理" : "Manual Check Needed"}
+                </span>
+              ) : null}
             </div>
-            {!isUpToDate ? (
+            {hasUpdate ? (
               <div className="update-dialog-version-row">
                 <div className="update-dialog-version-card">
                   <span>{isZh ? "当前版本" : "Current"}</span>
@@ -231,7 +307,9 @@ function UpdateDialog(props: {
                 </div>
               </div>
             ) : null}
-            <p>{description}</p>
+            <div className="update-dialog-body">
+              <p>{description}</p>
+            </div>
             {showHomebrewCommand ? (
               <div className="update-dialog-command-block">
                 <span className="update-dialog-command-label">
@@ -249,19 +327,19 @@ function UpdateDialog(props: {
         </div>
         <div className="confirm-dialog-actions update-dialog-actions">
           {showHomebrewCommand ? (
-            <button className="action-button update-dialog-button" type="button" onClick={props.onCopyCommand}>
+            <button className="action-button update-dialog-button update-dialog-button-secondary" type="button" onClick={props.onCopyCommand}>
               {props.copiedCommand ? (isZh ? "已复制命令" : "Copied") : (isZh ? "复制 Homebrew 命令" : "Copy Homebrew Command")}
             </button>
           ) : null}
           {hasUpdate || hasError ? (
-            <button className="action-button action-button-primary update-dialog-button" type="button" onClick={props.onOpenRelease}>
+            <button className="action-button update-dialog-button update-dialog-button-primary" type="button" onClick={props.onOpenRelease}>
               {props.copiedReleaseUrl
                 ? (isZh ? "已复制 Release 链接" : "Release URL Copied")
                 : (isZh ? "打开 GitHub Release" : "Open GitHub Release")}
             </button>
           ) : null}
           <button
-            className={isUpToDate ? "action-button action-button-primary update-dialog-button" : "action-button update-dialog-button"}
+            className={isUpToDate ? "action-button update-dialog-button update-dialog-button-primary" : "action-button update-dialog-button update-dialog-button-ghost"}
             type="button"
             onClick={props.onClose}
           >
@@ -278,6 +356,7 @@ export function AboutPage(props: {
   locale: Locale;
 }): JSX.Element {
   const isZh = props.locale === "zh-CN";
+  const isDev = import.meta.env.DEV;
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
   const [updateCheckCooldownUntil, setUpdateCheckCooldownUntil] = useState(0);
   const [cooldownRemainingSeconds, setCooldownRemainingSeconds] = useState(0);
@@ -357,6 +436,12 @@ export function AboutPage(props: {
   const hasPendingUpdate =
     pendingUpdateVersion.length > 0 && compareReleaseVersions(pendingUpdateVersion, ABOUT_INFO.version) > 0;
   const isCheckOnCooldown = cooldownRemainingSeconds > 0;
+  const updateDialogPreviewItems: Array<{ kind: UpdateDialogPreviewKind; label: string }> = [
+    { kind: "error", label: isZh ? "预览失败态" : "Preview Failure" },
+    { kind: "available-homebrew", label: isZh ? "预览 Homebrew 更新" : "Preview Homebrew Update" },
+    { kind: "available-manual", label: isZh ? "预览手动更新" : "Preview Manual Update" },
+    { kind: "current", label: isZh ? "预览已最新" : "Preview Up To Date" },
+  ];
 
   useEffect(() => {
     const api = getApi();
@@ -448,7 +533,7 @@ export function AboutPage(props: {
           : rawMessage;
         setUpdateDialog({
           currentVersion: ABOUT_INFO.version,
-          latestVersion: ABOUT_INFO.version,
+          latestVersion: "",
           hasUpdate: false,
           releaseUrl: `${ABOUT_INFO.repositoryUrl}/releases`,
           releaseName: "",
@@ -461,6 +546,12 @@ export function AboutPage(props: {
       .finally(() => {
         setIsCheckingUpdate(false);
       });
+  };
+
+  const openPreviewDialog = (kind: UpdateDialogPreviewKind): void => {
+    setCopiedUpdateCommand(false);
+    setCopiedReleaseUrl(false);
+    setUpdateDialog(createPreviewUpdateResult(props.locale, kind));
   };
 
   return (
@@ -508,6 +599,34 @@ export function AboutPage(props: {
           </button>
         </div>
       </div>
+
+      {isDev ? (
+        <section className="about-preview-panel">
+          <div className="section-title">
+            <RefreshCw size={16} />
+            <span>{isZh ? "更新弹框预览" : "Update Dialog Preview"}</span>
+          </div>
+          <div className="about-preview-copy">
+            <span>
+              {isZh
+                ? "不依赖真实网络结果，直接查看几种典型状态下的弹框效果。"
+                : "Open representative dialog states without relying on the live network result."}
+            </span>
+          </div>
+          <div className="about-preview-actions">
+            {updateDialogPreviewItems.map((item) => (
+              <button
+                key={item.kind}
+                className="action-button compact about-preview-button"
+                type="button"
+                onClick={() => openPreviewDialog(item.kind)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="about-grid">
         <section className="about-section about-section-wide">
