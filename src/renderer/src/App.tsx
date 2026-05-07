@@ -39,6 +39,7 @@ export function App(): JSX.Element {
     isSkillsLoading,
     documentViewer, setDocumentViewer,
     backupRecordsDialog, setBackupRecordsDialog,
+    doctorReport,
     error, setError, notice, setNotice,
     isMcpImportOpen, setIsMcpImportOpen,
     mcpImportDraft, setMcpImportDraft,
@@ -65,6 +66,7 @@ export function App(): JSX.Element {
     closeMcpImportDialog, requestCloseMcpImportDialog,
     refreshSkills, openDocumentViewer,
     runManualBackup, runWebDavTest,
+    runDoctor,
     openBackupRecords, deleteBackupRecord, restoreBackupRecord,
   } = app;
   const shortcuts = normalizeShortcuts(state.panelSettings.shortcuts);
@@ -267,6 +269,7 @@ export function App(): JSX.Element {
           profileTestingName={profileTestingName}
           setProfileTestingName={setProfileTestingName}
           backupRecordsDialog={backupRecordsDialog}
+          doctorReport={doctorReport}
           isBackupRunning={isBackupRunning}
           isWebDavTesting={isWebDavTesting}
           isBackupPasswordVisible={isBackupPasswordVisible}
@@ -281,6 +284,7 @@ export function App(): JSX.Element {
           openDocumentViewer={openDocumentViewer}
           runManualBackup={runManualBackup}
           runWebDavTest={runWebDavTest}
+          runDoctor={runDoctor}
           openBackupRecords={openBackupRecords}
           setActiveTab={setActiveTab}
           setError={setError}

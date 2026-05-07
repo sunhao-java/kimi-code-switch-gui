@@ -3825,6 +3825,95 @@ textarea {
   padding-top: 4px;
 }
 
+.doctor-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.doctor-summary {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid rgba(124, 179, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.doctor-summary strong {
+  font-size: 0.9rem;
+}
+
+.doctor-summary span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.doctor-summary.ok {
+  border-color: rgba(132, 247, 211, 0.24);
+}
+
+.doctor-summary.warning {
+  border-color: rgba(255, 202, 122, 0.28);
+}
+
+.doctor-issues {
+  display: grid;
+  gap: 8px;
+}
+
+.doctor-issue {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid rgba(124, 179, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.doctor-issue > span {
+  align-self: start;
+  width: fit-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: rgba(124, 179, 255, 0.12);
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.doctor-issue.error > span {
+  background: rgba(255, 107, 139, 0.16);
+  color: #ffd7e1;
+}
+
+.doctor-issue.warning > span {
+  background: rgba(255, 202, 122, 0.14);
+  color: #ffe4b6;
+}
+
+.doctor-issue strong {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 0.8rem;
+}
+
+.doctor-issue p,
+.doctor-issue em {
+  display: block;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.doctor-issue em {
+  margin-top: 4px;
+  font-style: normal;
+  color: var(--text);
+}
+
 .shortcut-settings-list {
   display: grid;
   gap: 0;

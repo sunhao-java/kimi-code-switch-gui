@@ -146,6 +146,112 @@ export interface PreviewBundle {
   mcpDiff: string;
 }
 
+export type ManagedFileId = "config" | "profiles" | "panel" | "mcp";
+
+export interface FileFingerprint {
+  id: ManagedFileId;
+  path: string;
+  exists: boolean;
+  size: number;
+  mtimeMs: number;
+  sha256: string;
+}
+
+export interface FileSnapshotBundle {
+  capturedAt: string;
+  files: Record<ManagedFileId, FileFingerprint>;
+}
+
+export interface RedactionSummary {
+  maskedCount: number;
+  maskedPaths: string[];
+}
+
+export interface RedactedPreviewBundle extends PreviewBundle {
+  redaction: RedactionSummary;
+}
+
+export type DoctorSeverity = "error" | "warning" | "info";
+
+export interface DoctorIssue {
+  id: string;
+  severity: DoctorSeverity;
+  scope: ManagedFileId | "state" | "backup" | "shortcuts" | "webdav";
+  message: string;
+  fieldPath?: string;
+  suggestedAction?: string;
+}
+
+export interface ConfigDoctorReport {
+  ok: boolean;
+  generatedAt: string;
+  issues: DoctorIssue[];
+  errorCount: number;
+  warningCount: number;
+  infoCount: number;
+}
+
+export interface ExternalChangeDetail {
+  id: ManagedFileId;
+  path: string;
+  reason: "created" | "deleted" | "modified";
+  expected: FileFingerprint;
+  actual: FileFingerprint;
+  diskDocument: string;
+  draftDocument: string;
+  diff: string;
+}
+
+export interface ExternalChangeConflict {
+  changedFiles: ExternalChangeDetail[];
+}
+
+export interface SaveStateResult {
+  ok: true;
+  snapshot: FileSnapshotBundle;
+  doctor: ConfigDoctorReport;
+}
+
+export interface SaveStateConflictResult {
+  ok: false;
+  reason: "external-change";
+  snapshot: FileSnapshotBundle;
+  doctor: ConfigDoctorReport;
+  conflict: ExternalChangeConflict;
+}
+
+export interface RestoreDryRunFilePlan {
+  id: ManagedFileId;
+  path: string;
+  action: "create" | "replace" | "unchanged";
+  currentDocument: string;
+  nextDocument: string;
+  diff: string;
+}
+
+export interface RestoreDryRunResult {
+  backupName: string;
+  doctor: ConfigDoctorReport;
+  filePlans: RestoreDryRunFilePlan[];
+  warnings: string[];
+}
+
+export interface RestoreBackupResult {
+  ok: true;
+  state: AppState;
+  snapshot: FileSnapshotBundle;
+  doctor: ConfigDoctorReport;
+  rollbackBackupName: string;
+}
+
+export interface BackupMetadata {
+  name: string;
+  createdAt: string;
+  trigger: "manual" | "scheduled" | "on-change" | "pre-restore" | "rollback";
+  sourceHost: string;
+  paths: Record<ManagedFileId, string>;
+}
+
 export interface FileDialogResult {
   canceled: boolean;
   filePath?: string;

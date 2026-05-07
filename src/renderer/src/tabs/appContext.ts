@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import type { AppState, BackupRecord, Locale, McpServerConfig, ModelConfig, PreviewBundle, Profile, ProviderConfig } from "@shared/types";
+import type { AppState, BackupRecord, ConfigDoctorReport, FileSnapshotBundle, Locale, McpServerConfig, ModelConfig, PreviewBundle, Profile, ProviderConfig } from "@shared/types";
 import type { SkillDiscoveryPath, SkillEntry, SkillsScanReport } from "@shared/skillsStore";
 import type { SkillsViewMode } from "../skillsWorkspace";
 import type { TabId, PreviewFileId } from "../appOptions";
@@ -68,6 +68,10 @@ export interface AppContext {
   setDocumentViewer: Dispatch<SetStateAction<DocumentViewerState | null>>;
   backupRecordsDialog: BackupRecordsDialogState | null;
   setBackupRecordsDialog: Dispatch<SetStateAction<BackupRecordsDialogState | null>>;
+  doctorReport: ConfigDoctorReport | null;
+  setDoctorReport: Dispatch<SetStateAction<ConfigDoctorReport | null>>;
+  fileSnapshot: FileSnapshotBundle | null;
+  setFileSnapshot: Dispatch<SetStateAction<FileSnapshotBundle | null>>;
   error: string;
   setError: Dispatch<SetStateAction<string>>;
   notice: string;
@@ -104,6 +108,7 @@ export interface AppContext {
   openDocumentViewer: (file: PreviewFileId) => void;
   runManualBackup: () => void;
   runWebDavTest: () => void;
+  runDoctor: (state: AppState) => void;
   openBackupRecords: () => void;
   deleteBackupRecord: (record: BackupRecord) => void;
   restoreBackupRecord: (record: BackupRecord) => void;

@@ -18,6 +18,7 @@ import type {
   Locale,
   ShortcutAction,
   ShortcutBinding,
+  ConfigDoctorReport,
 } from "@shared/types";
 
 import { AboutPage } from "../aboutPage";
@@ -93,6 +94,7 @@ type TabPanelsProps = Pick<
   | "profileTestingName"
   | "setProfileTestingName"
   | "backupRecordsDialog"
+  | "doctorReport"
   | "isBackupRunning"
   | "isWebDavTesting"
   | "isBackupPasswordVisible"
@@ -107,6 +109,7 @@ type TabPanelsProps = Pick<
   | "openDocumentViewer"
   | "runManualBackup"
   | "runWebDavTest"
+  | "runDoctor"
   | "openBackupRecords"
   | "setActiveTab"
   | "setError"
@@ -169,6 +172,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     profileTestingName,
     setProfileTestingName,
     backupRecordsDialog,
+    doctorReport,
     isBackupRunning,
     isWebDavTesting,
     isBackupPasswordVisible,
@@ -183,6 +187,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     openDocumentViewer,
     runManualBackup,
     runWebDavTest,
+    runDoctor,
     openBackupRecords,
     setActiveTab,
     setError,
@@ -1030,6 +1035,19 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                 </button>
               </div>
             </SettingsGroup>
+            <SettingsGroup title={t(locale, "settingsGroupDoctor")} className="settings-group-wide">
+              <DoctorReportPanel locale={locale} report={doctorReport} />
+              <div className="button-row settings-action-row">
+                <button
+                  className="action-button action-button-primary"
+                  type="button"
+                  onClick={() => runDoctor(state)}
+                >
+                  <Bug size={16} />
+                  <span>{t(locale, "doctorRun")}</span>
+                </button>
+              </div>
+            </SettingsGroup>
             <SettingsGroup title={t(locale, "settingsGroupBackup")}>
               <SelectField
                 label={t(locale, "backupStrategy")}
@@ -1181,5 +1199,54 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
           <AboutPage locale={locale} />
         ) : null}
     </ErrorBoundary>
+  );
+}
+
+function DoctorReportPanel(props: {
+  locale: Locale;
+  report: ConfigDoctorReport | null;
+}): JSX.Element {
+  const report = props.report;
+  if (!report) {
+    return (
+      <div className="doctor-panel">
+        <div className="doctor-summary muted">
+          <strong>{t(props.locale, "doctorNotRun")}</strong>
+          <span>{t(props.locale, "doctorNotRunHint")}</span>
+        </div>
+      </div>
+    );
+  }
+
+  const visibleIssues = report.issues.slice(0, 8);
+  return (
+    <div className="doctor-panel">
+      <div className={report.ok ? "doctor-summary ok" : "doctor-summary warning"}>
+        <strong>
+          {report.ok ? t(props.locale, "doctorStatusOk") : t(props.locale, "doctorStatusNeedsAttention")}
+        </strong>
+        <span>
+          {formatMessage(t(props.locale, "doctorSummary"), {
+            errors: report.errorCount,
+            warnings: report.warningCount,
+            infos: report.infoCount,
+          })}
+        </span>
+      </div>
+      {visibleIssues.length ? (
+        <div className="doctor-issues">
+          {visibleIssues.map((issue) => (
+            <div key={issue.id} className={`doctor-issue ${issue.severity}`}>
+              <span>{issue.severity}</span>
+              <div>
+                <strong>{issue.scope}</strong>
+                <p>{issue.message}</p>
+                {issue.suggestedAction ? <em>{issue.suggestedAction}</em> : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }

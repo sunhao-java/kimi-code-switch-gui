@@ -1,12 +1,10 @@
 import type { Dispatch, SetStateAction } from "react";
 
-import { normalizeStatePaths } from "@shared/configStore";
 import type { AppState, BackupDestinationType, BackupRecord, Locale } from "@shared/types";
-import type { BackupRecordsDialogState, ConfirmDialogState } from "./dialogs";
+import type { BackupRecordsDialogState } from "./dialogs";
 import { getApi } from "./appHelpers";
 import { t, translateError } from "./i18n";
-import { applyPrimarySelections, getRetainedPrimarySelections } from "./primarySelections";
-import { applyAppearanceMode, applyUiFontSize, formatMessage } from "./tabComponents";
+import { formatMessage } from "./tabComponents";
 
 interface BackupActionsContext {
   state: AppState;
@@ -19,18 +17,7 @@ interface BackupActionsContext {
   setIsWebDavTesting: (value: boolean) => void;
   setBackupRecordsDialog: Dispatch<SetStateAction<BackupRecordsDialogState | null>>;
   confirmDeleteResource: (label: string, name: string) => Promise<boolean>;
-  requestConfirm: (options: ConfirmDialogState) => Promise<boolean>;
-  refreshPreview: (draft?: AppState) => Promise<void>;
-  currentSelections: {
-    provider: string;
-    model: string;
-    profile: string;
-    mcpServer: string;
-  };
-  setSelectedProvider: Dispatch<SetStateAction<string>>;
-  setSelectedModel: Dispatch<SetStateAction<string>>;
-  setSelectedProfile: Dispatch<SetStateAction<string>>;
-  setSelectedMcpServer: Dispatch<SetStateAction<string>>;
+  restoreWithDryRun: (state: AppState, backupName: string) => Promise<void>;
 }
 
 export function useBackupActions(ctx: BackupActionsContext) {
@@ -45,13 +32,7 @@ export function useBackupActions(ctx: BackupActionsContext) {
     setIsWebDavTesting,
     setBackupRecordsDialog,
     confirmDeleteResource,
-    requestConfirm,
-    refreshPreview,
-    currentSelections,
-    setSelectedProvider,
-    setSelectedModel,
-    setSelectedProfile,
-    setSelectedMcpServer,
+    restoreWithDryRun,
   } = ctx;
 
   const runManualBackup = (): void => {
@@ -223,18 +204,6 @@ export function useBackupActions(ctx: BackupActionsContext) {
     }
 
     void (async () => {
-      const confirmed = await requestConfirm({
-        title: formatMessage(t(locale, "backupRestoreConfirmTitle"), { name: record.name }),
-        description: t(locale, "backupRestoreConfirmDescription"),
-        confirmLabel: t(locale, "restore"),
-        cancelLabel: t(locale, "cancel"),
-        tone: "primary",
-        kind: "save",
-      });
-      if (!confirmed) {
-        return;
-      }
-
       try {
         setBackupRecordsDialog((current) =>
           current
@@ -244,24 +213,8 @@ export function useBackupActions(ctx: BackupActionsContext) {
               }
             : current,
         );
-        const restored = await api.restoreBackup(state, record.name);
-        const normalized = normalizeStatePaths(restored);
-        setState(normalized);
-        setSavedState(normalized);
-        applyAppearanceMode(normalized.panelSettings.theme);
-        applyUiFontSize(normalized.panelSettings.ui_font_size);
-        applyPrimarySelections(
-          getRetainedPrimarySelections(normalized, currentSelections),
-          {
-            setSelectedProvider,
-            setSelectedModel,
-            setSelectedProfile,
-            setSelectedMcpServer,
-          },
-        );
-        void refreshPreview(normalized);
+        await restoreWithDryRun(state, record.name);
         setError("");
-        setNotice(formatMessage(t(locale, "backupRestoreSuccess"), { name: record.name }));
         setBackupRecordsDialog(null);
       } catch (restoreError) {
         const message = restoreError instanceof Error ? restoreError.message : String(restoreError);

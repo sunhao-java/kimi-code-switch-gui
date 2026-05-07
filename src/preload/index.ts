@@ -1,7 +1,35 @@
 import { contextBridge, ipcRenderer } from "electron";
 
 import type { SkillsScanReport } from "@shared/skillsStore";
-import type { AppState, BackupRecord, BackupResult, FileDialogResult, PanelSettings, PreviewBundle, TrayCommand } from "@shared/types";
+import type {
+  AppState,
+  BackupRecord,
+  BackupResult,
+  ConfigDoctorReport,
+  FileDialogResult,
+  FileSnapshotBundle,
+  PanelSettings,
+  PreviewBundle,
+  RestoreBackupResult,
+  RestoreDryRunResult,
+  SaveStateConflictResult,
+  SaveStateResult,
+  TrayCommand,
+} from "@shared/types";
+
+function unwrapSaveStateResult(result: SaveStateResult | SaveStateConflictResult): { ok: true } {
+  if (result.ok) {
+    return { ok: true };
+  }
+  throw new Error(`Save blocked: ${result.reason}`);
+}
+
+function unwrapRestoreBackupResult(result: RestoreBackupResult | SaveStateConflictResult): AppState {
+  if (result.ok) {
+    return result.state;
+  }
+  throw new Error(`Restore blocked: ${result.reason}`);
+}
 
 const api = {
   loadState: (paths?: {
@@ -10,7 +38,13 @@ const api = {
     panelSettingsPath?: string;
     mcpConfigPath?: string;
   }): Promise<AppState> => ipcRenderer.invoke("app:load-state", paths),
-  saveState: (state: AppState): Promise<{ ok: true }> => ipcRenderer.invoke("app:save-state", state),
+  saveState: async (state: AppState): Promise<{ ok: true }> => unwrapSaveStateResult(await ipcRenderer.invoke("app:save-state", state)),
+  saveStateSafe: (
+    state: AppState,
+    options?: { expectedSnapshot?: FileSnapshotBundle; allowOverwrite?: boolean },
+  ): Promise<SaveStateResult | SaveStateConflictResult> => ipcRenderer.invoke("app:save-state", state, options),
+  captureSnapshot: (state: AppState): Promise<FileSnapshotBundle> => ipcRenderer.invoke("app:capture-snapshot", state),
+  runDoctor: (state: AppState): Promise<ConfigDoctorReport> => ipcRenderer.invoke("app:run-doctor", state),
   previewState: (state: AppState): Promise<PreviewBundle> => ipcRenderer.invoke("app:preview-state", state),
   scanSkills: (state: AppState): Promise<SkillsScanReport> => ipcRenderer.invoke("skills:scan", state),
   defaultSettings: (): Promise<PanelSettings> => ipcRenderer.invoke("app:default-settings"),
@@ -22,7 +56,18 @@ const api = {
   runBackup: (state: AppState): Promise<BackupResult> => ipcRenderer.invoke("backup:run", state),
   listBackups: (state: AppState): Promise<BackupRecord[]> => ipcRenderer.invoke("backup:list", state),
   deleteBackup: (state: AppState, backupName: string): Promise<{ ok: true }> => ipcRenderer.invoke("backup:delete", state, backupName),
-  restoreBackup: (state: AppState, backupName: string): Promise<AppState> => ipcRenderer.invoke("backup:restore", state, backupName),
+  restoreBackup: async (state: AppState, backupName: string): Promise<AppState> =>
+    unwrapRestoreBackupResult(await ipcRenderer.invoke("backup:restore", state, backupName)),
+  restoreBackupSafe: (
+    state: AppState,
+    backupName: string,
+    options?: { expectedSnapshot?: FileSnapshotBundle; allowOverwrite?: boolean },
+  ): Promise<RestoreBackupResult | SaveStateConflictResult> => ipcRenderer.invoke("backup:restore", state, backupName, options),
+  restoreBackupDryRun: (
+    state: AppState,
+    backupName: string,
+    options?: { expectedSnapshot?: FileSnapshotBundle },
+  ): Promise<RestoreDryRunResult | SaveStateConflictResult> => ipcRenderer.invoke("backup:restore-dry-run", state, backupName, options),
   testBackupWebdav: (state: AppState): Promise<{ ok: true; target: string }> => ipcRenderer.invoke("backup:test-webdav", state),
   checkForUpdates: (): Promise<{
     currentVersion: string;

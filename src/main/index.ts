@@ -11,21 +11,22 @@ import {
   buildConfigDocument,
   buildProfilesDocument,
   buildPanelSettingsDocument,
-  buildPreviewBundle,
   cloneState,
+  createDefaultPanelSettings,
   DEFAULT_CONFIG_PATH,
   normalizeStatePaths,
   PANEL_SETTINGS_FILENAME,
-  PROFILE_FILENAME,
   loadAppState,
   loadPanelSettings,
-  parsePanelSettingsDocument,
   saveAppState,
 } from "@shared/configStore";
+import { buildConfigDoctorReport, buildManagedDocuments, buildRedactedPreviewBundle } from "@shared/configSafety";
 import { buildMcpConfigDocument } from "@shared/mcpStore";
 import { scanSkills } from "@shared/skillsStore";
 import { normalizeShortcuts } from "@shared/shortcutStore";
+import { buildRestoreDryRun, restoreBackupSafely } from "./modules/backupRestore";
 import { getCliEnv, runKimiConnectivityTest, runKimiMcpCommand } from "./modules/cli";
+import { captureSnapshotForState, detectExternalChangeConflict, readManagedDocuments, resolveManagedPaths } from "./modules/fileSnapshots";
 import { fileAccess, resolveHome, skillFileAccess } from "./modules/fileAccess";
 import { registerGlobalShortcuts, unregisterGlobalShortcuts } from "./modules/shortcuts";
 import {
@@ -42,12 +43,18 @@ import { checkForUpdates, detectInstallSource } from "./modules/updates";
 import type {
   AppState,
   AppearanceMode,
+  BackupMetadata,
   BackupFrequency,
   BackupRecord,
   BackupResult,
+  FileSnapshotBundle,
   FileDialogResult,
   Locale,
   PanelSettings,
+  RestoreBackupResult,
+  RestoreDryRunResult,
+  SaveStateConflictResult,
+  SaveStateResult,
 } from "@shared/types";
 
 let mainWindow: BrowserWindow | null = null;
@@ -69,6 +76,7 @@ const CHANGE_BACKUP_DELAY_MS = 4000;
 
 const ENCRYPTED_PASSWORD_PREFIX = "__enc__";
 const SHORTCUTS_BACKUP_FILENAME = "shortcuts.json";
+const BACKUP_METADATA_FILENAME = "backup.meta.json";
 
 function encryptWebDavPassword(state: AppState): AppState {
   if (!state.panelSettings.backup_webdav_password || !safeStorage.isEncryptionAvailable()) {
@@ -146,6 +154,26 @@ function buildBackupFiles(state: AppState): Array<{ name: string; content: strin
   ];
 }
 
+function buildBackupMetadata(
+  state: AppState,
+  backupName: string,
+  trigger: BackupMetadata["trigger"],
+): BackupMetadata {
+  const normalizedState = normalizeStatePaths(state);
+  return {
+    name: backupName,
+    createdAt: new Date().toISOString(),
+    trigger,
+    sourceHost: sanitizeMachineName(hostname()),
+    paths: {
+      config: resolveHome(normalizedState.configPath),
+      profiles: resolveHome(normalizedState.profilesPath),
+      panel: resolveHome(normalizedState.panelSettingsPath),
+      mcp: resolveHome(normalizedState.mcpConfigPath),
+    },
+  };
+}
+
 async function pruneBackupDirectories(backupRoot: string, keepCount: number): Promise<void> {
   const entries = await readdir(backupRoot, { withFileTypes: true });
   const obsoleteDirectories = entries
@@ -160,16 +188,24 @@ async function pruneBackupDirectories(backupRoot: string, keepCount: number): Pr
   );
 }
 
-async function createLocalBackupSnapshot(state: AppState, backupName: string): Promise<BackupResult> {
+async function createLocalBackupSnapshot(
+  state: AppState,
+  backupName: string,
+  trigger: BackupMetadata["trigger"],
+): Promise<BackupResult> {
   const normalizedState = normalizeStatePaths(state);
   const backupRoot = resolveHome(normalizedState.panelSettings.backup_local_path);
   const backupDirectory = join(backupRoot, backupName);
   const files = buildBackupFiles(normalizedState);
+  const metadata = buildBackupMetadata(normalizedState, backupName, trigger);
 
   await mkdir(backupDirectory, { recursive: true });
 
   await Promise.all(
-    files.map((file) => writeFile(join(backupDirectory, file.name), file.content, "utf-8")),
+    [
+      ...files.map((file) => writeFile(join(backupDirectory, file.name), file.content, "utf-8")),
+      writeFile(join(backupDirectory, BACKUP_METADATA_FILENAME), `${JSON.stringify(metadata, null, 2)}\n`, "utf-8"),
+    ],
   );
   await pruneBackupDirectories(backupRoot, normalizedState.panelSettings.backup_retention_count);
 
@@ -180,14 +216,22 @@ async function createLocalBackupSnapshot(state: AppState, backupName: string): P
   };
 }
 
-async function createWebDavBackupSnapshot(state: AppState, backupName: string): Promise<BackupResult> {
+async function createWebDavBackupSnapshot(
+  state: AppState,
+  backupName: string,
+  trigger: BackupMetadata["trigger"],
+): Promise<BackupResult> {
   const normalizedState = normalizeStatePaths(state);
   const settings = normalizedState.panelSettings;
   const files = buildBackupFiles(normalizedState);
+  const metadata = buildBackupMetadata(normalizedState, backupName, trigger);
 
   const backupDirectoryUrl = await ensureWebDavCollection(settings, [backupName]);
   await Promise.all(
-    files.map((file) => uploadWebDavFile(settings, `${backupDirectoryUrl}/${encodeURIComponent(file.name)}`, file.content)),
+    [
+      ...files.map((file) => uploadWebDavFile(settings, `${backupDirectoryUrl}/${encodeURIComponent(file.name)}`, file.content)),
+      uploadWebDavFile(settings, `${backupDirectoryUrl}/${encodeURIComponent(BACKUP_METADATA_FILENAME)}`, `${JSON.stringify(metadata, null, 2)}\n`),
+    ],
   );
 
   const manifestUrl = `${await ensureWebDavCollection(settings)}/.kimi-backups.json`;
@@ -205,15 +249,24 @@ async function createWebDavBackupSnapshot(state: AppState, backupName: string): 
   };
 }
 
-async function createBackupSnapshot(state: AppState): Promise<BackupResult> {
+async function createBackupSnapshot(
+  state: AppState,
+  trigger: BackupMetadata["trigger"] = "manual",
+): Promise<BackupResult & { backupName: string }> {
   const normalizedState = normalizeStatePaths(state);
   const backupName = `backup-${formatBackupStamp(new Date())}-${sanitizeMachineName(hostname())}`;
 
   if (normalizedState.panelSettings.backup_destination_type === "webdav") {
-    return createWebDavBackupSnapshot(normalizedState, backupName);
+    return {
+      ...(await createWebDavBackupSnapshot(normalizedState, backupName, trigger)),
+      backupName,
+    };
   }
 
-  return createLocalBackupSnapshot(normalizedState, backupName);
+  return {
+    ...(await createLocalBackupSnapshot(normalizedState, backupName, trigger)),
+    backupName,
+  };
 }
 
 async function listLocalBackups(state: AppState): Promise<BackupRecord[]> {
@@ -232,7 +285,7 @@ async function listLocalBackups(state: AppState): Promise<BackupRecord[]> {
             name: entry.name,
             createdAt: entry.name,
             path: recordPath,
-            itemCount: files.length,
+            itemCount: files.filter((file) => file !== BACKUP_METADATA_FILENAME).length,
           } satisfies BackupRecord;
         }),
     );
@@ -294,118 +347,6 @@ async function deleteBackup(state: AppState, backupName: string): Promise<{ ok: 
   return { ok: true };
 }
 
-async function readLocalBackupFiles(state: AppState, backupName: string): Promise<Record<string, string>> {
-  const normalizedState = normalizeStatePaths(state);
-  const backupRoot = resolveHome(normalizedState.panelSettings.backup_local_path);
-  const backupDirectory = join(backupRoot, backupName);
-  const [configDocument, profilesDocument, panelSettingsDocument, mcpDocument] = await Promise.all([
-    readFile(join(backupDirectory, "config.toml"), "utf-8"),
-    readFile(join(backupDirectory, "config.profiles.toml"), "utf-8"),
-    readFile(join(backupDirectory, "config.panel.toml"), "utf-8"),
-    readFile(join(backupDirectory, "mcp.json"), "utf-8"),
-  ]);
-
-  return {
-    configDocument,
-    profilesDocument,
-    panelSettingsDocument: mergeShortcutsBackupDocument(
-      panelSettingsDocument,
-      await readFile(join(backupDirectory, SHORTCUTS_BACKUP_FILENAME), "utf-8").catch(() => null),
-    ),
-    mcpDocument,
-  };
-}
-
-async function readWebDavBackupFiles(state: AppState, backupName: string): Promise<Record<string, string>> {
-  const normalizedState = normalizeStatePaths(state);
-  const settings = normalizedState.panelSettings;
-  const backupDirectoryUrl = buildWebDavUrl(settings, [backupName]);
-
-  const readRemoteText = async (filename: string): Promise<string> => {
-    const response = await fetch(`${backupDirectoryUrl}/${encodeURIComponent(filename)}`, {
-      method: "GET",
-      headers: {
-        Authorization: getWebDavAuthHeader(settings),
-      },
-    });
-    if (!response.ok) {
-      throw new Error(`WebDAV restore download failed: ${response.status} ${response.statusText}`);
-    }
-    return response.text();
-  };
-
-  const [configDocument, profilesDocument, panelSettingsDocument, shortcutsDocument, mcpDocument] = await Promise.all([
-    readRemoteText("config.toml"),
-    readRemoteText("config.profiles.toml"),
-    readRemoteText("config.panel.toml"),
-    readRemoteText(SHORTCUTS_BACKUP_FILENAME).catch(() => null),
-    readRemoteText("mcp.json"),
-  ]);
-
-  return {
-    configDocument,
-    profilesDocument,
-    panelSettingsDocument: mergeShortcutsBackupDocument(panelSettingsDocument, shortcutsDocument),
-    mcpDocument,
-  };
-}
-
-function mergeShortcutsBackupDocument(panelSettingsDocument: string, shortcutsDocument: string | null): string {
-  if (!shortcutsDocument?.trim()) {
-    return panelSettingsDocument;
-  }
-
-  try {
-    const parsedShortcuts = JSON.parse(shortcutsDocument) as unknown;
-    const panelSettings = parsePanelSettingsDocument(panelSettingsDocument);
-    panelSettings.shortcuts = normalizeShortcuts(parsedShortcuts);
-    return buildPanelSettingsDocument(panelSettings);
-  } catch (error) {
-    console.warn("Failed to merge shortcuts backup document", error);
-    return panelSettingsDocument;
-  }
-}
-
-function resolveProfilesPathFromPanelSettings(configPath: string, panelSettings: PanelSettings): string {
-  if (panelSettings.follow_config_profiles) {
-    return join(dirname(configPath), PROFILE_FILENAME);
-  }
-  return panelSettings.profiles_path.trim() || join(dirname(configPath), PROFILE_FILENAME);
-}
-
-async function restoreBackup(state: AppState, backupName: string): Promise<AppState> {
-  const normalizedState = normalizeStatePaths(state);
-  const documents =
-    normalizedState.panelSettings.backup_destination_type === "webdav"
-      ? await readWebDavBackupFiles(normalizedState, backupName)
-      : await readLocalBackupFiles(normalizedState, backupName);
-
-  await fileAccess.ensureDir(dirname(normalizedState.panelSettingsPath));
-  await fileAccess.writeText(normalizedState.panelSettingsPath, documents.panelSettingsDocument);
-
-  const restoredPanelSettings = await loadPanelSettings(fileAccess, normalizedState.panelSettingsPath);
-  const restoredConfigPath = restoredPanelSettings.config_path.trim() || DEFAULT_CONFIG_PATH;
-  const restoredProfilesPath = resolveProfilesPathFromPanelSettings(restoredConfigPath, restoredPanelSettings);
-
-  await fileAccess.ensureDir(dirname(restoredConfigPath));
-  await fileAccess.ensureDir(dirname(restoredProfilesPath));
-  await fileAccess.ensureDir(dirname(normalizedState.mcpConfigPath));
-
-  await Promise.all([
-    fileAccess.writeText(restoredConfigPath, documents.configDocument),
-    fileAccess.writeText(restoredProfilesPath, documents.profilesDocument),
-    fileAccess.writeText(normalizedState.mcpConfigPath, documents.mcpDocument),
-  ]);
-
-  const restoredState = await loadAppState(fileAccess, {
-    panelSettingsPath: normalizedState.panelSettingsPath,
-    mcpConfigPath: normalizedState.mcpConfigPath,
-  });
-  updateBackupSchedule(restoredState);
-  latestAppState = cloneState(restoredState);
-  return restoredState;
-}
-
 function clearScheduledBackup(): void {
   if (scheduledBackupTimer) {
     clearTimeout(scheduledBackupTimer);
@@ -463,7 +404,7 @@ async function runScheduledBackup(): Promise<void> {
 
   backupInFlight = true;
   try {
-    await createBackupSnapshot(latestAppState);
+    await createBackupSnapshot(latestAppState, "scheduled");
   } catch (error) {
     console.error("automatic backup failed", error);
   } finally {
@@ -484,7 +425,7 @@ async function runChangeBackup(): Promise<void> {
 
   backupInFlight = true;
   try {
-    await createBackupSnapshot(latestAppState);
+    await createBackupSnapshot(latestAppState, "on-change");
   } catch (error) {
     console.error("change backup failed", error);
   } finally {
@@ -505,12 +446,50 @@ async function runBackup(state?: AppState): Promise<BackupResult> {
 
   backupInFlight = true;
   try {
-    const result = await createBackupSnapshot(sourceState);
+    const result = await createBackupSnapshot(sourceState, "manual");
     updateBackupSchedule(sourceState);
     return result;
   } finally {
     backupInFlight = false;
   }
+}
+
+async function saveStateWithSafety(
+  state: AppState,
+  options?: { expectedSnapshot?: FileSnapshotBundle; allowOverwrite?: boolean },
+): Promise<SaveStateResult | SaveStateConflictResult> {
+  const normalizedState = normalizeStatePaths(state);
+  const draftDocuments = buildManagedDocuments(normalizedState);
+  const targetPaths = resolveManagedPaths(normalizedState);
+  const doctor = buildConfigDoctorReport(normalizedState);
+  const conflictCheck = await detectExternalChangeConflict({
+    expectedSnapshot: options?.expectedSnapshot,
+    targetPaths,
+    draftDocuments,
+  });
+
+  if (conflictCheck.conflict && options?.allowOverwrite !== true) {
+    return {
+      ok: false,
+      reason: "external-change",
+      snapshot: conflictCheck.snapshot,
+      doctor,
+      conflict: conflictCheck.conflict,
+    };
+  }
+
+  encryptWebDavPassword(normalizedState);
+  await saveAppState(fileAccess, normalizedState);
+  updateBackupSchedule(normalizedState);
+  refreshGlobalShortcuts(normalizedState);
+  queueChangeBackup(normalizedState);
+  void updateTrayMenu();
+
+  return {
+    ok: true,
+    snapshot: await captureSnapshotForState(normalizedState),
+    doctor,
+  };
 }
 
 function getResourcePath(filename: string): string {
@@ -935,23 +914,30 @@ app.whenReady().then(() => {
     return state;
   });
 
-  ipcMain.handle("app:save-state", async (_, state: AppState) => {
-    encryptWebDavPassword(state);
-    await saveAppState(fileAccess, state);
-    updateBackupSchedule(state);
-    refreshGlobalShortcuts(state);
-    queueChangeBackup(state);
-    void updateTrayMenu();
-    return { ok: true };
+  ipcMain.handle("app:capture-snapshot", async (_, state: AppState) => {
+    return captureSnapshotForState(state);
   });
 
+  ipcMain.handle("app:run-doctor", async (_, state: AppState) => {
+    return buildConfigDoctorReport(state);
+  });
+
+  ipcMain.handle(
+    "app:save-state",
+    async (
+      _,
+      state: AppState,
+      options?: { expectedSnapshot?: FileSnapshotBundle; allowOverwrite?: boolean },
+    ) => {
+      return saveStateWithSafety(state, options);
+    },
+  );
+
   ipcMain.handle("app:preview-state", async (_, state: AppState) => {
-    return buildPreviewBundle(state, {
-      configDocument: await fileAccess.readText(state.configPath),
-      profilesDocument: await fileAccess.readText(state.profilesPath),
-      panelSettingsDocument: await fileAccess.readText(state.panelSettingsPath),
-      mcpDocument: await fileAccess.readText(state.mcpConfigPath),
-    });
+    const normalizedState = normalizeStatePaths(state);
+    const targetPaths = resolveManagedPaths(normalizedState);
+    const diskDocuments = await readManagedDocuments(targetPaths);
+    return buildRedactedPreviewBundle(normalizedState, diskDocuments);
   });
   ipcMain.handle("skills:scan", async (_, state: AppState) => {
     const normalizedState = normalizeStatePaths(state);
@@ -1012,9 +998,47 @@ app.whenReady().then(() => {
     return deleteBackup(state, backupName);
   });
 
-  ipcMain.handle("backup:restore", async (_, state: AppState, backupName: string) => {
-    return restoreBackup(state, backupName);
-  });
+  ipcMain.handle(
+    "backup:restore-dry-run",
+    async (
+      _,
+      state: AppState,
+      backupName: string,
+      options?: { expectedSnapshot?: FileSnapshotBundle },
+    ): Promise<RestoreDryRunResult | SaveStateConflictResult> => {
+      return buildRestoreDryRun(state, backupName, options?.expectedSnapshot);
+    },
+  );
+
+  ipcMain.handle(
+    "backup:restore",
+    async (
+      _,
+      state: AppState,
+      backupName: string,
+      options?: { expectedSnapshot?: FileSnapshotBundle; allowOverwrite?: boolean },
+    ): Promise<RestoreBackupResult | SaveStateConflictResult> => {
+      return restoreBackupSafely({
+        state,
+        backupName,
+        expectedSnapshot: options?.expectedSnapshot,
+        allowOverwrite: options?.allowOverwrite,
+        createBackupSnapshot: async (snapshotState, trigger) => createBackupSnapshot(snapshotState, trigger),
+        loadRestoredState: async (paths) => {
+          const restoredState = await loadAppState(fileAccess, paths);
+          decryptWebDavPassword(restoredState);
+          return restoredState;
+        },
+        onRestored: (restoredState) => {
+          updateBackupSchedule(restoredState);
+          latestAppState = cloneState(restoredState);
+          refreshGlobalShortcuts(restoredState);
+          void updateTrayMenu();
+        },
+        captureSnapshot: captureSnapshotForState,
+      });
+    },
+  );
 
   ipcMain.handle("backup:test-webdav", async (_, state: AppState) => {
     return testWebDavConnection(state.panelSettings);

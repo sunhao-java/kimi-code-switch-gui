@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { AppState } from "@shared/types";
+import type { AppState, ConfigDoctorReport, FileSnapshotBundle } from "@shared/types";
 import type { BackupRecordsDialogState, DocumentViewerState } from "./dialogs";
 import type { DiagnosticsState } from "./overviewDashboard";
 import { SkillsViewMode } from "./skillsWorkspace";
@@ -12,6 +12,7 @@ import { useAppPersistence } from "./useAppPersistence";
 import { useBackupActions } from "./useBackupActions";
 import { useConfirmDialog } from "./useConfirmDialog";
 import { usePreviewAndSkills } from "./usePreviewAndSkills";
+import { useSafetyActions } from "./useSafetyActions";
 import { useStateMutations } from "./useStateMutations";
 import { useUnsavedChangesGuard } from "./useUnsavedChangesGuard";
 
@@ -29,6 +30,8 @@ export function useAppHandlers() {
   const [skillsViewMode, setSkillsViewMode] = useState<SkillsViewMode>("grid");
   const [documentViewer, setDocumentViewer] = useState<DocumentViewerState | null>(null);
   const [backupRecordsDialog, setBackupRecordsDialog] = useState<BackupRecordsDialogState | null>(null);
+  const [fileSnapshot, setFileSnapshot] = useState<FileSnapshotBundle | null>(null);
+  const [doctorReport, setDoctorReport] = useState<ConfigDoctorReport | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [isMcpImportOpen, setIsMcpImportOpen] = useState(false);
@@ -72,6 +75,34 @@ export function useAppHandlers() {
     setSelectedSkill,
   });
   const {
+    refreshSafetyState,
+    runDoctor,
+    confirmExternalOverwrite,
+    restoreWithDryRun,
+  } = useSafetyActions({
+    locale,
+    setState,
+    setSavedState,
+    setError,
+    setNotice,
+    fileSnapshot,
+    setFileSnapshot,
+    doctorReport,
+    setDoctorReport,
+    currentSelections: {
+      provider: selectedProvider,
+      model: selectedModel,
+      profile: selectedProfile,
+      mcpServer: selectedMcpServer,
+    },
+    setSelectedProvider,
+    setSelectedModel,
+    setSelectedProfile,
+    setSelectedMcpServer,
+    refreshPreview,
+    requestConfirm,
+  });
+  const {
     loadState,
     persistState,
     onSave,
@@ -87,6 +118,10 @@ export function useAppHandlers() {
     setError,
     setNotice,
     setDiagnostics,
+    fileSnapshot,
+    setFileSnapshot,
+    setDoctorReport,
+    confirmExternalOverwrite,
     refreshPreview,
     refreshSkills,
     currentSelections: {
@@ -280,18 +315,7 @@ export function useAppHandlers() {
     setIsWebDavTesting,
     setBackupRecordsDialog,
     confirmDeleteResource,
-    requestConfirm,
-    refreshPreview,
-    currentSelections: {
-      provider: selectedProvider,
-      model: selectedModel,
-      profile: selectedProfile,
-      mcpServer: selectedMcpServer,
-    },
-    setSelectedProvider,
-    setSelectedModel,
-    setSelectedProfile,
-    setSelectedMcpServer,
+    restoreWithDryRun,
   });
 
   return {
@@ -322,7 +346,11 @@ export function useAppHandlers() {
     documentViewer,
     setDocumentViewer,
     backupRecordsDialog,
+    doctorReport,
+    fileSnapshot,
     setBackupRecordsDialog,
+    setDoctorReport,
+    setFileSnapshot,
     error,
     setError,
     notice,
@@ -346,6 +374,8 @@ export function useAppHandlers() {
     confirmDialog,
     diagnostics,
     setDiagnostics,
+    refreshSafetyState,
+    runDoctor,
     unsavedResolutionRef,
     skillsRefreshTimerRef,
     locale,

@@ -2,12 +2,13 @@ import { useCallback } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
 import { cloneState, normalizeStatePaths } from "@shared/configStore";
-import type { AppState, Locale, PreviewBundle } from "@shared/types";
+import type { AppState, ConfigDoctorReport, FileSnapshotBundle, Locale, PreviewBundle, SaveStateConflictResult } from "@shared/types";
 import { getApi } from "./appHelpers";
 import { translateError } from "./i18n";
 import type { DiagnosticsState } from "./overviewDashboard";
 import { applyPrimarySelections, getDefaultPrimarySelections, getRetainedPrimarySelections } from "./primarySelections";
 import { applyAppearanceMode, applyUiFontSize, createFallbackState } from "./tabComponents";
+import { isExternalChangeConflict } from "./useSafetyActions";
 
 interface AppPersistenceContext {
   state: AppState;
@@ -19,6 +20,10 @@ interface AppPersistenceContext {
   setError: Dispatch<SetStateAction<string>>;
   setNotice: Dispatch<SetStateAction<string>>;
   setDiagnostics: Dispatch<SetStateAction<DiagnosticsState>>;
+  fileSnapshot: FileSnapshotBundle | null;
+  setFileSnapshot: Dispatch<SetStateAction<FileSnapshotBundle | null>>;
+  setDoctorReport: Dispatch<SetStateAction<ConfigDoctorReport | null>>;
+  confirmExternalOverwrite: (conflict: SaveStateConflictResult) => Promise<boolean>;
   refreshPreview: (draft?: AppState) => Promise<void>;
   refreshSkills: (draft?: AppState, options?: { silent?: boolean }) => Promise<void>;
   currentSelections: {
@@ -44,6 +49,10 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     setError,
     setNotice,
     setDiagnostics,
+    fileSnapshot,
+    setFileSnapshot,
+    setDoctorReport,
+    confirmExternalOverwrite,
     refreshPreview,
     refreshSkills,
     currentSelections,
@@ -86,6 +95,14 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
         setSelectedMcpServer,
       });
       const nextPreview = await api.previewState(normalized);
+      if (api.captureSnapshot && api.runDoctor) {
+        const [snapshot, doctor] = await Promise.all([
+          api.captureSnapshot(normalized),
+          api.runDoctor(normalized),
+        ]);
+        setFileSnapshot(snapshot);
+        setDoctorReport(doctor);
+      }
       setPreview(nextPreview);
       await refreshSkills(normalized, { silent: true });
       setError("");
@@ -114,7 +131,9 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
   }, [
     refreshSkills,
     setDiagnostics,
+    setDoctorReport,
     setError,
+    setFileSnapshot,
     setNotice,
     setPreview,
     setSavedState,
@@ -135,7 +154,32 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     }
     try {
       const normalized = normalizeStatePaths(nextState);
-      await api.saveState(normalized);
+      const saveResult = api.saveStateSafe
+        ? await api.saveStateSafe(normalized, { expectedSnapshot: fileSnapshot ?? undefined })
+        : await api.saveState(normalized);
+      if (isExternalChangeConflict(saveResult)) {
+        const overwrite = await confirmExternalOverwrite(saveResult);
+        if (!overwrite) {
+          setFileSnapshot(saveResult.snapshot);
+          setDoctorReport(saveResult.doctor);
+          return;
+        }
+        const overwriteResult = api.saveStateSafe
+          ? await api.saveStateSafe(normalized, { expectedSnapshot: fileSnapshot ?? undefined, allowOverwrite: true })
+          : await api.saveState(normalized);
+        if (isExternalChangeConflict(overwriteResult)) {
+          setFileSnapshot(overwriteResult.snapshot);
+          setDoctorReport(overwriteResult.doctor);
+          throw new Error("Save blocked: external-change");
+        }
+        if ("snapshot" in overwriteResult && "doctor" in overwriteResult) {
+          setFileSnapshot(overwriteResult.snapshot);
+          setDoctorReport(overwriteResult.doctor);
+        }
+      } else if ("snapshot" in saveResult && "doctor" in saveResult) {
+        setFileSnapshot(saveResult.snapshot);
+        setDoctorReport(saveResult.doctor);
+      }
       if (savedState?.panelSettings.tray_icon !== normalized.panelSettings.tray_icon) {
         await api.setTray(normalized.panelSettings.tray_icon);
       }
@@ -153,11 +197,15 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
       setDiagnostics((current) => ({ ...current, lastError: message }));
     }
   }, [
+    confirmExternalOverwrite,
+    fileSnapshot,
     locale,
     refreshSkills,
     savedState,
     setDiagnostics,
+    setDoctorReport,
     setError,
+    setFileSnapshot,
     setNotice,
     setPreview,
     setSavedState,
@@ -196,7 +244,33 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     setNotice("");
 
     try {
-      await api.saveState(normalizedSavedState);
+      const saveResult = api.saveStateSafe
+        ? await api.saveStateSafe(normalizedSavedState, { expectedSnapshot: fileSnapshot ?? undefined })
+        : await api.saveState(normalizedSavedState);
+      if (isExternalChangeConflict(saveResult)) {
+        const overwrite = await confirmExternalOverwrite(saveResult);
+        if (!overwrite) {
+          setSavedState(previousSavedState ?? null);
+          setFileSnapshot(saveResult.snapshot);
+          setDoctorReport(saveResult.doctor);
+          return;
+        }
+        const overwriteResult = api.saveStateSafe
+          ? await api.saveStateSafe(normalizedSavedState, { expectedSnapshot: fileSnapshot ?? undefined, allowOverwrite: true })
+          : await api.saveState(normalizedSavedState);
+        if (isExternalChangeConflict(overwriteResult)) {
+          setFileSnapshot(overwriteResult.snapshot);
+          setDoctorReport(overwriteResult.doctor);
+          throw new Error("Save blocked: external-change");
+        }
+        if ("snapshot" in overwriteResult && "doctor" in overwriteResult) {
+          setFileSnapshot(overwriteResult.snapshot);
+          setDoctorReport(overwriteResult.doctor);
+        }
+      } else if ("snapshot" in saveResult && "doctor" in saveResult) {
+        setFileSnapshot(saveResult.snapshot);
+        setDoctorReport(saveResult.doctor);
+      }
       if (previousSavedState?.panelSettings.tray_icon !== normalizedSavedState.panelSettings.tray_icon) {
         await api.setTray(normalizedSavedState.panelSettings.tray_icon);
       }
@@ -213,12 +287,16 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
       setDiagnostics((current) => ({ ...current, lastError: message }));
     }
   }, [
+    confirmExternalOverwrite,
+    fileSnapshot,
     locale,
     refreshPreview,
     refreshSkills,
     savedState,
     setDiagnostics,
+    setDoctorReport,
     setError,
+    setFileSnapshot,
     setNotice,
     setPreview,
     setSavedState,
