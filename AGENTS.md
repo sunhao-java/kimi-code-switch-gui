@@ -47,6 +47,14 @@ When the user asks to `提交代码`:
 3. Commit the relevant changed files with that message.
 4. Push the commit to the remote repository.
 
+Push rule:
+
+- Prefer this SSH keepalive push command for this repository, especially when plain `git push` stalls on GitHub SSH:
+
+```bash
+GIT_SSH_COMMAND='ssh -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2' git push origin master
+```
+
 When the user asks to `发布新版本`:
 
 1. If no version is provided, read the latest existing Git tag.
