@@ -77,6 +77,7 @@ const CHANGE_BACKUP_DELAY_MS = 4000;
 const ENCRYPTED_PASSWORD_PREFIX = "__enc__";
 const SHORTCUTS_BACKUP_FILENAME = "shortcuts.json";
 const BACKUP_METADATA_FILENAME = "backup.meta.json";
+const INITIAL_THEME_ARG_PREFIX = "--kimi-initial-theme=";
 
 function encryptWebDavPassword(state: AppState): AppState {
   if (!state.panelSettings.backup_webdav_password || !safeStorage.isEncryptionAvailable()) {
@@ -776,6 +777,17 @@ async function loadWindowPanelSettings(): Promise<PanelSettings> {
   return loadPanelSettings(fileAccess, DEFAULT_PANEL_SETTINGS_PATH);
 }
 
+function resolveRendererTheme(theme: AppearanceMode): "dark" | "light" {
+  if (theme === "auto") {
+    return nativeTheme.shouldUseDarkColors ? "dark" : "light";
+  }
+  return theme;
+}
+
+function getWindowBackgroundColor(theme: AppearanceMode): string {
+  return resolveRendererTheme(theme) === "light" ? "#edf3fb" : "#07111f";
+}
+
 function resolveInitialWindowBounds(settings: PanelSettings): { x: number; y: number } {
   const displays = screen.getAllDisplays();
   const targetDisplay = (() => {
@@ -838,6 +850,7 @@ async function handleWindowCloseRequest(): Promise<void> {
 async function createWindow(): Promise<void> {
   const panelSettings = await loadWindowPanelSettings();
   const initialBounds = resolveInitialWindowBounds(panelSettings);
+  const initialRendererTheme = resolveRendererTheme(panelSettings.theme);
 
   mainWindow = new BrowserWindow({
     width: WINDOW_WIDTH,
@@ -852,9 +865,10 @@ async function createWindow(): Promise<void> {
     icon: getAppIconPath(),
     titleBarStyle: process.platform === "darwin" ? "hidden" : "default",
     trafficLightPosition: process.platform === "darwin" ? { x: 14, y: 12 } : undefined,
-    backgroundColor: "#07111f",
+    backgroundColor: getWindowBackgroundColor(panelSettings.theme),
     webPreferences: {
       preload: join(__dirname, "../preload/index.mjs"),
+      additionalArguments: [`${INITIAL_THEME_ARG_PREFIX}${initialRendererTheme}`],
       sandbox: false,
     },
   });

@@ -17,6 +17,31 @@ import type {
   TrayCommand,
 } from "@shared/types";
 
+type InitialRendererTheme = "dark" | "light";
+type PreloadDocument = {
+  documentElement: {
+    dataset: {
+      theme?: string;
+    };
+  };
+};
+
+function readInitialRendererTheme(): InitialRendererTheme {
+  const prefix = "--kimi-initial-theme=";
+  const value = process.argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length);
+  return value === "light" ? "light" : "dark";
+}
+
+function applyInitialRendererTheme(): void {
+  const preloadDocument = (globalThis as { document?: PreloadDocument }).document;
+  if (!preloadDocument) {
+    return;
+  }
+  preloadDocument.documentElement.dataset.theme = readInitialRendererTheme();
+}
+
+applyInitialRendererTheme();
+
 function unwrapSaveStateResult(result: SaveStateResult | SaveStateConflictResult): { ok: true } {
   if (result.ok) {
     return { ok: true };
