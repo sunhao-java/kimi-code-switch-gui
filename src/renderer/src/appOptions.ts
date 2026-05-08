@@ -82,6 +82,16 @@ export const UI_FONT_SIZE_OPTIONS: Array<{
   fontSize: string;
 }> = [
   {
+    value: "mini",
+    label: { "zh-CN": "迷你", "en-US": "Mini" },
+    fontSize: "12px",
+  },
+  {
+    value: "compact",
+    label: { "zh-CN": "紧凑", "en-US": "Compact" },
+    fontSize: "13px",
+  },
+  {
     value: "small",
     label: { "zh-CN": "小", "en-US": "Small" },
     fontSize: "14px",
@@ -95,6 +105,11 @@ export const UI_FONT_SIZE_OPTIONS: Array<{
     value: "large",
     label: { "zh-CN": "大", "en-US": "Large" },
     fontSize: "18px",
+  },
+  {
+    value: "extra-large",
+    label: { "zh-CN": "超大", "en-US": "XL" },
+    fontSize: "20px",
   },
 ];
 

@@ -1,4 +1,5 @@
-import { X } from "lucide-react";
+import { useState } from "react";
+import { ChevronsLeft, ChevronsRight, X } from "lucide-react";
 
 import type { McpServerConfig, ShortcutAction, ShortcutBinding } from "@shared/types";
 import { parseMcpConfigStrict } from "@shared/mcpStore";
@@ -72,6 +73,7 @@ export function App(): JSX.Element {
   const shortcuts = normalizeShortcuts(state.panelSettings.shortcuts);
   const shortcutPlatform = getBrowserShortcutPlatform();
   const tabShortcutLabels = createTabShortcutLabels(shortcuts, shortcutPlatform);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   useShortcuts({
     shortcuts,
@@ -81,7 +83,7 @@ export function App(): JSX.Element {
   });
 
   return (
-    <div className="shell">
+    <div className={isSidebarCollapsed ? "shell sidebar-collapsed" : "shell"}>
       <div className="window-titlebar drag-region" aria-hidden="true">
         <div className="window-titlebar-safe" />
       </div>
@@ -122,16 +124,27 @@ export function App(): JSX.Element {
             <img className="brand-logo brand-logo-light" src={logoLight} alt="Kimi Code Switch" />
             <img className="brand-logo brand-logo-dark" src={logoDark} alt="Kimi Code Switch" />
           </div>
-          <div>
+          <div className="brand-copy">
             <h1>{title}</h1>
             <p>{t(locale, "appSubtitle")}</p>
           </div>
+          <button
+            type="button"
+            className="sidebar-collapse-button no-drag"
+            aria-label={t(locale, isSidebarCollapsed ? "expandSidebar" : "collapseSidebar")}
+            title={t(locale, isSidebarCollapsed ? "expandSidebar" : "collapseSidebar")}
+            onClick={() => setIsSidebarCollapsed((value) => !value)}
+          >
+            {isSidebarCollapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
+          </button>
         </div>
         <nav className="nav">
           {TAB_ITEMS.map(({ id, icon: Icon, labelKey }) => (
             <button
               key={id}
               className={id === activeTab ? "nav-item active" : "nav-item"}
+              title={t(locale, labelKey)}
+              aria-label={t(locale, labelKey)}
               onClick={() => {
                 if (id === activeTab) return;
                 runAfterUnsavedHandled(() => setActiveTab(id));
@@ -146,6 +159,8 @@ export function App(): JSX.Element {
         <nav className="nav nav-bottom">
           <button
             className={ABOUT_TAB.id === activeTab ? "nav-item active" : "nav-item"}
+            title={t(locale, ABOUT_TAB.labelKey)}
+            aria-label={t(locale, ABOUT_TAB.labelKey)}
             onClick={() => {
               if (ABOUT_TAB.id === activeTab) return;
               runAfterUnsavedHandled(() => setActiveTab(ABOUT_TAB.id));
@@ -160,9 +175,33 @@ export function App(): JSX.Element {
       <main className="main">
         <header className="topbar">
           <div className="summary-grid">
-            <SummaryCard label={t(locale, "summaryProfiles")} value={String(profileEntries.length)} />
-            <SummaryCard label={t(locale, "summaryProviders")} value={String(providerEntries.length)} />
-            <SummaryCard label={t(locale, "summaryModels")} value={String(modelEntries.length)} />
+            <SummaryCard
+              label={t(locale, "summaryProfiles")}
+              value={String(profileEntries.length)}
+              active={activeTab === "profiles"}
+              onClick={() => {
+                if (activeTab === "profiles") return;
+                runAfterUnsavedHandled(() => setActiveTab("profiles"));
+              }}
+            />
+            <SummaryCard
+              label={t(locale, "summaryProviders")}
+              value={String(providerEntries.length)}
+              active={activeTab === "providers"}
+              onClick={() => {
+                if (activeTab === "providers") return;
+                runAfterUnsavedHandled(() => setActiveTab("providers"));
+              }}
+            />
+            <SummaryCard
+              label={t(locale, "summaryModels")}
+              value={String(modelEntries.length)}
+              active={activeTab === "models"}
+              onClick={() => {
+                if (activeTab === "models") return;
+                runAfterUnsavedHandled(() => setActiveTab("models"));
+              }}
+            />
             <SummaryCard
               label={t(locale, "summaryMcp")}
               value={formatMessage(t(locale, "summaryMcpCompact"), {
@@ -173,6 +212,11 @@ export function App(): JSX.Element {
                 t(locale, "summaryMcpEnabled"),
                 { count: mcpEntries.filter(([, server]: [string, McpServerConfig]) => server.enabled !== false).length },
               )}`}
+              active={activeTab === "mcp"}
+              onClick={() => {
+                if (activeTab === "mcp") return;
+                runAfterUnsavedHandled(() => setActiveTab("mcp"));
+              }}
             />
             <SummaryCard
               label={t(locale, "summarySkills")}
@@ -192,6 +236,11 @@ export function App(): JSX.Element {
                     )}`
                   : undefined
               }
+              active={activeTab === "skills"}
+              onClick={() => {
+                if (activeTab === "skills") return;
+                runAfterUnsavedHandled(() => setActiveTab("skills"));
+              }}
             />
             <SummaryCard label={t(locale, "summaryActive")} value={state.activeProfile || "-"} accent />
           </div>
@@ -215,81 +264,83 @@ export function App(): JSX.Element {
           </div>
         </header>
 
-        <TabPanels
-          state={state}
-          shortcuts={shortcuts}
-          activeTab={activeTab}
-          locale={locale}
-          diagnostics={diagnostics}
-          selectedProvider={selectedProvider}
-          setSelectedProvider={setSelectedProvider}
-          selectedModel={selectedModel}
-          setSelectedModel={setSelectedModel}
-          selectedProfile={selectedProfile}
-          setSelectedProfile={setSelectedProfile}
-          selectedMcpServer={selectedMcpServer}
-          setSelectedMcpServer={setSelectedMcpServer}
-          setSelectedSkill={setSelectedSkill}
-          setSelectedSkillPath={setSelectedSkillPath}
-          skillsViewMode={skillsViewMode}
-          setSkillsViewMode={setSkillsViewMode}
-          skillsReport={skillsReport}
-          isSkillsLoading={isSkillsLoading}
-          providerEntries={providerEntries}
-          modelEntries={modelEntries}
-          profileEntries={profileEntries}
-          mcpEntries={mcpEntries}
-          skillPathEntries={skillPathEntries}
-          skillEntries={skillEntries}
-          sortedSkillPathEntries={sortedSkillPathEntries}
-          visibleSkillEntries={visibleSkillEntries}
-          selectedProviderName={selectedProviderName}
-          selectedModelName={selectedModelName}
-          selectedProfileName={selectedProfileName}
-          selectedMcpServerName={selectedMcpServerName}
-          selectedSkillPathId={selectedSkillPathId}
-          selectedSkillData={selectedSkillData}
-          selectedSkillPathData={selectedSkillPathData}
-          selectedProviderData={selectedProviderData}
-          selectedModelData={selectedModelData}
-          selectedProfileData={selectedProfileData}
-          selectedMcpServerData={selectedMcpServerData}
-          isProviderNameEditable={isProviderNameEditable}
-          isProfileNameEditable={isProfileNameEditable}
-          isMcpServerNameEditable={isMcpServerNameEditable}
-          dirtyProviders={dirtyProviders}
-          dirtyModels={dirtyModels}
-          dirtyProfiles={dirtyProfiles}
-          dirtyMcpServers={dirtyMcpServers}
-          setIsMcpImportOpen={setIsMcpImportOpen}
-          setMcpImportDraft={setMcpImportDraft}
-          setMcpImportInitialDraft={setMcpImportInitialDraft}
-          mcpTestingName={mcpTestingName}
-          setMcpTestingName={setMcpTestingName}
-          profileTestingName={profileTestingName}
-          setProfileTestingName={setProfileTestingName}
-          backupRecordsDialog={backupRecordsDialog}
-          doctorReport={doctorReport}
-          isBackupRunning={isBackupRunning}
-          isWebDavTesting={isWebDavTesting}
-          isBackupPasswordVisible={isBackupPasswordVisible}
-          setIsBackupPasswordVisible={setIsBackupPasswordVisible}
-          updateState={updateState}
-          updateImmediateState={updateImmediateState}
-          runAfterUnsavedHandled={runAfterUnsavedHandled}
-          onSave={onSave}
-          persistState={persistState}
-          confirmDeleteResource={confirmDeleteResource}
-          refreshSkills={refreshSkills}
-          openDocumentViewer={openDocumentViewer}
-          runManualBackup={runManualBackup}
-          runWebDavTest={runWebDavTest}
-          runDoctor={runDoctor}
-          openBackupRecords={openBackupRecords}
-          setActiveTab={setActiveTab}
-          setError={setError}
-          setNotice={setNotice}
-        />
+        <div className="content-scroll">
+          <TabPanels
+            state={state}
+            shortcuts={shortcuts}
+            activeTab={activeTab}
+            locale={locale}
+            diagnostics={diagnostics}
+            selectedProvider={selectedProvider}
+            setSelectedProvider={setSelectedProvider}
+            selectedModel={selectedModel}
+            setSelectedModel={setSelectedModel}
+            selectedProfile={selectedProfile}
+            setSelectedProfile={setSelectedProfile}
+            selectedMcpServer={selectedMcpServer}
+            setSelectedMcpServer={setSelectedMcpServer}
+            setSelectedSkill={setSelectedSkill}
+            setSelectedSkillPath={setSelectedSkillPath}
+            skillsViewMode={skillsViewMode}
+            setSkillsViewMode={setSkillsViewMode}
+            skillsReport={skillsReport}
+            isSkillsLoading={isSkillsLoading}
+            providerEntries={providerEntries}
+            modelEntries={modelEntries}
+            profileEntries={profileEntries}
+            mcpEntries={mcpEntries}
+            skillPathEntries={skillPathEntries}
+            skillEntries={skillEntries}
+            sortedSkillPathEntries={sortedSkillPathEntries}
+            visibleSkillEntries={visibleSkillEntries}
+            selectedProviderName={selectedProviderName}
+            selectedModelName={selectedModelName}
+            selectedProfileName={selectedProfileName}
+            selectedMcpServerName={selectedMcpServerName}
+            selectedSkillPathId={selectedSkillPathId}
+            selectedSkillData={selectedSkillData}
+            selectedSkillPathData={selectedSkillPathData}
+            selectedProviderData={selectedProviderData}
+            selectedModelData={selectedModelData}
+            selectedProfileData={selectedProfileData}
+            selectedMcpServerData={selectedMcpServerData}
+            isProviderNameEditable={isProviderNameEditable}
+            isProfileNameEditable={isProfileNameEditable}
+            isMcpServerNameEditable={isMcpServerNameEditable}
+            dirtyProviders={dirtyProviders}
+            dirtyModels={dirtyModels}
+            dirtyProfiles={dirtyProfiles}
+            dirtyMcpServers={dirtyMcpServers}
+            setIsMcpImportOpen={setIsMcpImportOpen}
+            setMcpImportDraft={setMcpImportDraft}
+            setMcpImportInitialDraft={setMcpImportInitialDraft}
+            mcpTestingName={mcpTestingName}
+            setMcpTestingName={setMcpTestingName}
+            profileTestingName={profileTestingName}
+            setProfileTestingName={setProfileTestingName}
+            backupRecordsDialog={backupRecordsDialog}
+            doctorReport={doctorReport}
+            isBackupRunning={isBackupRunning}
+            isWebDavTesting={isWebDavTesting}
+            isBackupPasswordVisible={isBackupPasswordVisible}
+            setIsBackupPasswordVisible={setIsBackupPasswordVisible}
+            updateState={updateState}
+            updateImmediateState={updateImmediateState}
+            runAfterUnsavedHandled={runAfterUnsavedHandled}
+            onSave={onSave}
+            persistState={persistState}
+            confirmDeleteResource={confirmDeleteResource}
+            refreshSkills={refreshSkills}
+            openDocumentViewer={openDocumentViewer}
+            runManualBackup={runManualBackup}
+            runWebDavTest={runWebDavTest}
+            runDoctor={runDoctor}
+            openBackupRecords={openBackupRecords}
+            setActiveTab={setActiveTab}
+            setError={setError}
+            setNotice={setNotice}
+          />
+        </div>
       </main>
       {confirmDialog ? (
         <ConfirmDialog

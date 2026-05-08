@@ -243,6 +243,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
 
   return (
     <ErrorBoundary>
+      <div className="tab-panel-shell">
         {activeTab === "overview" ? (
           <OverviewDashboard
             state={state}
@@ -795,22 +796,26 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
         ) : null}
 
         {activeTab === "settings" ? (
-          <section className="glass-panel form-panel settings-grid">
-            <div className="section-title">{t(locale, "settings")}</div>
-            <div className="settings-tabs" role="tablist" aria-label={t(locale, "settings")}>
-              {settingsSubTabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  className={activeSettingsSubTab === tab.id ? "settings-tab is-active" : "settings-tab"}
-                  type="button"
-                  role="tab"
-                  aria-selected={activeSettingsSubTab === tab.id}
-                  onClick={() => setActiveSettingsSubTab(tab.id)}
-                >
+          <SplitLayout
+            listTitle={t(locale, "settings")}
+            listItems={settingsSubTabs.map((tab) => tab.id)}
+            selectedItem={activeSettingsSubTab}
+            itemLabel={(item) => settingsSubTabs.find((tab) => tab.id === item)?.label ?? item}
+            renderItemLabel={(item) => {
+              const tab = settingsSubTabs.find((entry) => entry.id === item);
+              return tab ? (
+                <span className="settings-list-label">
                   <strong>{tab.label}</strong>
-                  <span>{tab.description}</span>
-                </button>
-              ))}
+                  <small>{tab.description}</small>
+                </span>
+              ) : item;
+            }}
+            onSelect={(item) => setActiveSettingsSubTab(item as SettingsSubTab)}
+            addLabel={t(locale, "settings")}
+          >
+          <section className="glass-panel form-panel settings-grid settings-detail-panel">
+            <div className="section-title">
+              {settingsSubTabs.find((tab) => tab.id === activeSettingsSubTab)?.label ?? t(locale, "settings")}
             </div>
             {activeSettingsSubTab === "general" ? (
               <div className="settings-tab-panel">
@@ -1244,11 +1249,13 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               </SettingsGroup>
             ) : null}
           </section>
+          </SplitLayout>
         ) : null}
 
         {activeTab === "about" ? (
           <AboutPage locale={locale} />
         ) : null}
+      </div>
     </ErrorBoundary>
   );
 }

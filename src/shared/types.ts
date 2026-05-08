@@ -8,7 +8,7 @@ export type ProviderType =
 
 export type Locale = "zh-CN" | "en-US";
 export type AppearanceMode = "auto" | "dark" | "light";
-export type UiFontSize = "small" | "standard" | "large";
+export type UiFontSize = "mini" | "compact" | "small" | "standard" | "large" | "extra-large";
 export type DisplayOpenMode = "random" | "remember-last" | "active-display";
 export type CloseBehavior = "quit" | "keep-in-tray";
 export type TrayCommand = "reload";

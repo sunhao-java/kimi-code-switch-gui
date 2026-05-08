@@ -555,7 +555,14 @@ function parseUiFontSize(
   value: unknown,
   fallback: PanelSettings["ui_font_size"],
 ): PanelSettings["ui_font_size"] {
-  return value === "small" || value === "standard" || value === "large" ? value : fallback;
+  return value === "mini"
+    || value === "compact"
+    || value === "small"
+    || value === "standard"
+    || value === "large"
+    || value === "extra-large"
+    ? value
+    : fallback;
 }
 
 function parseDisplayOpenMode(

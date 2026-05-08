@@ -18,7 +18,7 @@ export function SplitLayout(props: {
   copyLabel?: string;
   onCopy?: (item: string) => void;
   addLabel: string;
-  onAdd: () => void;
+  onAdd?: () => void;
   addButtonContent?: JSX.Element;
   addButtonTitle?: string;
   addButtonClassName?: string;
@@ -35,15 +35,17 @@ export function SplitLayout(props: {
           <div className="section-title">{props.listTitle}</div>
           <div className="list-header-actions">
             {props.headerActions}
-            <button
-              className={props.addButtonClassName ?? "action-button compact"}
-              type="button"
-              aria-label={props.addButtonTitle ?? props.addLabel}
-              title={props.addButtonTitle ?? props.addLabel}
-              onClick={props.onAdd}
-            >
-              {props.addButtonContent ?? props.addLabel}
-            </button>
+            {props.onAdd ? (
+              <button
+                className={props.addButtonClassName ?? "action-button compact"}
+                type="button"
+                aria-label={props.addButtonTitle ?? props.addLabel}
+                title={props.addButtonTitle ?? props.addLabel}
+                onClick={props.onAdd}
+              >
+                {props.addButtonContent ?? props.addLabel}
+              </button>
+            ) : null}
           </div>
         </div>
         <div className="list-scroll">
