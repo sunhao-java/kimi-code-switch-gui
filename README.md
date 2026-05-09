@@ -1,49 +1,84 @@
 # Kimi Code Switch GUI
 
-`Kimi Code Switch GUI` 是一个面向 `kimi-code-cli` 的桌面配置控制台。它不是简单把 TOML 文件搬进表单，而是把 `Provider`、`Model`、`Profile`、`MCP Server`、`Skills`、快捷键和面板设置统一收敛到一个可视化工作台里，适合长期维护多套配置、频繁切换默认模型、排查配置差异以及管理本地 / WebDAV 备份。
+`Kimi Code Switch GUI` 是面向 `kimi-code-cli` 用户的桌面配置工作台。它把分散在多个 TOML / JSON 文件里的 Provider、Model、Profile、MCP Server、Skills、快捷键、备份和面板偏好，收敛成一个可视化操作界面，帮助用户更安全、更高效地维护本地 AI 编程工作流。
 
-应用会同时管理和生成以下四个配置文件：
+这个项目的目标不是简单替代表单编辑器，而是降低长期维护 `kimi-code-cli` 配置的成本：
 
-- `~/.kimi/config.toml`
-- `~/.kimi/config.profiles.toml`
-- `~/.kimi/config.panel.toml`
-- `~/.kimi/mcp.json`
+- 减少手改配置文件带来的格式错误和引用错误。
+- 让多 Provider、多模型、多 Profile 的切换变成明确的业务操作。
+- 在写入前提供预览、Diff 和配置体检，避免“改完才发现不可用”。
+- 把 MCP、Skills、快捷键和备份这些高频配套能力统一到一个桌面入口。
 
-项目延续了 `kimi-code-switch` 的配置语义，并在桌面侧补齐了实时保存、配置预览、Diff 查看、状态栏快捷操作、显示器打开策略、MCP 导入与测试、Skills 检索、快捷键管理、更新检查、备份恢复和双语界面等能力。
+## 适合谁使用
 
-## 功能概览
+如果你有下面任意需求，这个工具会比较合适：
 
-- 管理 `providers`、`models`、`profiles`、`mcpServers`
-- 激活 Profile 时同步更新主配置默认项
-- 预览 `config.toml`、`config.profiles.toml`、`config.panel.toml`、`mcp.json`
-- 查看配置差异，并在查看面板中直接复制文件内容
-- 导入 MCP JSON，测试 MCP 服务，触发授权或重置授权
-- 浏览 Skills 来源、启用状态和覆盖关系，支持按技能名称 / 描述检索
-- Skills 支持网格 / 列表视图、详情弹框、内容复制和自适应分页
-- 设置备份策略，支持本地目录和 WebDAV 备份、查看、删除、恢复
-- 备份快照包含主配置、Profile、面板设置、MCP 配置和快捷键配置
-- 管理全局 / 窗口快捷键，支持录制、启停、重置和冲突提示
-- 支持主题、语言、配置路径、关闭行为、显示器启动策略等面板设置
-- 可选状态栏 / 托盘图标，支持 Profile、语言和主题快速切换
-- 关于页支持检查 GitHub Release 更新，并根据 Homebrew / 手动安装 / 开发构建给出不同提示
-- GitHub API 被限流时会提示前往 Release 页面手动查看
-- 中文 / 英文双语界面
-- 关于页内置 GitHub、Issue、博客、版本历史等信息
-- 基于 `electron-builder` 生成 macOS / Windows 安装包
-- GitHub Actions 在推送 `v*` tag 后自动测试、构建并发布 Release
+- 同时维护多个 `kimi-code-cli` Provider，例如官方 API、网关、代理或内部服务。
+- 经常在不同模型、不同默认参数、不同 Profile 之间切换。
+- 需要统一管理 MCP Server，而不是手工编辑 `~/.kimi/mcp.json`。
+- 希望快速查看本机 Skills 来源、启用状态、覆盖关系和详情内容。
+- 希望为 CLI 配置建立本地或 WebDAV 备份，并能在出错时回滚。
+- 希望用桌面应用完成配置预览、差异检查、快捷键管理、状态栏切换和更新检查。
 
-## 适用场景
+## 核心能力
 
-- 本地维护多套 `kimi-code-cli` Provider 配置
-- 在不同模型之间快速切换默认配置
-- 为不同使用习惯准备独立 Profile
-- 在写入配置前先确认 TOML / JSON 输出和变更 Diff
-- 需要统一管理 MCP 配置，而不是手工维护 `mcp.json`
-- 需要快速查看、搜索和复制本机可用的 Skills
-- 需要用统一界面配置常用快捷键，而不是记住菜单入口
-- 希望通过桌面应用而不是手改配置文件来管理 CLI 设置
-- 希望给当前配置建立本地或远端备份，并在需要时回滚
-- 希望在应用内确认是否存在新版，并获取 Homebrew 或 GitHub Release 更新入口
+### 配置工作台
+
+- 管理 `providers`、`models`、`profiles` 和 `mcpServers`。
+- 激活 Profile 时同步更新主配置默认项。
+- 支持新增、克隆、删除、重命名和引用关系校验。
+- 自动生成并维护：
+  - `~/.kimi/config.toml`
+  - `~/.kimi/config.profiles.toml`
+  - `~/.kimi/config.panel.toml`
+  - `~/.kimi/mcp.json`
+
+### 安全写入与可观测性
+
+- 写入前可预览 TOML / JSON 输出。
+- 支持配置 Diff 查看和内容复制。
+- 内置配置体检，用于发现引用缺失、冲突和潜在风险。
+- 对外部文件变更进行快照检测，避免覆盖其他工具正在修改的配置。
+
+### MCP 与 Skills 管理
+
+- 支持导入 MCP JSON。
+- 支持测试 MCP 服务、触发授权和重置授权。
+- 支持查看 Skills 来源、启用状态、覆盖关系和详细内容。
+- Skills 支持网格 / 列表视图、搜索、复制和自适应分页。
+
+### 备份与恢复
+
+- 支持手动备份、定时备份、修改后备份。
+- 支持本地目录和 WebDAV 作为备份目标。
+- 备份内容覆盖主配置、Profile、面板设置、MCP 配置和快捷键。
+- 支持查看、删除和恢复备份记录。
+
+### 桌面体验
+
+- 支持中文 / 英文双语界面。
+- 支持外观模式、主题配色、字体大小、启动显示器策略等偏好设置。
+- 支持状态栏 / 托盘入口，可快速切换 Profile、语言和外观模式。
+- 支持全局快捷键和窗口快捷键录制、启停、重置与冲突提示。
+- 关于页支持检查 GitHub Release 更新，并根据 Homebrew / 手动安装 / 开发构建给出不同提示。
+
+## 配置文件说明
+
+### `config.toml`
+
+`kimi-code-cli` 主配置文件，保存当前生效的默认模型、Provider、Model 定义以及其他 CLI 配置。
+
+### `config.profiles.toml`
+
+保存所有可切换的 Profile，以及当前激活的 `active_profile`。
+
+### `config.panel.toml`
+
+保存 GUI 面板自身设置，例如语言、外观模式、主题配色、字体大小、配置路径、托盘开关、关闭行为、显示器打开策略、备份策略和快捷键。
+
+### `mcp.json`
+
+保存 MCP Server 定义，包括远程 `url` / `headers`，或本地 `command` / `args` / `env` 配置。
 
 ## 技术栈
 
@@ -58,21 +93,23 @@
 
 ```text
 .
-├── src/main                # Electron 主进程
-├── src/preload             # preload API
-├── src/renderer            # React 渲染进程
-├── src/shared              # 配置模型、序列化、预览与测试
+├── src/main                # Electron 主进程、窗口、托盘、IPC、备份和发布检查
+├── src/preload             # preload bridge，暴露安全 API 给渲染进程
+├── src/renderer            # React UI、样式、i18n、页面交互
+├── src/shared              # 配置模型、序列化、状态转换、校验和单元测试
 ├── resources               # 应用图标与托盘资源
-└── .github/workflows       # Release 工作流
+└── .github/workflows       # GitHub Release 工作流
 ```
 
 ## 环境要求
 
 - Node.js 22
 - npm 10+
-- macOS 或 Windows（开发阶段在 macOS 上打包 macOS 安装包，在 Windows 上打包 Windows 安装包）
+- macOS 或 Windows
 
-## 本地开发
+> macOS 安装包建议在 macOS 上构建，Windows 安装包建议在 Windows 上构建。
+
+## 本地运行
 
 安装依赖：
 
@@ -92,7 +129,7 @@ npm run dev:electron
 npm run dev
 ```
 
-## 测试
+## 测试与构建
 
 运行单元测试并生成覆盖率：
 
@@ -106,29 +143,22 @@ npm test
 npm run test:watch
 ```
 
-## 打包
-
 构建应用：
 
 ```bash
 npm run build
 ```
 
-构建全部发行产物：
+生成发行产物：
 
 ```bash
 npm run dist
 ```
 
-仅构建 macOS：
+按平台构建：
 
 ```bash
 npm run dist:mac
-```
-
-仅构建 Windows：
-
-```bash
 npm run dist:win
 ```
 
@@ -136,66 +166,21 @@ npm run dist:win
 
 ## 发布流程
 
-仓库内置了 [`.github/workflows/release.yml`](.github/workflows/release.yml)。
+仓库内置 [`.github/workflows/release.yml`](.github/workflows/release.yml)。
 
-推送形如 `v1.0.0` 的 tag 后，工作流会执行：
+推送形如 `v1.0.0` 的 tag 后，工作流会：
 
-1. 在 Ubuntu 上安装依赖并运行测试
-2. 创建或复用同名 GitHub Release
-3. 在 macOS runner 上构建 `dmg` / `zip`
-4. 在 Windows runner 上构建 `nsis` / `portable`
-5. 生成 SHA256 校验文件
-6. 上传 workflow artifact
-7. 将安装包和校验文件发布到 GitHub Release
+1. 安装依赖并运行测试。
+2. 创建或复用同名 GitHub Release。
+3. 在 macOS runner 上构建 `dmg` / `zip`。
+4. 在 Windows runner 上构建 `nsis` / `portable`。
+5. 生成 SHA256 校验文件。
+6. 上传 workflow artifact。
+7. 将安装包和校验文件发布到 GitHub Release。
 
-## 配置文件说明
+## 参与开发
 
-### `config.toml`
-
-主配置文件，保存当前生效的默认模型、Provider、Model 定义以及其他 CLI 配置。
-
-### `config.profiles.toml`
-
-保存所有可切换的 Profile，以及当前激活的 `active_profile`。
-
-### `config.panel.toml`
-
-保存 GUI 面板本身的设置，包括：
-
-- 配置路径
-- Profile 路径
-- MCP 配置路径
-- 语言
-- 主题
-- 托盘开关
-- 关闭行为
-- 窗口打开显示器策略
-- 备份策略与备份目标
-- 快捷键设置
-
-### `mcp.json`
-
-保存 MCP Server 定义，包括远程 `url` / `headers`，或本地 `command` / `args` / `env` 配置。
-
-## 快捷键
-
-快捷键分为两类：
-
-- 全局快捷键：应用不在前台时也可触发，例如显示 / 隐藏主窗口、切换上一个或下一个 Profile。
-- 窗口快捷键：应用窗口聚焦时触发，例如重新加载配置、保存全部、切换总览 / Profiles / Providers / Models / MCP / Skills / 设置页。
-
-快捷键配置会写入 `config.panel.toml`，备份时也会额外生成 `shortcuts.json`，方便恢复时核对。
-
-## 更新检查
-
-关于页可以检查 GitHub Release 最新版本：
-
-- Homebrew 安装时，提供 `brew upgrade --cask kimi-code-switch-gui` 更新命令。
-- 手动安装时，提供 GitHub Release 下载入口。
-- 开发构建时，仅提示当前运行环境和最新版本信息。
-- 如果 GitHub API 被限流，会提示前往 Release 页面手动查看。
-
-检查到新版本后，关于页版本号会显示更新标识，直到应用升级到新版本。
+如果你希望修复问题、补充功能或改进文档，请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 当前版本
 
