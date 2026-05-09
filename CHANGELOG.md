@@ -4,6 +4,13 @@
 
 格式参考 Keep a Changelog，当前项目采用 `major.minor.patch` 版本号方案。
 
+## [1.1.3] - 2026-05-09
+
+### 修复
+
+- 修复正式打包环境下 preload 初始化主题时 `documentElement` 可能为空导致 preload 崩溃的问题。
+- 修复由 preload 崩溃引发的 `Electron preload API is unavailable` 启动失败提示。
+
 ## [1.1.2] - 2026-05-09
 
 ### 新增

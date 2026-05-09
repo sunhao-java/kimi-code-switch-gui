@@ -25,7 +25,7 @@ interface UpdateCheckResult {
 }
 
 const ABOUT_INFO = {
-  version: "1.1.2",
+  version: "1.1.3",
   author: "Hulk Sun",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",
@@ -389,6 +389,13 @@ export function AboutPage(props: {
     },
   ];
   const history = [
+    {
+      version: "v1.1.3",
+      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.3`,
+      text: isZh
+        ? "修复正式打包环境下 preload 初始化主题时 documentElement 为空导致 API 注入失败的问题，解决启动后提示 Electron preload API 不可用的严重回归。"
+        : "Fixed a packaged preload crash caused by a missing documentElement during initial theme setup, resolving the Electron preload API unavailable startup regression.",
+    },
     {
       version: "v1.1.2",
       url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.2`,

@@ -43,7 +43,7 @@ function readInitialAppearanceTheme(): InitialAppearanceTheme {
 
 function applyInitialRendererTheme(): void {
   const preloadDocument = (globalThis as { document?: PreloadDocument }).document;
-  if (!preloadDocument) {
+  if (!preloadDocument?.documentElement) {
     return;
   }
   preloadDocument.documentElement.dataset.theme = readInitialRendererTheme();
