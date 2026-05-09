@@ -14,8 +14,9 @@ import {
   cloneState,
   createDefaultPanelSettings,
   DEFAULT_CONFIG_PATH,
+  DEFAULT_PANEL_SETTINGS_PATH,
+  LEGACY_PANEL_SETTINGS_PATH,
   normalizeStatePaths,
-  PANEL_SETTINGS_FILENAME,
   loadAppState,
   loadPanelSettings,
   saveAppState,
@@ -71,7 +72,6 @@ const WINDOW_WIDTH = 1500;
 const WINDOW_HEIGHT = 980;
 const WINDOW_SHOW_TIMEOUT_MS = 1500;
 const DISPLAY_REMEMBER_DELAY_MS = 400;
-const DEFAULT_PANEL_SETTINGS_PATH = DEFAULT_CONFIG_PATH.replace("config.toml", PANEL_SETTINGS_FILENAME);
 const CHANGE_BACKUP_DELAY_MS = 4000;
 
 const ENCRYPTED_PASSWORD_PREFIX = "__enc__";
@@ -778,6 +778,19 @@ async function loadWindowPanelSettings(): Promise<PanelSettings> {
   return loadPanelSettings(fileAccess, DEFAULT_PANEL_SETTINGS_PATH);
 }
 
+async function migrateLegacyPanelSettingsFile(): Promise<void> {
+  const existingPanelSettings = await fileAccess.readText(DEFAULT_PANEL_SETTINGS_PATH);
+  if (existingPanelSettings?.trim()) {
+    return;
+  }
+  const legacyPanelSettings = await fileAccess.readText(LEGACY_PANEL_SETTINGS_PATH);
+  if (!legacyPanelSettings?.trim()) {
+    return;
+  }
+  await fileAccess.ensureDir(dirname(DEFAULT_PANEL_SETTINGS_PATH));
+  await fileAccess.writeText(DEFAULT_PANEL_SETTINGS_PATH, legacyPanelSettings);
+}
+
 function resolveRendererTheme(theme: AppearanceMode): "dark" | "light" {
   if (theme === "auto") {
     return nativeTheme.shouldUseDarkColors ? "dark" : "light";
@@ -922,8 +935,9 @@ async function createWindow(): Promise<void> {
   }, WINDOW_SHOW_TIMEOUT_MS);
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   electronApp.setAppUserModelId("cn.crazycoder.kimi-code-switch-gui");
+  await migrateLegacyPanelSettingsFile();
 
   ipcMain.handle("app:load-state", async (_, paths) => {
     const state = await loadAppState(fileAccess, paths);

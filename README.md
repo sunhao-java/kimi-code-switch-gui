@@ -30,7 +30,7 @@
 - 自动生成并维护：
   - `~/.kimi/config.toml`
   - `~/.kimi/config.profiles.toml`
-  - `~/.kimi/config.panel.toml`
+  - `~/.kimi/.panel/config.panel.toml`
   - `~/.kimi/mcp.json`
 
 ### 安全写入与可观测性
@@ -74,7 +74,7 @@
 
 ### `config.panel.toml`
 
-保存 GUI 面板自身设置，例如语言、外观模式、主题配色、字体大小、配置路径、托盘开关、关闭行为、显示器打开策略、备份策略和快捷键。
+保存 GUI 面板自身设置，默认位于 `~/.kimi/.panel/config.panel.toml`，例如语言、外观模式、主题配色、字体大小、托盘开关、关闭行为、显示器打开策略、备份策略和快捷键。
 
 ### `mcp.json`
 

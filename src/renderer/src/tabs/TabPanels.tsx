@@ -822,21 +822,36 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             {activeSettingsSubTab === "general" ? (
               <div className="settings-tab-panel">
                 <SettingsGroup title={t(locale, "settingsGroupAppearance")}>
-                  <SelectField
-                    label={t(locale, "locale")}
-                    value={state.panelSettings.locale}
-                    onChange={(value) =>
-                      updateImmediateState((draft) => {
-                        draft.panelSettings.locale = value as Locale;
-                      })
-                    }
-                    options={LOCALE_OPTIONS.map((option) => ({
-                      value: option.value,
-                      label: option.longLabel,
-                      badge: option.shortLabel,
-                      badgeClassName: "flag",
-                    }))}
-                  />
+                  <div className="settings-inline-fields">
+                    <SelectField
+                      label={t(locale, "locale")}
+                      value={state.panelSettings.locale}
+                      onChange={(value) =>
+                        updateImmediateState((draft) => {
+                          draft.panelSettings.locale = value as Locale;
+                        })
+                      }
+                      options={LOCALE_OPTIONS.map((option) => ({
+                        value: option.value,
+                        label: option.longLabel,
+                        badge: option.shortLabel,
+                        badgeClassName: "flag",
+                      }))}
+                    />
+                    <SelectField
+                      label={t(locale, "displayOpenMode")}
+                      value={state.panelSettings.display_open_mode}
+                      onChange={(value) =>
+                        updateImmediateState((draft) => {
+                          draft.panelSettings.display_open_mode = value as DisplayOpenMode;
+                        })
+                      }
+                      options={DISPLAY_OPEN_OPTIONS.map((option) => ({
+                        value: option.value,
+                        label: option.label[locale],
+                      }))}
+                    />
+                  </div>
                   <div className="settings-inline-fields">
                     <SelectField
                       label={t(locale, "theme")}
@@ -880,19 +895,6 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       })
                     }
                   />
-                  <SelectField
-                    label={t(locale, "displayOpenMode")}
-                    value={state.panelSettings.display_open_mode}
-                    onChange={(value) =>
-                      updateImmediateState((draft) => {
-                        draft.panelSettings.display_open_mode = value as DisplayOpenMode;
-                      })
-                    }
-                    options={DISPLAY_OPEN_OPTIONS.map((option) => ({
-                      value: option.value,
-                      label: option.label[locale],
-                    }))}
-                  />
                 </SettingsGroup>
                 <SettingsGroup title={t(locale, "settingsGroupBehavior")}>
                   <label className="toggle-row">
@@ -924,55 +926,31 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       }))}
                     />
                   ) : null}
-                  <label className="toggle-row">
-                    <span>{t(locale, "followConfigProfiles")}</span>
-                    <input
-                      type="checkbox"
-                      checked={state.panelSettings.follow_config_profiles}
-                      onChange={(event) =>
-                        updateImmediateState((draft) => {
-                          draft.panelSettings.follow_config_profiles = event.target.checked;
-                        })
-                      }
-                    />
-                  </label>
                 </SettingsGroup>
                 <SettingsGroup title={t(locale, "settingsGroupPaths")}>
                   <PathField
                     locale={locale}
                     label={t(locale, "configPath")}
                     value={state.configPath}
+                    readOnly
                     onView={() => openDocumentViewer("config")}
-                    onChange={(value) =>
-                      updateImmediateState((draft) => {
-                        draft.configPath = value;
-                        draft.panelSettings.config_path = value;
-                      })
-                    }
+                    onChange={() => {}}
                   />
                   <PathField
                     locale={locale}
                     label={t(locale, "profilesPath")}
                     value={state.profilesPath}
+                    readOnly
                     onView={() => openDocumentViewer("profiles")}
-                    onChange={(value) =>
-                      updateImmediateState((draft) => {
-                        draft.profilesPath = value;
-                        draft.panelSettings.profiles_path = value;
-                        draft.panelSettings.follow_config_profiles = false;
-                      })
-                    }
+                    onChange={() => {}}
                   />
                   <PathField
                     locale={locale}
                     label={t(locale, "panelSettingsPath")}
                     value={state.panelSettingsPath}
+                    readOnly
                     onView={() => openDocumentViewer("panel")}
-                    onChange={(value) =>
-                      updateImmediateState((draft) => {
-                        draft.panelSettingsPath = value;
-                      })
-                    }
+                    onChange={() => {}}
                   />
                   <PathField
                     locale={locale}

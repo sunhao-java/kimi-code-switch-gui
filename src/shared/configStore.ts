@@ -21,6 +21,9 @@ export const PANEL_SETTINGS_FILENAME = "config.panel.toml";
 export const BACKUP_DIRECTORY_NAME = "backups";
 export const DEFAULT_PROFILE_NAME = "default";
 export const DEFAULT_CONFIG_PATH = "~/.kimi/config.toml";
+export const DEFAULT_PANEL_DIRECTORY = "~/.kimi/.panel";
+export const DEFAULT_PANEL_SETTINGS_PATH = `${DEFAULT_PANEL_DIRECTORY}/${PANEL_SETTINGS_FILENAME}`;
+export const LEGACY_PANEL_SETTINGS_PATH = "~/.kimi/config.panel.toml";
 
 const PROFILE_KEYS: Array<keyof Profile> = [
   "default_model",
@@ -52,7 +55,7 @@ export interface FileAccess {
 
 export function createDefaultPanelSettings(
   configPath = DEFAULT_CONFIG_PATH,
-  _settingsPath = DEFAULT_CONFIG_PATH.replace("config.toml", PANEL_SETTINGS_FILENAME),
+  _settingsPath = DEFAULT_PANEL_SETTINGS_PATH,
 ): PanelSettings {
   return {
     version: PANEL_SETTINGS_VERSION,
@@ -70,7 +73,7 @@ export function createDefaultPanelSettings(
     backup_frequency: "daily",
     backup_retention_count: 10,
     backup_destination_type: "local",
-    backup_local_path: defaultBackupPath(configPath),
+    backup_local_path: defaultBackupPath(),
     backup_webdav_url: "",
     backup_webdav_username: "",
     backup_webdav_password: "",
@@ -93,19 +96,22 @@ export async function loadAppState(
     mcpConfigPath?: string;
   },
 ): Promise<AppState> {
-  const panelSettingsPath =
-    paths?.panelSettingsPath ?? DEFAULT_CONFIG_PATH.replace("config.toml", PANEL_SETTINGS_FILENAME);
+  const panelSettingsPath = paths?.panelSettingsPath ?? DEFAULT_PANEL_SETTINGS_PATH;
   const mcpConfigPath = sanitizePath(paths?.mcpConfigPath, DEFAULT_MCP_CONFIG_PATH);
-  const panelSettings = await loadPanelSettings(files, panelSettingsPath);
-  const configPath = sanitizePath(paths?.configPath ?? panelSettings.config_path, DEFAULT_CONFIG_PATH);
+  const panelSettingsResult = await loadPanelSettingsWithLegacyFallback(files, panelSettingsPath);
+  const panelSettings = panelSettingsResult.settings;
+  if (panelSettingsResult.migratedFromLegacy) {
+    await files.ensureDir(dirnamePath(DEFAULT_PANEL_SETTINGS_PATH));
+    await files.writeText(DEFAULT_PANEL_SETTINGS_PATH, buildPanelSettingsDocument(panelSettings));
+  }
+  const configPath = sanitizePath(paths?.configPath, DEFAULT_CONFIG_PATH);
   const profilesPath = resolveProfilesPath({
     explicitProfilesPath: paths?.profilesPath,
     configPath,
-    panelSettings,
   });
   const resolvedPanelSettingsPath = sanitizePath(
     panelSettingsPath,
-    defaultPanelSettingsPath(configPath),
+    DEFAULT_PANEL_SETTINGS_PATH,
   );
   const mainConfig = normalizeMainConfig(await loadTomlFile(files, configPath, "main config"));
   const fileMcpConfig = await loadMcpConfig(files, mcpConfigPath);
@@ -130,7 +136,8 @@ export async function loadAppState(
     panelSettings: {
       ...panelSettings,
       config_path: configPath,
-      profiles_path: panelSettings.follow_config_profiles ? "" : profilesPath,
+      profiles_path: "",
+      follow_config_profiles: true,
       mcp_servers: cloneMcpServers(mcpConfig.mcpServers),
     },
     mcpConfig,
@@ -146,6 +153,50 @@ export async function loadPanelSettings(
   return panelSettingsFromUnknown(data, fallback);
 }
 
+async function loadPanelSettingsWithLegacyFallback(
+  files: FileAccess,
+  panelSettingsPath: string,
+): Promise<{ settings: PanelSettings; migratedFromLegacy: boolean }> {
+  if (panelSettingsPath !== DEFAULT_PANEL_SETTINGS_PATH) {
+    return {
+      settings: await loadPanelSettings(files, panelSettingsPath),
+      migratedFromLegacy: false,
+    };
+  }
+
+  let primaryDocument: string | null;
+  try {
+    primaryDocument = await files.readText(panelSettingsPath);
+  } catch (error) {
+    throw new Error(`Failed to read panel settings at ${panelSettingsPath}: ${formatErrorMessage(error)}`);
+  }
+  if (primaryDocument?.trim()) {
+    try {
+      return {
+        settings: panelSettingsFromUnknown(
+          parseDocument(primaryDocument),
+          createDefaultPanelSettings(DEFAULT_CONFIG_PATH, panelSettingsPath),
+        ),
+        migratedFromLegacy: false,
+      };
+    } catch (error) {
+      throw new Error(`Invalid panel settings TOML at ${panelSettingsPath}: ${formatErrorMessage(error)}`);
+    }
+  }
+
+  const legacyData = await loadTomlFile(files, LEGACY_PANEL_SETTINGS_PATH, "legacy panel settings");
+  if (!Object.keys(legacyData).length) {
+    return {
+      settings: createDefaultPanelSettings(DEFAULT_CONFIG_PATH, panelSettingsPath),
+      migratedFromLegacy: false,
+    };
+  }
+  return {
+    settings: panelSettingsFromUnknown(legacyData, createDefaultPanelSettings(DEFAULT_CONFIG_PATH, panelSettingsPath)),
+    migratedFromLegacy: true,
+  };
+}
+
 export function parsePanelSettingsDocument(document: string, fallback = createDefaultPanelSettings()): PanelSettings {
   return panelSettingsFromUnknown(parseDocument(document), fallback);
 }
@@ -156,7 +207,7 @@ function panelSettingsFromUnknown(data: Record<string, unknown>, fallback: Panel
     typeof data.config_path === "string" && data.config_path.trim()
       ? data.config_path
       : fallback.config_path;
-  const backupLocalPathFallback = defaultBackupPath(configPath);
+  const backupLocalPathFallback = defaultBackupPath();
   const backupStrategy = (() => {
     if (
       data.backup_strategy === "manual" ||
@@ -631,34 +682,23 @@ function defaultProfilesPath(configPath: string): string {
   return joinPath(dirnamePath(configPath), PROFILE_FILENAME);
 }
 
-function defaultPanelSettingsPath(configPath: string): string {
-  return joinPath(dirnamePath(configPath), PANEL_SETTINGS_FILENAME);
-}
-
-function defaultBackupPath(configPath: string): string {
-  return joinPath(dirnamePath(configPath), BACKUP_DIRECTORY_NAME);
+function defaultBackupPath(): string {
+  return joinPath(DEFAULT_PANEL_DIRECTORY, BACKUP_DIRECTORY_NAME);
 }
 
 function resolveProfilesPath(options: {
   explicitProfilesPath?: string;
   configPath: string;
-  panelSettings: PanelSettings;
 }): string {
   if (options.explicitProfilesPath?.trim()) {
     return options.explicitProfilesPath.trim();
   }
-  if (options.panelSettings.follow_config_profiles) {
-    return defaultProfilesPath(options.configPath);
-  }
-  return sanitizePath(options.panelSettings.profiles_path, defaultProfilesPath(options.configPath));
+  return defaultProfilesPath(options.configPath);
 }
 
 export function normalizeStatePaths(state: AppState): AppState {
   const configPath = sanitizePath(state.configPath, DEFAULT_CONFIG_PATH);
-  const panelSettingsPath = sanitizePath(
-    state.panelSettingsPath,
-    defaultPanelSettingsPath(configPath),
-  );
+  const panelSettingsPath = sanitizePath(state.panelSettingsPath, DEFAULT_PANEL_SETTINGS_PATH);
   const mcpConfigPath = sanitizePath(state.mcpConfigPath, DEFAULT_MCP_CONFIG_PATH);
   const panelSettings: PanelSettings = {
     ...state.panelSettings,
@@ -674,7 +714,7 @@ export function normalizeStatePaths(state: AppState): AppState {
     backup_frequency: parseBackupFrequency(state.panelSettings.backup_frequency, "daily"),
     backup_retention_count: parseBackupRetentionCount(state.panelSettings.backup_retention_count, 10),
     backup_destination_type: parseBackupDestinationType(state.panelSettings.backup_destination_type, "local"),
-    backup_local_path: sanitizePath(state.panelSettings.backup_local_path, defaultBackupPath(configPath)),
+    backup_local_path: sanitizePath(state.panelSettings.backup_local_path, defaultBackupPath()),
     backup_webdav_url: asString(state.panelSettings.backup_webdav_url, "").trim(),
     backup_webdav_username: asString(state.panelSettings.backup_webdav_username, ""),
     backup_webdav_password: asString(state.panelSettings.backup_webdav_password, ""),
@@ -682,13 +722,11 @@ export function normalizeStatePaths(state: AppState): AppState {
     shortcuts: normalizeShortcuts(state.panelSettings.shortcuts),
     last_display_id: state.panelSettings.last_display_id,
     mcp_servers: cloneMcpServers(state.mcpConfig.mcpServers),
-    profiles_path: state.panelSettings.follow_config_profiles
-      ? ""
-      : sanitizePath(state.panelSettings.profiles_path, defaultProfilesPath(configPath)),
+    profiles_path: "",
+    follow_config_profiles: true,
   };
   const profilesPath = resolveProfilesPath({
     configPath,
-    panelSettings,
     explicitProfilesPath: state.profilesPath,
   });
   return {
@@ -700,7 +738,7 @@ export function normalizeStatePaths(state: AppState): AppState {
     panelSettings: {
       ...panelSettings,
       mcp_servers: cloneMcpServers(state.mcpConfig.mcpServers),
-      profiles_path: panelSettings.follow_config_profiles ? "" : profilesPath,
+      profiles_path: "",
     },
   };
 }

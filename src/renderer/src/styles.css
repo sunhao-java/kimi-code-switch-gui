@@ -2021,7 +2021,8 @@ textarea {
   top: calc(var(--titlebar-height) + 18px);
   left: 50%;
   z-index: 130;
-  width: min(920px, calc(100vw - 80px));
+  width: fit-content;
+  max-width: min(720px, calc(100vw - 80px));
   transform: translateX(-50%);
   pointer-events: none;
 }
@@ -2030,6 +2031,8 @@ textarea {
   display: flex;
   align-items: flex-start;
   gap: 12px;
+  width: fit-content;
+  max-width: 100%;
   padding: 13px 14px 13px 18px;
   border-radius: 16px;
   border: 1px solid var(--line);
@@ -2041,6 +2044,7 @@ textarea {
 .app-tip-message {
   flex: 1 1 auto;
   min-width: 0;
+  max-width: 62ch;
   word-break: break-word;
 }
 

@@ -566,7 +566,7 @@ export function createFallbackState(): AppState {
     backup_frequency: "daily" as BackupFrequency,
     backup_retention_count: 10,
     backup_destination_type: "local" as BackupDestinationType,
-    backup_local_path: "~/.kimi/backups",
+    backup_local_path: "~/.kimi/.panel/backups",
     backup_webdav_url: "",
     backup_webdav_username: "",
     backup_webdav_password: "",
@@ -578,7 +578,7 @@ export function createFallbackState(): AppState {
   return {
     configPath: panelSettings.config_path,
     profilesPath: "~/.kimi/config.profiles.toml",
-    panelSettingsPath: "~/.kimi/config.panel.toml",
+    panelSettingsPath: "~/.kimi/.panel/config.panel.toml",
     mcpConfigPath: "~/.kimi/mcp.json",
     mainConfig: {
       default_model: "",

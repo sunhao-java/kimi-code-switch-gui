@@ -283,7 +283,7 @@ describe("configStore", () => {
     expect(loaded.config_path).toBe("/tmp/custom.toml");
     expect(loaded.display_open_mode).toBe("active-display");
     expect(loaded.close_behavior).toBe("keep-in-tray");
-    expect(loaded.backup_local_path).toBe("/tmp/backups");
+    expect(loaded.backup_local_path).toBe("~/.kimi/.panel/backups");
     expect(loaded.backup_frequency).toBe("daily");
     expect(loaded.backup_retention_count).toBe(10);
     expect(loaded.backup_strategy).toBe("manual");
@@ -302,7 +302,7 @@ describe("configStore", () => {
     const loaded = await loadPanelSettings(files, "/tmp/config.panel.toml");
 
     expect(loaded.ui_font_size).toBe("standard");
-    expect(loaded.backup_local_path).toBe("/tmp/backups");
+    expect(loaded.backup_local_path).toBe("~/.kimi/.panel/backups");
     expect(loaded.backup_frequency).toBe("daily");
     expect(loaded.backup_retention_count).toBe(1);
     expect(loaded.backup_strategy).toBe("scheduled");
@@ -422,7 +422,7 @@ url = "https://mcp.context7.com/mcp"
     expect(files.store["/tmp/config.toml"]).toContain("default_model");
     expect(files.store["/tmp/config.profiles.toml"]).toContain("active_profile");
     expect(files.store["/tmp/config.panel.toml"]).toContain("follow_config_profiles");
-    expect(files.store["/tmp/config.panel.toml"]).toContain('backup_local_path = "/tmp/backups"');
+    expect(files.store["/tmp/config.panel.toml"]).toContain('backup_local_path = "~/.kimi/.panel/backups"');
     expect(files.store["/tmp/config.panel.toml"]).toContain('backup_destination_type = "local"');
     expect(files.store["/tmp/config.panel.toml"]).toContain('backup_strategy = "manual"');
     expect(files.store["/tmp/mcp.json"]).toContain("\"mcpServers\"");
@@ -449,6 +449,22 @@ url = "https://mcp.context7.com/mcp"
     });
 
     expect(loaded.profiles.default).toBeDefined();
+  });
+
+  it("migrates legacy panel settings when the new panel settings file is absent", async () => {
+    const files = createMemoryFs({
+      "~/.kimi/config.toml": 'default_model = "kimi/k2"\n',
+      "~/.kimi/config.profiles.toml": 'version = 1\nactive_profile = "default"\n',
+      "~/.kimi/config.panel.toml": 'locale = "en-US"\ntheme = "dark"\n',
+    });
+
+    const loaded = await loadAppState(files);
+
+    expect(loaded.panelSettingsPath).toBe("~/.kimi/.panel/config.panel.toml");
+    expect(loaded.panelSettings.locale).toBe("en-US");
+    expect(loaded.panelSettings.theme).toBe("dark");
+    expect(files.ensured).toContain("~/.kimi/.panel");
+    expect(files.store["~/.kimi/.panel/config.panel.toml"]).toContain('locale = "en-US"');
   });
 
   it("throws when panel settings file read fails for reasons other than missing content", async () => {
@@ -528,7 +544,7 @@ url = "https://mcp.context7.com/mcp"
     const normalized = normalizeStatePaths(state);
 
     expect(normalized.profilesPath).toBe("/tmp/config.profiles.toml");
-    expect(normalized.panelSettingsPath).toBe("/tmp/config.panel.toml");
+    expect(normalized.panelSettingsPath).toBe("~/.kimi/.panel/config.panel.toml");
     expect(normalized.mcpConfigPath).toBe("/tmp/mcp.json");
   });
 
