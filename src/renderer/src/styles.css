@@ -1404,6 +1404,52 @@ textarea {
     rgba(255, 255, 255, 0.68);
 }
 
+.summary-active-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.summary-active-copy {
+  min-width: 0;
+}
+
+.summary-terminal-button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  border: 1px solid rgba(var(--primary-rgb), 0.22);
+  border-radius: 12px;
+  background:
+    linear-gradient(135deg, rgba(var(--primary-rgb), 0.14), rgba(var(--primary-2-rgb), 0.12)),
+    rgba(255, 255, 255, 0.04);
+  color: var(--primary);
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease,
+    transform 180ms ease;
+}
+
+.summary-terminal-button:hover,
+.summary-terminal-button:focus-visible {
+  border-color: rgba(var(--primary-rgb), 0.38);
+  background: rgba(var(--primary-rgb), 0.14);
+  color: var(--text);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.summary-terminal-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
+}
+
 .toolbar {
   display: flex;
   align-items: center;
@@ -2870,6 +2916,7 @@ textarea {
 .list-activate-button,
 .list-copy-button,
 .list-toggle-button,
+.list-terminal-button,
 .list-delete-button {
   display: inline-grid;
   place-items: center;
@@ -2899,6 +2946,7 @@ textarea {
 .list-activate-button,
 .list-copy-button,
 .list-toggle-button,
+.list-terminal-button,
 .list-delete-button {
   cursor: pointer;
   opacity: 0;
@@ -2923,6 +2971,16 @@ textarea {
   padding: 0;
 }
 
+.list-terminal-button {
+  width: 34px;
+  min-width: 34px;
+  padding: 0;
+  background:
+    linear-gradient(135deg, rgba(var(--primary-rgb), 0.14), rgba(var(--primary-2-rgb), 0.14)),
+    rgba(255, 255, 255, 0.03);
+  color: var(--primary);
+}
+
 .list-toggle-button.disabled {
   color: rgba(255, 196, 91, 0.92);
 }
@@ -2938,6 +2996,8 @@ textarea {
 .list-row:focus-within .list-copy-button,
 .list-row:hover .list-toggle-button,
 .list-row:focus-within .list-toggle-button,
+.list-row:hover .list-terminal-button,
+.list-row:focus-within .list-terminal-button,
 .list-row:hover .list-delete-button,
 .list-row:focus-within .list-delete-button,
 .list-row:hover .list-activate-button,
@@ -2952,6 +3012,8 @@ textarea {
 .list-copy-button:focus-visible,
 .list-toggle-button:hover,
 .list-toggle-button:focus-visible,
+.list-terminal-button:hover,
+.list-terminal-button:focus-visible,
 .list-delete-button:hover,
 .list-delete-button:focus-visible {
   border-color: var(--line);

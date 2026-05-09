@@ -12,6 +12,7 @@ export type AppearanceTheme = "aurora" | "ocean" | "violet" | "sunset";
 export type UiFontSize = "mini" | "compact" | "small" | "standard" | "large" | "extra-large";
 export type DisplayOpenMode = "random" | "remember-last" | "active-display";
 export type CloseBehavior = "quit" | "keep-in-tray";
+export type TerminalApp = "system-terminal" | "iterm2";
 export type TrayCommand = "reload";
 export type McpTransport = "sse" | "stdio" | "streamable-http";
 export type BackupFrequency = "hourly" | "daily" | "weekly";
@@ -111,6 +112,7 @@ export interface PanelSettings {
   tray_icon: boolean;
   display_open_mode: DisplayOpenMode;
   close_behavior: CloseBehavior;
+  terminal_app: TerminalApp;
   backup_strategy: BackupStrategy;
   backup_frequency: BackupFrequency;
   backup_retention_count: number;
@@ -135,6 +137,12 @@ export interface AppState {
   activeProfile: string;
   panelSettings: PanelSettings;
   mcpConfig: McpConfig;
+}
+
+export interface OpenKimiTerminalRequest {
+  settings: PanelSettings;
+  state?: AppState;
+  profileName?: string;
 }
 
 export interface PreviewBundle {

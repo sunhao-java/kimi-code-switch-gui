@@ -69,6 +69,7 @@ export function createDefaultPanelSettings(
     tray_icon: false,
     display_open_mode: "remember-last",
     close_behavior: "quit",
+    terminal_app: "system-terminal",
     backup_strategy: "manual",
     backup_frequency: "daily",
     backup_retention_count: 10,
@@ -240,6 +241,7 @@ function panelSettingsFromUnknown(data: Record<string, unknown>, fallback: Panel
     tray_icon: trayIcon,
     display_open_mode: parseDisplayOpenMode(data.display_open_mode, fallback.display_open_mode),
     close_behavior: trayIcon ? parseCloseBehavior(data.close_behavior, "keep-in-tray") : "quit",
+    terminal_app: parseTerminalApp(data.terminal_app, fallback.terminal_app),
     backup_strategy: backupStrategy,
     backup_frequency: parseBackupFrequency(data.backup_frequency, fallback.backup_frequency),
     backup_retention_count: parseBackupRetentionCount(data.backup_retention_count, fallback.backup_retention_count),
@@ -643,6 +645,13 @@ function parseCloseBehavior(
   return value === "quit" || value === "keep-in-tray" ? value : fallback;
 }
 
+function parseTerminalApp(
+  value: unknown,
+  fallback: PanelSettings["terminal_app"],
+): PanelSettings["terminal_app"] {
+  return value === "system-terminal" || value === "iterm2" ? value : fallback;
+}
+
 function parseBackupFrequency(
   value: unknown,
   fallback: PanelSettings["backup_frequency"],
@@ -710,6 +719,7 @@ export function normalizeStatePaths(state: AppState): AppState {
     close_behavior: state.panelSettings.tray_icon
       ? parseCloseBehavior(state.panelSettings.close_behavior, "keep-in-tray")
       : "quit",
+    terminal_app: parseTerminalApp(state.panelSettings.terminal_app, "system-terminal"),
     backup_strategy: parseBackupStrategy(state.panelSettings.backup_strategy, "manual"),
     backup_frequency: parseBackupFrequency(state.panelSettings.backup_frequency, "daily"),
     backup_retention_count: parseBackupRetentionCount(state.panelSettings.backup_retention_count, 10),

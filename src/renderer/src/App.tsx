@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronsLeft, ChevronsRight, X } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, Terminal, X } from "lucide-react";
 
 import type { McpServerConfig, ShortcutAction, ShortcutBinding } from "@shared/types";
 import { parseMcpConfigStrict } from "@shared/mcpStore";
@@ -66,7 +66,7 @@ export function App(): JSX.Element {
     confirmDeleteResource,
     closeMcpImportDialog, requestCloseMcpImportDialog,
     refreshSkills, openDocumentViewer,
-    runManualBackup, runWebDavTest,
+    runManualBackup, runWebDavTest, openKimiInTerminal,
     runDoctor,
     openBackupRecords, deleteBackupRecord, restoreBackupRecord,
   } = app;
@@ -242,7 +242,22 @@ export function App(): JSX.Element {
                 runAfterUnsavedHandled(() => setActiveTab("skills"));
               }}
             />
-            <SummaryCard label={t(locale, "summaryActive")} value={state.activeProfile || "-"} accent />
+            <div className="summary-card accent summary-active-card" title={state.activeProfile || undefined}>
+              <div className="summary-active-copy">
+                <span>{t(locale, "summaryActive")}</span>
+                <strong>{state.activeProfile || "-"}</strong>
+              </div>
+              <button
+                className="summary-terminal-button no-drag"
+                type="button"
+                aria-label={t(locale, "openActiveProfileInTerminal")}
+                title={t(locale, "openActiveProfileInTerminal")}
+                disabled={!state.activeProfile}
+                onClick={() => void openKimiInTerminal(state.activeProfile)}
+              >
+                <Terminal size={15} />
+              </button>
+            </div>
           </div>
           <div className="toolbar">
             <TopbarControls
@@ -334,6 +349,7 @@ export function App(): JSX.Element {
             openDocumentViewer={openDocumentViewer}
             runManualBackup={runManualBackup}
             runWebDavTest={runWebDavTest}
+            openKimiInTerminal={openKimiInTerminal}
             runDoctor={runDoctor}
             openBackupRecords={openBackupRecords}
             setActiveTab={setActiveTab}

@@ -283,6 +283,7 @@ describe("configStore", () => {
     expect(loaded.config_path).toBe("/tmp/custom.toml");
     expect(loaded.display_open_mode).toBe("active-display");
     expect(loaded.close_behavior).toBe("keep-in-tray");
+    expect(loaded.terminal_app).toBe("system-terminal");
     expect(loaded.backup_local_path).toBe("~/.kimi/.panel/backups");
     expect(loaded.backup_frequency).toBe("daily");
     expect(loaded.backup_retention_count).toBe(10);
@@ -306,6 +307,16 @@ describe("configStore", () => {
     expect(loaded.backup_frequency).toBe("daily");
     expect(loaded.backup_retention_count).toBe(1);
     expect(loaded.backup_strategy).toBe("scheduled");
+  });
+
+  it("falls back to system terminal for invalid terminal app values", async () => {
+    const files = createMemoryFs({
+      "/tmp/config.panel.toml": 'terminal_app = "warp"\n',
+    });
+
+    const loaded = await loadPanelSettings(files, "/tmp/config.panel.toml");
+
+    expect(loaded.terminal_app).toBe("system-terminal");
   });
 
   it("loads explicit webdav backup settings", async () => {

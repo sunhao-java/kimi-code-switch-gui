@@ -108,6 +108,7 @@ export interface AppContext {
   openDocumentViewer: (file: PreviewFileId) => void;
   runManualBackup: () => void;
   runWebDavTest: () => void;
+  openKimiInTerminal: (profileName?: string) => void;
   runDoctor: (state: AppState) => void;
   openBackupRecords: () => void;
   deleteBackupRecord: (record: BackupRecord) => void;

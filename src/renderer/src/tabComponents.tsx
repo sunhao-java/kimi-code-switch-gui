@@ -487,6 +487,14 @@ export function PathField(props: {
   fileType?: "toml" | "json";
   pickerProperties?: Array<"openFile" | "openDirectory" | "createDirectory">;
   onView?: () => void;
+  extraActions?: Array<{
+    key: string;
+    label: string;
+    icon: JSX.Element;
+    onClick: () => void;
+    disabled?: boolean;
+    className?: string;
+  }>;
   onChange: (value: string) => void;
 }): JSX.Element {
   const pickFile = async (): Promise<void> => {
@@ -521,6 +529,19 @@ export function PathField(props: {
           onChange={(event) => props.onChange(event.target.value)}
         />
         <div className="field-row-actions">
+          {props.extraActions?.map((action) => (
+            <button
+              key={action.key}
+              className={action.className ?? "action-button compact icon-only"}
+              type="button"
+              aria-label={action.label}
+              title={action.label}
+              disabled={action.disabled}
+              onClick={action.onClick}
+            >
+              {action.icon}
+            </button>
+          ))}
           {props.onView ? (
             <button
               className="action-button compact icon-only"
@@ -562,6 +583,7 @@ export function createFallbackState(): AppState {
     tray_icon: false,
     display_open_mode: "remember-last" as DisplayOpenMode,
     close_behavior: "quit" as CloseBehavior,
+    terminal_app: "system-terminal",
     backup_strategy: "manual" as BackupStrategy,
     backup_frequency: "daily" as BackupFrequency,
     backup_retention_count: 10,

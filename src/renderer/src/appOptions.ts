@@ -9,6 +9,7 @@ import type {
   Locale,
   McpTransport,
   PreviewBundle,
+  TerminalApp,
   UiFontSize,
 } from "@shared/types";
 import {
@@ -246,6 +247,20 @@ export const CLOSE_BEHAVIOR_OPTIONS: Array<{
   {
     value: "keep-in-tray",
     label: { "zh-CN": "隐藏到状态栏", "en-US": "Keep in Tray" },
+  },
+];
+
+export const TERMINAL_APP_OPTIONS: Array<{
+  value: TerminalApp;
+  label: Record<Locale, string>;
+}> = [
+  {
+    value: "system-terminal",
+    label: { "zh-CN": "系统终端", "en-US": "Terminal.app" },
+  },
+  {
+    value: "iterm2",
+    label: { "zh-CN": "iTerm2", "en-US": "iTerm2" },
   },
 ];
 

@@ -6,7 +6,7 @@ import { SkillsViewMode } from "./skillsWorkspace";
 import { TabId, PreviewFileId } from "./appOptions";
 import { getApi } from "./appHelpers";
 import { getAppDerivedData } from "./appDerivedData";
-import { t } from "./i18n";
+import { t, translateError } from "./i18n";
 import { createFallbackState, applyAppearanceMode, applyAppearanceTheme, applyUiFontSize } from "./tabComponents";
 import { useAppPersistence } from "./useAppPersistence";
 import { useBackupActions } from "./useBackupActions";
@@ -242,6 +242,35 @@ export function useAppHandlers() {
     })();
   }, [closeMcpImportDialog, locale, mcpImportDraft, mcpImportInitialDraft]);
 
+  const openKimiInTerminal = useCallback((profileName?: string): void => {
+    void (async () => {
+      const api = getApi();
+      if (!api) {
+        setNotice("");
+        setError(t(locale, "openInTerminalUnavailable"));
+        return;
+      }
+      if (!api.openKimiInTerminal) {
+        setNotice("");
+        setError(t(locale, "openInTerminalRuntimeOutdated"));
+        return;
+      }
+      try {
+        setError("");
+        setNotice("");
+        await api.openKimiInTerminal({
+          settings: state.panelSettings,
+          state,
+          profileName,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setNotice("");
+        setError(translateError(locale, message));
+      }
+    })();
+  }, [locale, setError, setNotice, state]);
+
   const {
     providerEntries,
     modelEntries,
@@ -393,6 +422,7 @@ export function useAppHandlers() {
     confirmDeleteResource,
     closeMcpImportDialog,
     requestCloseMcpImportDialog,
+    openKimiInTerminal,
     restoreSavedState,
     refreshPreview,
     refreshSkills,

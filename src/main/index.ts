@@ -26,11 +26,13 @@ import { buildConfigDoctorReport, buildManagedDocuments, buildRedactedPreviewBun
 import { buildMcpConfigDocument } from "@shared/mcpStore";
 import { scanSkills } from "@shared/skillsStore";
 import { normalizeShortcuts } from "@shared/shortcutStore";
+import type { OpenKimiTerminalRequest, PanelSettings } from "@shared/types";
 import { buildRestoreDryRun, restoreBackupSafely } from "./modules/backupRestore";
 import { getCliEnv, runKimiConnectivityTest, runKimiMcpCommand } from "./modules/cli";
 import { captureSnapshotForState, detectExternalChangeConflict, readManagedDocuments, resolveManagedPaths } from "./modules/fileSnapshots";
 import { fileAccess, resolveHome, skillFileAccess } from "./modules/fileAccess";
 import { registerGlobalShortcuts, unregisterGlobalShortcuts } from "./modules/shortcuts";
+import { openKimiInTerminal } from "./modules/terminal";
 import {
   buildWebDavUrl,
   deleteWebDavPath,
@@ -1061,6 +1063,10 @@ app.whenReady().then(async () => {
     }
     await shell.openExternal(url);
     return { ok: true };
+  });
+
+  ipcMain.handle("app:open-kimi-in-terminal", async (_, request: PanelSettings | OpenKimiTerminalRequest) => {
+    return openKimiInTerminal(request);
   });
 
   ipcMain.handle("backup:run", async (_, state?: AppState) => {

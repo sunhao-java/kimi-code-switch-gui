@@ -10,6 +10,7 @@ import type {
   FileSnapshotBundle,
   PanelSettings,
   PreviewBundle,
+  OpenKimiTerminalRequest,
   RestoreBackupResult,
   RestoreDryRunResult,
   SaveStateConflictResult,
@@ -86,6 +87,8 @@ const api = {
     ipcRenderer.invoke("dialog:pick-file", options),
   setTray: (enabled: boolean): Promise<{ ok: true }> => ipcRenderer.invoke("app:set-tray", enabled),
   openExternal: (url: string): Promise<{ ok: true }> => ipcRenderer.invoke("app:open-external", url),
+  openKimiInTerminal: (request: PanelSettings | OpenKimiTerminalRequest): Promise<{ ok: true }> =>
+    ipcRenderer.invoke("app:open-kimi-in-terminal", request),
   getInstallSource: (): Promise<"homebrew" | "manual" | "development"> => ipcRenderer.invoke("app:get-install-source"),
   runBackup: (state: AppState): Promise<BackupResult> => ipcRenderer.invoke("backup:run", state),
   listBackups: (state: AppState): Promise<BackupRecord[]> => ipcRenderer.invoke("backup:list", state),

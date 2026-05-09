@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bug, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Trash2 } from "lucide-react";
+import { Bug, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Terminal, Trash2 } from "lucide-react";
 import { applyProfile, cloneProfile, deleteModel, deleteProfile, deleteProvider, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
 import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
 import {
@@ -21,6 +21,7 @@ import type {
   ShortcutAction,
   ShortcutBinding,
   ConfigDoctorReport,
+  TerminalApp,
 } from "@shared/types";
 
 import { AboutPage } from "../aboutPage";
@@ -28,7 +29,7 @@ import { getApi, getMcpAction, getMcpActionNotice, getResourceLabel, createUniqu
 import {
   APPEARANCE_THEME_OPTIONS,
   BACKUP_DESTINATION_OPTIONS, BACKUP_FREQUENCY_OPTIONS, BACKUP_STRATEGY_OPTIONS,
-  CLOSE_BEHAVIOR_OPTIONS, DISPLAY_OPEN_OPTIONS, LOCALE_OPTIONS, THEME_OPTIONS, UI_FONT_SIZE_OPTIONS,
+  CLOSE_BEHAVIOR_OPTIONS, DISPLAY_OPEN_OPTIONS, LOCALE_OPTIONS, TERMINAL_APP_OPTIONS, THEME_OPTIONS, UI_FONT_SIZE_OPTIONS,
 } from "../appOptions";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { Field, FontSizeSliderField, SelectField, SettingsGroup, ShortcutRecorderField } from "../formControls";
@@ -117,6 +118,7 @@ type TabPanelsProps = Pick<
   | "setActiveTab"
   | "setError"
   | "setNotice"
+  | "openKimiInTerminal"
 > & {
   shortcuts: Record<ShortcutAction, ShortcutBinding>;
 };
@@ -197,6 +199,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     setActiveTab,
     setError,
     setNotice,
+    openKimiInTerminal,
     shortcuts,
   } = props;
   const shortcutConflicts = getShortcutConflicts(shortcuts);
@@ -469,25 +472,41 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               }, { persist: false })
             }
             renderItemAction={(name) =>
-              name === state.activeProfile ? (
-                <span className="list-current-badge" aria-label={t(locale, "summaryActive")} title={t(locale, "summaryActive")}>
-                  {locale === "zh-CN" ? "已激活" : "Active"}
-                </span>
-              ) : (
-                <button
-                  className="list-activate-button"
-                  type="button"
-                  aria-label={`${t(locale, "activate")} ${name}`}
-                  title={t(locale, "activate")}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    updateState((draft) => {
-                      applyProfile(draft, name);
-                    });
-                  }}
-                >
-                  {t(locale, "activate")}
-                </button>
+              (
+                <>
+                  <button
+                    className="list-terminal-button"
+                    type="button"
+                    aria-label={t(locale, "openInTerminal")}
+                      title={t(locale, "openInTerminal")}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void openKimiInTerminal(name);
+                      }}
+                  >
+                    <Terminal size={15} />
+                  </button>
+                  {name === state.activeProfile ? (
+                    <span className="list-current-badge" aria-label={t(locale, "summaryActive")} title={t(locale, "summaryActive")}>
+                      {locale === "zh-CN" ? "已激活" : "Active"}
+                    </span>
+                  ) : (
+                    <button
+                      className="list-activate-button"
+                      type="button"
+                      aria-label={`${t(locale, "activate")} ${name}`}
+                      title={t(locale, "activate")}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        updateState((draft) => {
+                          applyProfile(draft, name);
+                        });
+                      }}
+                    >
+                      {t(locale, "activate")}
+                    </button>
+                  )}
+                </>
               )
             }
           >
@@ -926,6 +945,19 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       }))}
                     />
                   ) : null}
+                  <SelectField
+                    label={t(locale, "terminalApp")}
+                    value={state.panelSettings.terminal_app}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.panelSettings.terminal_app = value as TerminalApp;
+                      })
+                    }
+                    options={TERMINAL_APP_OPTIONS.map((option) => ({
+                      value: option.value,
+                      label: option.label[locale],
+                    }))}
+                  />
                 </SettingsGroup>
                 <SettingsGroup title={t(locale, "settingsGroupPaths")}>
                   <PathField
