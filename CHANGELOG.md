@@ -4,6 +4,20 @@
 
 格式参考 Keep a Changelog，当前项目采用 `major.minor.patch` 版本号方案。
 
+## [1.1.2] - 2026-05-09
+
+### 新增
+
+- Profiles 顶部当前激活区域新增“在终端打开 Kimi”入口，可直接用当前激活 Profile 启动 CLI。
+- Profiles 列表行新增悬浮终端入口，可用被点击的 Profile 生成临时配置并启动 Kimi，不改变当前激活状态。
+- 设置页新增终端应用配置，支持系统终端和 iTerm2。
+- README 新增多页面截图和图文功能介绍。
+
+### 变更
+
+- 终端启动统一使用 `kimi --config-file <配置文件>`，并为指定 Profile 写入 `~/.kimi/.panel/tmp/terminal/` 下的临时配置。
+- Terminal.app 与 iTerm2 启动时改为新标签页打开，并通过粘贴加回车提升命令执行稳定性。
+
 ## [1.1.1] - 2026-05-07
 
 ### 新增

@@ -25,7 +25,7 @@ interface UpdateCheckResult {
 }
 
 const ABOUT_INFO = {
-  version: "1.1.1",
+  version: "1.1.2",
   author: "Hulk Sun",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",
@@ -389,6 +389,13 @@ export function AboutPage(props: {
     },
   ];
   const history = [
+    {
+      version: "v1.1.2",
+      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.2`,
+      text: isZh
+        ? "新增在终端打开 Kimi 能力，支持当前激活 Profile 与列表行 Profile 分别启动；优化 Terminal.app 和 iTerm2 新标签页执行方式，并补充图文 README。"
+        : "Added Open Kimi in Terminal support for both the active profile and row-specific profiles; improved Terminal.app and iTerm2 new-tab execution, and refreshed the README with screenshots.",
+    },
     {
       version: "v1.1.1",
       url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.1`,
