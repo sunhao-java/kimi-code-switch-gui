@@ -609,7 +609,7 @@ export function AboutPage(props: {
 
       {isDev ? (
         <section className="about-preview-panel">
-          <div className="section-title">
+          <div className="section-title about-section-title">
             <RefreshCw size={16} />
             <span>{isZh ? "更新弹框预览" : "Update Dialog Preview"}</span>
           </div>
@@ -637,7 +637,7 @@ export function AboutPage(props: {
 
       <div className="about-grid">
         <section className="about-section about-section-wide">
-          <div className="section-title">
+          <div className="section-title about-section-title">
             <ExternalLink size={16} />
             <span>{isZh ? "项目链接" : "Project Links"}</span>
           </div>
@@ -658,7 +658,7 @@ export function AboutPage(props: {
         </section>
 
         <section className="about-section about-section-wide">
-          <div className="section-title">
+          <div className="section-title about-section-title">
             <History size={16} />
             <span>{isZh ? "版本历史" : "Version History"}</span>
           </div>

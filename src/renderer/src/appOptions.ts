@@ -1,5 +1,6 @@
 import type {
   AppearanceMode,
+  AppearanceTheme,
   BackupDestinationType,
   BackupFrequency,
   BackupStrategy,
@@ -11,8 +12,8 @@ import type {
   UiFontSize,
 } from "@shared/types";
 import {
-  Boxes, FileText, Globe, Info, Layers3, MonitorCog, MoonStar,
-  Settings2, Sparkles, SunMedium, Zap,
+  Boxes, Droplets, FileText, Flame, Globe, Info, Layers3, MonitorCog, MoonStar,
+  Palette, Settings2, Sparkles, SunMedium, Zap,
 } from "lucide-react";
 
 export type TabId = "overview" | "profiles" | "providers" | "models" | "mcp" | "skills" | "settings" | "about";
@@ -73,6 +74,33 @@ export const THEME_OPTIONS: Array<{
     icon: MoonStar,
     shortLabel: "D",
     label: { "zh-CN": "暗色", "en-US": "Dark" },
+  },
+];
+
+export const APPEARANCE_THEME_OPTIONS: Array<{
+  value: AppearanceTheme;
+  icon: typeof Palette;
+  label: Record<Locale, string>;
+}> = [
+  {
+    value: "aurora",
+    icon: Sparkles,
+    label: { "zh-CN": "极光", "en-US": "Aurora" },
+  },
+  {
+    value: "ocean",
+    icon: Droplets,
+    label: { "zh-CN": "海洋", "en-US": "Ocean" },
+  },
+  {
+    value: "violet",
+    icon: Palette,
+    label: { "zh-CN": "紫罗兰", "en-US": "Violet" },
+  },
+  {
+    value: "sunset",
+    icon: Flame,
+    label: { "zh-CN": "日落", "en-US": "Sunset" },
   },
 ];
 

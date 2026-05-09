@@ -7,7 +7,7 @@ import { TabId, PreviewFileId } from "./appOptions";
 import { getApi } from "./appHelpers";
 import { getAppDerivedData } from "./appDerivedData";
 import { t } from "./i18n";
-import { createFallbackState, applyAppearanceMode, applyUiFontSize } from "./tabComponents";
+import { createFallbackState, applyAppearanceMode, applyAppearanceTheme, applyUiFontSize } from "./tabComponents";
 import { useAppPersistence } from "./useAppPersistence";
 import { useBackupActions } from "./useBackupActions";
 import { useConfirmDialog } from "./useConfirmDialog";
@@ -175,6 +175,10 @@ export function useAppHandlers() {
   useEffect(() => {
     applyAppearanceMode(state.panelSettings.theme);
   }, [state.panelSettings.theme]);
+
+  useEffect(() => {
+    applyAppearanceTheme(state.panelSettings.appearance_theme);
+  }, [state.panelSettings.appearance_theme]);
 
   useEffect(() => {
     applyUiFontSize(state.panelSettings.ui_font_size);

@@ -60,6 +60,7 @@ export function createDefaultPanelSettings(
     profiles_path: "",
     follow_config_profiles: true,
     theme: "auto",
+    appearance_theme: "aurora",
     ui_font_size: "standard",
     locale: "zh-CN",
     tray_icon: false,
@@ -182,6 +183,7 @@ function panelSettingsFromUnknown(data: Record<string, unknown>, fallback: Panel
         ? data.follow_config_profiles
         : true,
     theme: parseAppearanceMode(data.theme, fallback.theme),
+    appearance_theme: parseAppearanceTheme(data.appearance_theme, fallback.appearance_theme),
     ui_font_size: parseUiFontSize(data.ui_font_size, fallback.ui_font_size),
     locale: data.locale === "en-US" ? "en-US" : "zh-CN",
     tray_icon: trayIcon,
@@ -551,6 +553,15 @@ function parseAppearanceMode(value: unknown, fallback: PanelSettings["theme"]): 
   return value === "light" || value === "dark" || value === "auto" ? value : fallback;
 }
 
+function parseAppearanceTheme(
+  value: unknown,
+  fallback: PanelSettings["appearance_theme"],
+): PanelSettings["appearance_theme"] {
+  return value === "aurora" || value === "ocean" || value === "violet" || value === "sunset"
+    ? value
+    : fallback;
+}
+
 function parseUiFontSize(
   value: unknown,
   fallback: PanelSettings["ui_font_size"],
@@ -653,6 +664,7 @@ export function normalizeStatePaths(state: AppState): AppState {
     ...state.panelSettings,
     config_path: configPath,
     theme: parseAppearanceMode(state.panelSettings.theme, "auto"),
+    appearance_theme: parseAppearanceTheme(state.panelSettings.appearance_theme, "aurora"),
     ui_font_size: parseUiFontSize(state.panelSettings.ui_font_size, "standard"),
     display_open_mode: parseDisplayOpenMode(state.panelSettings.display_open_mode, "remember-last"),
     close_behavior: state.panelSettings.tray_icon

@@ -9,7 +9,7 @@ import { createDefaultShortcuts } from "@shared/shortcutStore";
 import type { SkillsScanReport } from "@shared/skillsStore";
 import type {
   AppState,
-  AppearanceMode, BackupDestinationType, BackupFrequency, BackupStrategy,
+  AppearanceMode, AppearanceTheme, BackupDestinationType, BackupFrequency, BackupStrategy,
   CloseBehavior, DisplayOpenMode, Locale,
   McpServerConfig, McpTransport, Profile, UiFontSize,
 } from "@shared/types";
@@ -556,6 +556,7 @@ export function createFallbackState(): AppState {
     profiles_path: "",
     follow_config_profiles: true,
     theme: "auto" as AppearanceMode,
+    appearance_theme: "aurora" as AppearanceTheme,
     ui_font_size: "standard" as UiFontSize,
     locale: "zh-CN" as Locale,
     tray_icon: false,
@@ -636,6 +637,13 @@ export function applyAppearanceMode(mode: AppearanceMode): void {
         : "dark"
       : mode;
   document.documentElement.dataset.theme = resolvedMode;
+}
+
+export function applyAppearanceTheme(theme: AppearanceTheme): void {
+  if (typeof document === "undefined") {
+    return;
+  }
+  document.documentElement.dataset.appearanceTheme = theme;
 }
 
 export function applyUiFontSize(size: UiFontSize): void {

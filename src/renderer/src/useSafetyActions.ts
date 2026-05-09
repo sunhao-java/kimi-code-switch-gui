@@ -11,7 +11,7 @@ import type {
 import { getApi } from "./appHelpers";
 import { t, translateError } from "./i18n";
 import { applyPrimarySelections, getRetainedPrimarySelections } from "./primarySelections";
-import { applyAppearanceMode, applyUiFontSize, formatMessage } from "./tabComponents";
+import { applyAppearanceMode, applyAppearanceTheme, applyUiFontSize, formatMessage } from "./tabComponents";
 
 interface SafetyActionsContext {
   locale: Locale;
@@ -182,6 +182,7 @@ export function useSafetyActions(ctx: SafetyActionsContext) {
     setFileSnapshot(restored.snapshot);
     setDoctorReport(restored.doctor);
     applyAppearanceMode(normalized.panelSettings.theme);
+    applyAppearanceTheme(normalized.panelSettings.appearance_theme);
     applyUiFontSize(normalized.panelSettings.ui_font_size);
     applyPrimarySelections(
       getRetainedPrimarySelections(normalized, currentSelections),

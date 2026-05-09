@@ -8,6 +8,7 @@ export type ProviderType =
 
 export type Locale = "zh-CN" | "en-US";
 export type AppearanceMode = "auto" | "dark" | "light";
+export type AppearanceTheme = "aurora" | "ocean" | "violet" | "sunset";
 export type UiFontSize = "mini" | "compact" | "small" | "standard" | "large" | "extra-large";
 export type DisplayOpenMode = "random" | "remember-last" | "active-display";
 export type CloseBehavior = "quit" | "keep-in-tray";
@@ -104,6 +105,7 @@ export interface PanelSettings {
   profiles_path: string;
   follow_config_profiles: boolean;
   theme: AppearanceMode;
+  appearance_theme: AppearanceTheme;
   ui_font_size: UiFontSize;
   locale: Locale;
   tray_icon: boolean;

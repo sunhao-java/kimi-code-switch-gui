@@ -11,6 +11,7 @@ import {
 } from "@shared/shortcutStore";
 import type {
   AppearanceMode,
+  AppearanceTheme,
   BackupDestinationType,
   BackupFrequency,
   BackupStrategy,
@@ -25,6 +26,7 @@ import type {
 import { AboutPage } from "../aboutPage";
 import { getApi, getMcpAction, getMcpActionNotice, getResourceLabel, createUniqueName, renameModelInState, renameProviderInState } from "../appHelpers";
 import {
+  APPEARANCE_THEME_OPTIONS,
   BACKUP_DESTINATION_OPTIONS, BACKUP_FREQUENCY_OPTIONS, BACKUP_STRATEGY_OPTIONS,
   CLOSE_BEHAVIOR_OPTIONS, DISPLAY_OPEN_OPTIONS, LOCALE_OPTIONS, THEME_OPTIONS, UI_FONT_SIZE_OPTIONS,
 } from "../appOptions";
@@ -819,53 +821,6 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             </div>
             {activeSettingsSubTab === "general" ? (
               <div className="settings-tab-panel">
-                <SettingsGroup title={t(locale, "settingsGroupPaths")}>
-                  <PathField
-                    locale={locale}
-                    label={t(locale, "configPath")}
-                    value={state.configPath}
-                    onView={() => openDocumentViewer("config")}
-                    onChange={(value) =>
-                      updateImmediateState((draft) => {
-                        draft.configPath = value;
-                        draft.panelSettings.config_path = value;
-                      })
-                    }
-                  />
-                  <PathField
-                    locale={locale}
-                    label={t(locale, "profilesPath")}
-                    value={state.profilesPath}
-                    onView={() => openDocumentViewer("profiles")}
-                    onChange={(value) =>
-                      updateImmediateState((draft) => {
-                        draft.profilesPath = value;
-                        draft.panelSettings.profiles_path = value;
-                        draft.panelSettings.follow_config_profiles = false;
-                      })
-                    }
-                  />
-                  <PathField
-                    locale={locale}
-                    label={t(locale, "panelSettingsPath")}
-                    value={state.panelSettingsPath}
-                    onView={() => openDocumentViewer("panel")}
-                    onChange={(value) =>
-                      updateImmediateState((draft) => {
-                        draft.panelSettingsPath = value;
-                      })
-                    }
-                  />
-                  <PathField
-                    locale={locale}
-                    label={t(locale, "mcpConfigPathLabel")}
-                    value={state.mcpConfigPath}
-                    readOnly
-                    fileType="json"
-                    onView={() => openDocumentViewer("mcp")}
-                    onChange={() => {}}
-                  />
-                </SettingsGroup>
                 <SettingsGroup title={t(locale, "settingsGroupAppearance")}>
                   <SelectField
                     label={t(locale, "locale")}
@@ -882,21 +837,38 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       badgeClassName: "flag",
                     }))}
                   />
-                  <SelectField
-                    label={t(locale, "theme")}
-                    value={state.panelSettings.theme}
-                    onChange={(value) =>
-                      updateImmediateState((draft) => {
-                        draft.panelSettings.theme = value as AppearanceMode;
-                      })
-                    }
-                    selectedIcon={(THEME_OPTIONS.find((option) => option.value === state.panelSettings.theme) ?? THEME_OPTIONS[0]).icon}
-                    options={THEME_OPTIONS.map((option) => ({
-                      value: option.value,
-                      label: option.label[locale],
-                      icon: option.icon,
-                    }))}
-                  />
+                  <div className="settings-inline-fields">
+                    <SelectField
+                      label={t(locale, "theme")}
+                      value={state.panelSettings.theme}
+                      onChange={(value) =>
+                        updateImmediateState((draft) => {
+                          draft.panelSettings.theme = value as AppearanceMode;
+                        })
+                      }
+                      selectedIcon={(THEME_OPTIONS.find((option) => option.value === state.panelSettings.theme) ?? THEME_OPTIONS[0]).icon}
+                      options={THEME_OPTIONS.map((option) => ({
+                        value: option.value,
+                        label: option.label[locale],
+                        icon: option.icon,
+                      }))}
+                    />
+                    <SelectField
+                      label={t(locale, "appearanceTheme")}
+                      value={state.panelSettings.appearance_theme ?? "aurora"}
+                      onChange={(value) =>
+                        updateImmediateState((draft) => {
+                          draft.panelSettings.appearance_theme = value as AppearanceTheme;
+                        })
+                      }
+                      selectedIcon={(APPEARANCE_THEME_OPTIONS.find((option) => option.value === state.panelSettings.appearance_theme) ?? APPEARANCE_THEME_OPTIONS[0]).icon}
+                      options={APPEARANCE_THEME_OPTIONS.map((option) => ({
+                        value: option.value,
+                        label: option.label[locale],
+                        icon: option.icon,
+                      }))}
+                    />
+                  </div>
                   <FontSizeSliderField
                     locale={locale}
                     label={t(locale, "uiFontSize")}
@@ -964,6 +936,53 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       }
                     />
                   </label>
+                </SettingsGroup>
+                <SettingsGroup title={t(locale, "settingsGroupPaths")}>
+                  <PathField
+                    locale={locale}
+                    label={t(locale, "configPath")}
+                    value={state.configPath}
+                    onView={() => openDocumentViewer("config")}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.configPath = value;
+                        draft.panelSettings.config_path = value;
+                      })
+                    }
+                  />
+                  <PathField
+                    locale={locale}
+                    label={t(locale, "profilesPath")}
+                    value={state.profilesPath}
+                    onView={() => openDocumentViewer("profiles")}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.profilesPath = value;
+                        draft.panelSettings.profiles_path = value;
+                        draft.panelSettings.follow_config_profiles = false;
+                      })
+                    }
+                  />
+                  <PathField
+                    locale={locale}
+                    label={t(locale, "panelSettingsPath")}
+                    value={state.panelSettingsPath}
+                    onView={() => openDocumentViewer("panel")}
+                    onChange={(value) =>
+                      updateImmediateState((draft) => {
+                        draft.panelSettingsPath = value;
+                      })
+                    }
+                  />
+                  <PathField
+                    locale={locale}
+                    label={t(locale, "mcpConfigPathLabel")}
+                    value={state.mcpConfigPath}
+                    readOnly
+                    fileType="json"
+                    onView={() => openDocumentViewer("mcp")}
+                    onChange={() => {}}
+                  />
                 </SettingsGroup>
               </div>
             ) : null}

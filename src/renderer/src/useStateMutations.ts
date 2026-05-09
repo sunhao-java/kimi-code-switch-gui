@@ -4,7 +4,7 @@ import { cloneState, normalizeStatePaths } from "@shared/configStore";
 import type { AppState, Locale } from "@shared/types";
 import { translateError } from "./i18n";
 import type { DiagnosticsState } from "./overviewDashboard";
-import { applyAppearanceMode, applyUiFontSize } from "./tabComponents";
+import { applyAppearanceMode, applyAppearanceTheme, applyUiFontSize } from "./tabComponents";
 
 interface StateMutationsContext {
   state: AppState;
@@ -44,6 +44,7 @@ export function useStateMutations(ctx: StateMutationsContext) {
       const normalized = normalizeStatePaths(draft);
       setState(normalized);
       applyAppearanceMode(normalized.panelSettings.theme);
+      applyAppearanceTheme(normalized.panelSettings.appearance_theme);
       applyUiFontSize(normalized.panelSettings.ui_font_size);
       void refreshPreview(normalized);
       if (options.persist !== false) {

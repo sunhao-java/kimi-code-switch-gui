@@ -18,10 +18,12 @@ import type {
 } from "@shared/types";
 
 type InitialRendererTheme = "dark" | "light";
+type InitialAppearanceTheme = "aurora" | "ocean" | "violet" | "sunset";
 type PreloadDocument = {
   documentElement: {
     dataset: {
       theme?: string;
+      appearanceTheme?: string;
     };
   };
 };
@@ -32,12 +34,19 @@ function readInitialRendererTheme(): InitialRendererTheme {
   return value === "light" ? "light" : "dark";
 }
 
+function readInitialAppearanceTheme(): InitialAppearanceTheme {
+  const prefix = "--kimi-appearance-theme=";
+  const value = process.argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length);
+  return value === "ocean" || value === "violet" || value === "sunset" ? value : "aurora";
+}
+
 function applyInitialRendererTheme(): void {
   const preloadDocument = (globalThis as { document?: PreloadDocument }).document;
   if (!preloadDocument) {
     return;
   }
   preloadDocument.documentElement.dataset.theme = readInitialRendererTheme();
+  preloadDocument.documentElement.dataset.appearanceTheme = readInitialAppearanceTheme();
 }
 
 applyInitialRendererTheme();

@@ -86,6 +86,7 @@ function createState(): AppState {
       profiles_path: "",
       follow_config_profiles: true,
       theme: "auto",
+      appearance_theme: "aurora",
       ui_font_size: "standard",
       locale: "zh-CN",
       tray_icon: false,

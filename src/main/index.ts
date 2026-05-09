@@ -78,6 +78,7 @@ const ENCRYPTED_PASSWORD_PREFIX = "__enc__";
 const SHORTCUTS_BACKUP_FILENAME = "shortcuts.json";
 const BACKUP_METADATA_FILENAME = "backup.meta.json";
 const INITIAL_THEME_ARG_PREFIX = "--kimi-initial-theme=";
+const INITIAL_APPEARANCE_THEME_ARG_PREFIX = "--kimi-appearance-theme=";
 
 function encryptWebDavPassword(state: AppState): AppState {
   if (!state.panelSettings.backup_webdav_password || !safeStorage.isEncryptionAvailable()) {
@@ -788,6 +789,10 @@ function getWindowBackgroundColor(theme: AppearanceMode): string {
   return resolveRendererTheme(theme) === "light" ? "#edf3fb" : "#07111f";
 }
 
+function getInitialAppearanceTheme(settings: PanelSettings): string {
+  return settings.appearance_theme ?? "aurora";
+}
+
 function resolveInitialWindowBounds(settings: PanelSettings): { x: number; y: number } {
   const displays = screen.getAllDisplays();
   const targetDisplay = (() => {
@@ -851,6 +856,7 @@ async function createWindow(): Promise<void> {
   const panelSettings = await loadWindowPanelSettings();
   const initialBounds = resolveInitialWindowBounds(panelSettings);
   const initialRendererTheme = resolveRendererTheme(panelSettings.theme);
+  const initialAppearanceTheme = getInitialAppearanceTheme(panelSettings);
 
   mainWindow = new BrowserWindow({
     width: WINDOW_WIDTH,
@@ -868,7 +874,10 @@ async function createWindow(): Promise<void> {
     backgroundColor: getWindowBackgroundColor(panelSettings.theme),
     webPreferences: {
       preload: join(__dirname, "../preload/index.mjs"),
-      additionalArguments: [`${INITIAL_THEME_ARG_PREFIX}${initialRendererTheme}`],
+      additionalArguments: [
+        `${INITIAL_THEME_ARG_PREFIX}${initialRendererTheme}`,
+        `${INITIAL_APPEARANCE_THEME_ARG_PREFIX}${initialAppearanceTheme}`,
+      ],
       sandbox: false,
     },
   });

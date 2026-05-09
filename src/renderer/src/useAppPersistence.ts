@@ -7,7 +7,7 @@ import { getApi } from "./appHelpers";
 import { translateError } from "./i18n";
 import type { DiagnosticsState } from "./overviewDashboard";
 import { applyPrimarySelections, getDefaultPrimarySelections, getRetainedPrimarySelections } from "./primarySelections";
-import { applyAppearanceMode, applyUiFontSize, createFallbackState } from "./tabComponents";
+import { applyAppearanceMode, applyAppearanceTheme, applyUiFontSize, createFallbackState } from "./tabComponents";
 import { isExternalChangeConflict } from "./useSafetyActions";
 
 interface AppPersistenceContext {
@@ -87,6 +87,7 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
       setState(normalized);
       setSavedState(normalized);
       applyAppearanceMode(normalized.panelSettings.theme);
+      applyAppearanceTheme(normalized.panelSettings.appearance_theme);
       applyUiFontSize(normalized.panelSettings.ui_font_size);
       applyPrimarySelections(getDefaultPrimarySelections(normalized), {
         setSelectedProvider,
@@ -118,6 +119,7 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
       setState(fallback);
       setSavedState(fallback);
       applyAppearanceMode(fallback.panelSettings.theme);
+      applyAppearanceTheme(fallback.panelSettings.appearance_theme);
       applyUiFontSize(fallback.panelSettings.ui_font_size);
       const message = loadError instanceof Error ? loadError.message : String(loadError);
       setError(message);
@@ -238,6 +240,7 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     setState(normalizedVisibleState);
     setSavedState(normalizedSavedState);
     applyAppearanceMode(normalizedVisibleState.panelSettings.theme);
+    applyAppearanceTheme(normalizedVisibleState.panelSettings.appearance_theme);
     applyUiFontSize(normalizedVisibleState.panelSettings.ui_font_size);
     void refreshPreview(normalizedVisibleState);
     setError("");
@@ -307,6 +310,7 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     const restored = normalizeStatePaths(cloneState(nextSavedState));
     setState(restored);
     applyAppearanceMode(restored.panelSettings.theme);
+    applyAppearanceTheme(restored.panelSettings.appearance_theme);
     applyUiFontSize(restored.panelSettings.ui_font_size);
     applyPrimarySelections(
       getRetainedPrimarySelections(restored, currentSelections),
