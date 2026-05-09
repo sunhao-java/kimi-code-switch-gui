@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, sa
 import type { NativeImage } from "electron";
 import { dirname, join, resolve } from "node:path";
 import { hostname } from "node:os";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 
@@ -14,6 +14,7 @@ import {
   cloneState,
   createDefaultPanelSettings,
   DEFAULT_CONFIG_PATH,
+  DEFAULT_PANEL_DIRECTORY,
   DEFAULT_PANEL_SETTINGS_PATH,
   LEGACY_PANEL_SETTINGS_PATH,
   normalizeStatePaths,
@@ -77,6 +78,7 @@ const CHANGE_BACKUP_DELAY_MS = 4000;
 const ENCRYPTED_PASSWORD_PREFIX = "__enc__";
 const SHORTCUTS_BACKUP_FILENAME = "shortcuts.json";
 const BACKUP_METADATA_FILENAME = "backup.meta.json";
+const BACKUP_TEMP_DIRECTORY = `${DEFAULT_PANEL_DIRECTORY}/tmp/backups`;
 const INITIAL_THEME_ARG_PREFIX = "--kimi-initial-theme=";
 const INITIAL_APPEARANCE_THEME_ARG_PREFIX = "--kimi-appearance-theme=";
 
@@ -190,6 +192,27 @@ async function pruneBackupDirectories(backupRoot: string, keepCount: number): Pr
   );
 }
 
+async function createBackupWorkingDirectory(backupName: string): Promise<string> {
+  const workingRoot = resolveHome(BACKUP_TEMP_DIRECTORY);
+  const workingDirectory = join(workingRoot, backupName);
+  await rm(workingDirectory, { recursive: true, force: true });
+  await mkdir(workingDirectory, { recursive: true });
+  return workingDirectory;
+}
+
+async function writeBackupWorkingFiles(
+  workingDirectory: string,
+  files: Array<{ name: string; content: string }>,
+  metadata: BackupMetadata,
+): Promise<void> {
+  await Promise.all(
+    [
+      ...files.map((file) => writeFile(join(workingDirectory, file.name), file.content, "utf-8")),
+      writeFile(join(workingDirectory, BACKUP_METADATA_FILENAME), `${JSON.stringify(metadata, null, 2)}\n`, "utf-8"),
+    ],
+  );
+}
+
 async function createLocalBackupSnapshot(
   state: AppState,
   backupName: string,
@@ -200,16 +223,17 @@ async function createLocalBackupSnapshot(
   const backupDirectory = join(backupRoot, backupName);
   const files = buildBackupFiles(normalizedState);
   const metadata = buildBackupMetadata(normalizedState, backupName, trigger);
+  const workingDirectory = await createBackupWorkingDirectory(backupName);
 
-  await mkdir(backupDirectory, { recursive: true });
-
-  await Promise.all(
-    [
-      ...files.map((file) => writeFile(join(backupDirectory, file.name), file.content, "utf-8")),
-      writeFile(join(backupDirectory, BACKUP_METADATA_FILENAME), `${JSON.stringify(metadata, null, 2)}\n`, "utf-8"),
-    ],
-  );
-  await pruneBackupDirectories(backupRoot, normalizedState.panelSettings.backup_retention_count);
+  try {
+    await writeBackupWorkingFiles(workingDirectory, files, metadata);
+    await mkdir(backupRoot, { recursive: true });
+    await rm(backupDirectory, { recursive: true, force: true });
+    await rename(workingDirectory, backupDirectory);
+    await pruneBackupDirectories(backupRoot, normalizedState.panelSettings.backup_retention_count);
+  } finally {
+    await rm(workingDirectory, { recursive: true, force: true });
+  }
 
   return {
     ok: true,
@@ -227,22 +251,38 @@ async function createWebDavBackupSnapshot(
   const settings = normalizedState.panelSettings;
   const files = buildBackupFiles(normalizedState);
   const metadata = buildBackupMetadata(normalizedState, backupName, trigger);
+  const workingDirectory = await createBackupWorkingDirectory(backupName);
+  let backupDirectoryUrl = "";
 
-  const backupDirectoryUrl = await ensureWebDavCollection(settings, [backupName]);
-  await Promise.all(
-    [
-      ...files.map((file) => uploadWebDavFile(settings, `${backupDirectoryUrl}/${encodeURIComponent(file.name)}`, file.content)),
-      uploadWebDavFile(settings, `${backupDirectoryUrl}/${encodeURIComponent(BACKUP_METADATA_FILENAME)}`, `${JSON.stringify(metadata, null, 2)}\n`),
-    ],
-  );
+  try {
+    await writeBackupWorkingFiles(workingDirectory, files, metadata);
 
-  const manifestUrl = `${await ensureWebDavCollection(settings)}/.kimi-backups.json`;
-  const manifestEntries = await readWebDavManifest(settings, manifestUrl);
-  const nextEntries = [
-    ...manifestEntries.filter((entry) => entry.name !== backupName),
-    { name: backupName, createdAt: backupName },
-  ];
-  await pruneWebDavBackups(settings, manifestUrl, nextEntries);
+    backupDirectoryUrl = await ensureWebDavCollection(settings, [backupName]);
+    await Promise.all(
+      [
+        ...files.map(async (file) => uploadWebDavFile(
+          settings,
+          `${backupDirectoryUrl}/${encodeURIComponent(file.name)}`,
+          await readFile(join(workingDirectory, file.name), "utf-8"),
+        )),
+        uploadWebDavFile(
+          settings,
+          `${backupDirectoryUrl}/${encodeURIComponent(BACKUP_METADATA_FILENAME)}`,
+          await readFile(join(workingDirectory, BACKUP_METADATA_FILENAME), "utf-8"),
+        ),
+      ],
+    );
+
+    const manifestUrl = `${await ensureWebDavCollection(settings)}/.kimi-backups.json`;
+    const manifestEntries = await readWebDavManifest(settings, manifestUrl);
+    const nextEntries = [
+      ...manifestEntries.filter((entry) => entry.name !== backupName),
+      { name: backupName, createdAt: backupName },
+    ];
+    await pruneWebDavBackups(settings, manifestUrl, nextEntries);
+  } finally {
+    await rm(workingDirectory, { recursive: true, force: true });
+  }
 
   return {
     ok: true,
