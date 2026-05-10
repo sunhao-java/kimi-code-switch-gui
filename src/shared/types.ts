@@ -110,6 +110,7 @@ export interface PanelSettings {
   ui_font_size: UiFontSize;
   locale: Locale;
   tray_icon: boolean;
+  sidebar_collapsed: boolean;
   display_open_mode: DisplayOpenMode;
   close_behavior: CloseBehavior;
   terminal_app: TerminalApp;

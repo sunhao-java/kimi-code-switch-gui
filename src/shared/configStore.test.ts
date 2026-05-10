@@ -406,6 +406,17 @@ url = "https://mcp.context7.com/mcp"
     expect(parsed.shortcuts["window.toggle"].enabled).toBe(true);
   });
 
+  it("round-trips sidebar collapsed preference in panel settings", () => {
+    const panelSettings = createDefaultPanelSettings("/tmp/config.toml", "/tmp/config.panel.toml");
+    panelSettings.sidebar_collapsed = true;
+
+    const document = buildPanelSettingsDocument(panelSettings);
+    const parsed = parsePanelSettingsDocument(document);
+
+    expect(document).toContain("sidebar_collapsed = true");
+    expect(parsed.sidebar_collapsed).toBe(true);
+  });
+
   it("forces quit behavior when tray icon is disabled", async () => {
     const files = createMemoryFs({
       "/tmp/config.panel.toml": 'tray_icon = false\nclose_behavior = "keep-in-tray"\n',

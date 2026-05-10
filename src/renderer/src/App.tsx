@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback } from "react";
 import { ChevronsLeft, ChevronsRight, Terminal, X } from "lucide-react";
 
 import type { McpServerConfig, ShortcutAction, ShortcutBinding } from "@shared/types";
@@ -73,14 +73,12 @@ export function App(): JSX.Element {
   const shortcuts = normalizeShortcuts(state.panelSettings.shortcuts);
   const shortcutPlatform = getBrowserShortcutPlatform();
   const tabShortcutLabels = createTabShortcutLabels(shortcuts, shortcutPlatform);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const sidebarLock = useRef(false);
+  const isSidebarCollapsed = state.panelSettings.sidebar_collapsed;
   const toggleSidebar = useCallback(() => {
-    if (sidebarLock.current) return;
-    sidebarLock.current = true;
-    setIsSidebarCollapsed((v) => !v);
-    setTimeout(() => { sidebarLock.current = false; }, 220);
-  }, []);
+    updateImmediateState((draft) => {
+      draft.panelSettings.sidebar_collapsed = !draft.panelSettings.sidebar_collapsed;
+    });
+  }, [updateImmediateState]);
 
   useShortcuts({
     shortcuts,
