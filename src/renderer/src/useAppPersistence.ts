@@ -277,6 +277,12 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
       if (previousSavedState?.panelSettings.tray_icon !== normalizedSavedState.panelSettings.tray_icon) {
         await api.setTray(normalizedSavedState.panelSettings.tray_icon);
       }
+      if (
+        previousSavedState?.panelSettings.locale !== normalizedSavedState.panelSettings.locale ||
+        previousSavedState?.panelSettings.theme !== normalizedSavedState.panelSettings.theme
+      ) {
+        await api.refreshTrayMenu?.();
+      }
       const nextPreview = await api.previewState(normalizedVisibleState);
       setPreview(nextPreview);
       void refreshSkills(normalizedVisibleState, { silent: true });

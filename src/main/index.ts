@@ -1210,6 +1210,11 @@ app.whenReady().then(async () => {
     return { ok: true };
   });
 
+  ipcMain.handle("app:refresh-tray-menu", async () => {
+    await updateTrayMenu();
+    return { ok: true };
+  });
+
   ipcMain.handle("mcp:test-server", async (_, name: string) => {
     return runKimiMcpCommand(["test", name]);
   });

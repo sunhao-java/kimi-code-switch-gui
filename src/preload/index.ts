@@ -87,6 +87,7 @@ const api = {
   pickFile: (options?: Record<string, unknown>): Promise<FileDialogResult> =>
     ipcRenderer.invoke("dialog:pick-file", options),
   setTray: (enabled: boolean): Promise<{ ok: true }> => ipcRenderer.invoke("app:set-tray", enabled),
+  refreshTrayMenu: (): Promise<{ ok: true }> => ipcRenderer.invoke("app:refresh-tray-menu"),
   openExternal: (url: string): Promise<{ ok: true }> => ipcRenderer.invoke("app:open-external", url),
   openKimiInTerminal: (request: PanelSettings | OpenKimiTerminalRequest): Promise<{ ok: true }> =>
     ipcRenderer.invoke("app:open-kimi-in-terminal", request),
