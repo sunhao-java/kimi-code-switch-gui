@@ -80,26 +80,13 @@ export function buildAppleScriptLines(app: TerminalApp, shellCommand: string): s
   const escapedCommand = escapeForAppleScript(shellCommand);
   if (app === "system-terminal") {
     return [
-      "set previousClipboard to the clipboard",
-      `set the clipboard to "${escapedCommand}"`,
       'tell application "Terminal"',
       "activate",
-      "if (count of windows) = 0 then",
       `do script "${escapedCommand}"`,
-      "else",
-      'tell application "System Events" to keystroke "t" using command down',
-      "delay 0.35",
-      'tell application "System Events" to keystroke "v" using command down',
-      'tell application "System Events" to key code 36',
-      "end if",
       "end tell",
-      "delay 0.2",
-      "set the clipboard to previousClipboard",
     ];
   }
   return [
-    "set previousClipboard to the clipboard",
-    `set the clipboard to "${escapedCommand}"`,
     'tell application "iTerm"',
     "activate",
     "if (count of windows) = 0 then",
@@ -109,12 +96,10 @@ export function buildAppleScriptLines(app: TerminalApp, shellCommand: string): s
     "create tab with default profile",
     "end tell",
     "end if",
+    "tell current session of current window",
+    `write text "${escapedCommand}"`,
     "end tell",
-    "delay 0.35",
-    'tell application "System Events" to keystroke "v" using command down',
-    'tell application "System Events" to key code 36',
-    "delay 0.2",
-    "set the clipboard to previousClipboard",
+    "end tell",
   ];
 }
 

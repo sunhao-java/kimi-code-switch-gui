@@ -93,30 +93,23 @@ describe("terminal module", () => {
     );
   });
 
-  it("builds Terminal.app AppleScript", () => {
-    expect(buildAppleScriptLines("system-terminal", "cd '/tmp'; kimi")).toEqual([
-      "set previousClipboard to the clipboard",
-      `set the clipboard to "cd '/tmp'; kimi"`,
+  it("builds Terminal.app AppleScript without System Events keystrokes", () => {
+    const script = buildAppleScriptLines("system-terminal", "cd '/tmp'; kimi");
+
+    expect(script).toEqual([
       'tell application "Terminal"',
       "activate",
-      "if (count of windows) = 0 then",
       `do script "cd '/tmp'; kimi"`,
-      "else",
-      'tell application "System Events" to keystroke "t" using command down',
-      "delay 0.35",
-      'tell application "System Events" to keystroke "v" using command down',
-      'tell application "System Events" to key code 36',
-      "end if",
       "end tell",
-      "delay 0.2",
-      "set the clipboard to previousClipboard",
     ]);
+    expect(script.join("\n")).not.toContain("System Events");
+    expect(script.join("\n")).not.toContain("clipboard");
   });
 
   it("builds iTerm2 AppleScript", () => {
-    expect(buildAppleScriptLines("iterm2", "cd '/tmp'; kimi")).toEqual([
-      "set previousClipboard to the clipboard",
-      `set the clipboard to "cd '/tmp'; kimi"`,
+    const script = buildAppleScriptLines("iterm2", "cd '/tmp'; kimi");
+
+    expect(script).toEqual([
       'tell application "iTerm"',
       "activate",
       "if (count of windows) = 0 then",
@@ -126,13 +119,12 @@ describe("terminal module", () => {
       "create tab with default profile",
       "end tell",
       "end if",
+      "tell current session of current window",
+      `write text "cd '/tmp'; kimi"`,
       "end tell",
-      "delay 0.35",
-      'tell application "System Events" to keystroke "v" using command down',
-      'tell application "System Events" to key code 36',
-      "delay 0.2",
-      "set the clipboard to previousClipboard",
+      "end tell",
     ]);
+    expect(script.join("\n")).not.toContain("System Events");
   });
 
   it("derives the working directory from the config path", () => {
