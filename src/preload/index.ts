@@ -90,6 +90,7 @@ const api = {
   openKimiInTerminal: (request: PanelSettings | OpenKimiTerminalRequest): Promise<{ ok: true }> =>
     ipcRenderer.invoke("app:open-kimi-in-terminal", request),
   getInstallSource: (): Promise<"homebrew" | "manual" | "development"> => ipcRenderer.invoke("app:get-install-source"),
+  getCliVersion: (): Promise<{ version: string; installed: boolean }> => ipcRenderer.invoke("app:cli-version"),
   runBackup: (state: AppState): Promise<BackupResult> => ipcRenderer.invoke("backup:run", state),
   listBackups: (state: AppState): Promise<BackupRecord[]> => ipcRenderer.invoke("backup:list", state),
   deleteBackup: (state: AppState, backupName: string): Promise<{ ok: true }> => ipcRenderer.invoke("backup:delete", state, backupName),

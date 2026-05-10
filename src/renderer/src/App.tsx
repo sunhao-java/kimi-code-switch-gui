@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ChevronsLeft, ChevronsRight, Terminal, X } from "lucide-react";
 
 import type { McpServerConfig, ShortcutAction, ShortcutBinding } from "@shared/types";
@@ -74,6 +74,13 @@ export function App(): JSX.Element {
   const shortcutPlatform = getBrowserShortcutPlatform();
   const tabShortcutLabels = createTabShortcutLabels(shortcuts, shortcutPlatform);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const sidebarLock = useRef(false);
+  const toggleSidebar = useCallback(() => {
+    if (sidebarLock.current) return;
+    sidebarLock.current = true;
+    setIsSidebarCollapsed((v) => !v);
+    setTimeout(() => { sidebarLock.current = false; }, 220);
+  }, []);
 
   useShortcuts({
     shortcuts,
@@ -133,7 +140,7 @@ export function App(): JSX.Element {
             className="sidebar-collapse-button no-drag"
             aria-label={t(locale, isSidebarCollapsed ? "expandSidebar" : "collapseSidebar")}
             title={t(locale, isSidebarCollapsed ? "expandSidebar" : "collapseSidebar")}
-            onClick={() => setIsSidebarCollapsed((value) => !value)}
+            onClick={toggleSidebar}
           >
             {isSidebarCollapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
           </button>

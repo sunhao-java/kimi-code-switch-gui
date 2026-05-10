@@ -28,7 +28,7 @@ import { scanSkills } from "@shared/skillsStore";
 import { normalizeShortcuts } from "@shared/shortcutStore";
 import type { OpenKimiTerminalRequest, PanelSettings } from "@shared/types";
 import { buildRestoreDryRun, restoreBackupSafely } from "./modules/backupRestore";
-import { getCliEnv, runKimiConnectivityTest, runKimiMcpCommand } from "./modules/cli";
+import { getCliEnv, getCliVersion, runKimiConnectivityTest, runKimiMcpCommand } from "./modules/cli";
 import { captureSnapshotForState, detectExternalChangeConflict, readManagedDocuments, resolveManagedPaths } from "./modules/fileSnapshots";
 import { fileAccess, resolveHome, skillFileAccess } from "./modules/fileAccess";
 import { registerGlobalShortcuts, unregisterGlobalShortcuts } from "./modules/shortcuts";
@@ -1035,6 +1035,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("app:get-install-source", async () => {
     return detectInstallSource(getCliEnv);
+  });
+
+  ipcMain.handle("app:cli-version", async () => {
+    return getCliVersion();
   });
 
   ipcMain.handle("dialog:pick-file", async (_, options): Promise<FileDialogResult> => {

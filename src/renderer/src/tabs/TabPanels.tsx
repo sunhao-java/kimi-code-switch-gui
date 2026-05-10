@@ -248,7 +248,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
 
   return (
     <ErrorBoundary>
-      <div className="tab-panel-shell">
+      <div className="tab-panel-shell" key={activeTab}>
         {activeTab === "overview" ? (
           <OverviewDashboard
             state={state}

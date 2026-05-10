@@ -188,10 +188,11 @@ export function SkillsWorkspace(props: {
             <div className="skills-path-caption">{props.selectedPath?.path ?? t(props.locale, "overviewNone")}</div>
           </div>
           <div className="skills-detail-badges">
-            <div className="skills-view-toggle" role="tablist" aria-label={t(props.locale, "skillsViewMode")}>
+            <div className="skills-view-toggle" aria-label={t(props.locale, "skillsViewMode")}>
               <button
                 className={props.viewMode === "grid" ? "skills-view-button active" : "skills-view-button"}
                 type="button"
+                aria-label={t(props.locale, "skillsViewGrid")}
                 onClick={() => props.onViewModeChange("grid")}
                 aria-pressed={props.viewMode === "grid"}
                 title={t(props.locale, "skillsViewGrid")}
@@ -201,6 +202,7 @@ export function SkillsWorkspace(props: {
               <button
                 className={props.viewMode === "list" ? "skills-view-button active" : "skills-view-button"}
                 type="button"
+                aria-label={t(props.locale, "skillsViewList")}
                 onClick={() => props.onViewModeChange("list")}
                 aria-pressed={props.viewMode === "list"}
                 title={t(props.locale, "skillsViewList")}
@@ -215,6 +217,7 @@ export function SkillsWorkspace(props: {
           <input
             type="search"
             value={searchQuery}
+            aria-label={t(props.locale, "skillsSearchPlaceholder")}
             placeholder={t(props.locale, "skillsSearchPlaceholder")}
             onChange={(event) => setSearchQuery(event.target.value)}
           />

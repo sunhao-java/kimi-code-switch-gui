@@ -53,7 +53,9 @@ export function ShortcutRecorderField(props: {
     <button
       className={isRecording ? "shortcut-recorder is-recording" : "shortcut-recorder"}
       type="button"
-      aria-label={props.label}
+      aria-label={`${props.label} ${isRecording ? props.recordingHint : shownValue}`}
+      aria-pressed={isRecording}
+      title={isRecording ? props.recordingHint : props.label}
       onClick={() => setIsRecording(true)}
       onBlur={() => setIsRecording(false)}
       onKeyDown={(event) => {

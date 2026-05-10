@@ -11,6 +11,10 @@ const EXTRA_CLI_PATHS = [
   "/usr/local/bin",
   join(homedir(), ".local", "bin"),
   join(homedir(), ".cargo", "bin"),
+  join(homedir(), ".npm-global", "bin"),
+  join(homedir(), ".volta", "bin"),
+  join(homedir(), ".fnm", "aliases", "default", "bin"),
+  "/usr/local/share/npm/bin",
 ];
 
 const execFileAsync = promisify(execFile);
@@ -27,6 +31,25 @@ export function getCliEnv(): NodeJS.ProcessEnv {
     ...process.env,
     PATH: [...pathEntries].join(delimiter),
   };
+}
+
+export interface CliVersionResult {
+  version: string;
+  installed: boolean;
+}
+
+export async function getCliVersion(): Promise<CliVersionResult> {
+  try {
+    const { stdout } = await execFileAsync("kimi", ["--version"], {
+      env: getCliEnv(),
+      windowsHide: true,
+      timeout: 3000,
+    });
+    const match = stdout.match(/(\d+\.\d+\.\d+)/);
+    return { version: match ? match[1] : stdout.trim(), installed: true };
+  } catch {
+    return { version: "", installed: false };
+  }
 }
 
 export async function runKimiMcpCommand(args: string[]): Promise<{ ok: true; stdout: string; stderr: string }> {

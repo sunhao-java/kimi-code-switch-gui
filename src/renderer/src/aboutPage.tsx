@@ -24,7 +24,7 @@ interface UpdateCheckResult {
   errorMessage?: string;
 }
 
-const ABOUT_INFO = {
+export const ABOUT_INFO = {
   version: "1.1.3",
   author: "Hulk Sun",
   license: "MIT",
