@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { CheckCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import type { AppearanceMode, Locale } from "@shared/types";
+import type { AppearanceMode, Locale, LocalizedText } from "@shared/types";
 
+import { labelForLocale } from "./appOptions";
 import { t } from "./i18n";
 
 export function TopbarControls(props: {
@@ -14,7 +15,7 @@ export function TopbarControls(props: {
     value: AppearanceMode;
     icon: LucideIcon;
     shortLabel: string;
-    label: Record<Locale, string>;
+    label: LocalizedText;
   }>;
   onLocaleChange: (locale: Locale) => void;
   onThemeChange: (theme: AppearanceMode) => void;
@@ -87,7 +88,7 @@ export function TopbarControls(props: {
             <ActiveThemeIcon size={16} />
           </span>
           <span className="toolbar-icon-copy">
-            <strong>{activeTheme.label[props.locale]}</strong>
+            <strong>{labelForLocale(activeTheme.label, props.locale)}</strong>
             <small>{t(props.locale, "theme")}</small>
           </span>
         </button>
@@ -108,7 +109,7 @@ export function TopbarControls(props: {
                   <Icon size={15} />
                 </span>
                 <span className="toolbar-option-copy">
-                  <strong>{option.label[props.locale]}</strong>
+                  <strong>{labelForLocale(option.label, props.locale)}</strong>
                   <small>{option.value}</small>
                 </span>
                 {option.value === props.theme ? <CheckCheck size={16} /> : null}

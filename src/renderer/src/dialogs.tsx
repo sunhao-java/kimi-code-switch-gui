@@ -172,7 +172,7 @@ export function DocumentViewerDialog(
             </div>
           </div>
           <div className="document-viewer-actions">
-            <button className="action-button compact icon-only" type="button" aria-label="Close" onClick={props.onClose}>
+            <button className="action-button compact icon-only" type="button" aria-label={t(props.locale, "close")} onClick={props.onClose}>
               <X size={16} />
             </button>
           </div>
@@ -180,6 +180,7 @@ export function DocumentViewerDialog(
         <CodePanel
           title={props.format}
           content={props.content}
+          locale={props.locale}
           onCopy={handleCopy}
           copied={copied}
         />

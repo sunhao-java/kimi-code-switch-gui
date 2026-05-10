@@ -29,7 +29,7 @@ import { getApi, getMcpAction, getMcpActionNotice, getResourceLabel, createUniqu
 import {
   APPEARANCE_THEME_OPTIONS,
   BACKUP_DESTINATION_OPTIONS, BACKUP_FREQUENCY_OPTIONS, BACKUP_STRATEGY_OPTIONS,
-  CLOSE_BEHAVIOR_OPTIONS, DISPLAY_OPEN_OPTIONS, LOCALE_OPTIONS, TERMINAL_APP_OPTIONS, THEME_OPTIONS, UI_FONT_SIZE_OPTIONS,
+  CLOSE_BEHAVIOR_OPTIONS, DISPLAY_OPEN_OPTIONS, labelForLocale, LOCALE_OPTIONS, TERMINAL_APP_OPTIONS, THEME_OPTIONS, UI_FONT_SIZE_OPTIONS,
 } from "../appOptions";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { Field, FontSizeSliderField, SelectField, SettingsGroup, ShortcutRecorderField } from "../formControls";
@@ -40,7 +40,7 @@ import { SkillsWorkspace } from "../skillsWorkspace";
 import type { AppContext } from "./appContext";
 import {
   ProviderForm, ModelForm, ProfileForm, McpServerForm,
-  SecretField, PathField, createCopyName, createDefaultMcpServer,
+  SecretField, PathField, createCopyName, createLocalizedCopyName, createDefaultMcpServer,
   formatMessage, formatSkillPathLabel, renderSkillPathLabel,
 } from "../tabComponents";
 
@@ -206,7 +206,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   const shortcutPlatform = getBrowserShortcutPlatform();
   const shortcutConflictActions = new Set(shortcutConflicts.flatMap((conflict) => conflict.actions));
   const shortcutLabels = Object.fromEntries(
-    SHORTCUT_ACTIONS.map((definition) => [definition.action, definition.label[locale]]),
+    SHORTCUT_ACTIONS.map((definition) => [definition.action, labelForLocale(definition.label, locale)]),
   ) as Record<ShortcutAction, string>;
   const shortcutGroups = [
     {
@@ -247,7 +247,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   ];
 
   return (
-    <ErrorBoundary>
+    <ErrorBoundary locale={locale}>
       <div className="tab-panel-shell">
         {activeTab === "overview" ? (
           <OverviewDashboard
@@ -369,7 +369,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               updateState((draft) => {
                 const providerName = Object.keys(draft.mainConfig.providers)[0];
                 if (!providerName) {
-                  throw new Error("Please create a provider first.");
+                  throw new Error(t(locale, "errorCreateProviderFirst"));
                 }
                 const modelId = createUniqueName(
                   "new-model",
@@ -440,8 +440,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               updateState((draft) => {
                 const profile = draft.profiles[name];
                 if (!profile) return;
-                const copyName = createCopyName(name, draft.profiles);
-                cloneProfile(draft, name, copyName, `${profile.label} Copy`);
+                const copyName = createLocalizedCopyName(name, draft.profiles, t(locale, "copySuffix"));
+                cloneProfile(draft, name, copyName, `${profile.label} ${t(locale, "copySuffix")}`);
                 setSelectedProfile(copyName);
               }, { persist: false })
             }
@@ -453,12 +453,12 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               updateState((draft) => {
                 const firstModel = Object.keys(draft.mainConfig.models)[0];
                 if (!firstModel) {
-                  throw new Error("Please create a model first.");
+                  throw new Error(t(locale, "errorCreateModelFirst"));
                 }
                 const name = createUniqueName("profile", Object.keys(draft.profiles));
                 upsertProfile(draft, {
                   name,
-                  label: "New Profile",
+                  label: t(locale, "newProfileLabel"),
                   default_model: firstModel,
                   default_thinking: true,
                   default_yolo: false,
@@ -488,7 +488,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                   </button>
                   {name === state.activeProfile ? (
                     <span className="list-current-badge" aria-label={t(locale, "summaryActive")} title={t(locale, "summaryActive")}>
-                      {locale === "zh-CN" ? "已激活" : "Active"}
+                      {t(locale, "active")}
                     </span>
                   ) : (
                     <button
@@ -546,22 +546,23 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                   }, { persist: false })
                 }
                 onSave={() => void onSave()}
-                onTest={async () => {
+                onTest={async (modelName) => {
                   const api = getApi();
                   if (!api || typeof api.testProfileConnectivity !== "function") {
                     setNotice("");
-                    setError(t(locale, "profileRuntimeOutdated"));
-                    return;
+                    throw new Error(t(locale, "profileRuntimeOutdated"));
                   }
                   try {
                     setProfileTestingName(selectedProfileName);
-                    await api.testProfileConnectivity(state, selectedProfileName);
+                    const result = await api.testProfileConnectivity(state, selectedProfileName, modelName);
                     setError("");
-                    setNotice(t(locale, "profileTestSuccess"));
+                    setNotice("");
+                    return result;
                   } catch (testError) {
                     const message = testError instanceof Error ? testError.message : String(testError);
+                    const translatedMessage = translateError(locale, message);
                     setNotice("");
-                    setError(translateError(locale, message));
+                    throw new Error(translatedMessage);
                   } finally {
                     setProfileTestingName("");
                   }
@@ -574,7 +575,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                 onClone={() =>
                   updateState((draft) => {
                     const source = selectedProfileName;
-                    cloneProfile(draft, source, `${source}-copy`, `${selectedProfileData.label} Copy`);
+                    cloneProfile(draft, source, `${source}-copy`, `${selectedProfileData.label} ${t(locale, "copySuffix")}`);
                     setSelectedProfile(`${source}-copy`);
                   }, { persist: false })
                 }
@@ -642,8 +643,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                   <button
                     className={server.enabled ? "list-toggle-button" : "list-toggle-button disabled"}
                     type="button"
-                    aria-label={server.enabled ? (locale === "zh-CN" ? "禁用 MCP" : "Disable MCP") : (locale === "zh-CN" ? "启用 MCP" : "Enable MCP")}
-                    title={server.enabled ? (locale === "zh-CN" ? "禁用 MCP" : "Disable MCP") : (locale === "zh-CN" ? "启用 MCP" : "Enable MCP")}
+                    aria-label={server.enabled ? t(locale, "disableMcp") : t(locale, "enableMcp")}
+                    title={server.enabled ? t(locale, "disableMcp") : t(locale, "enableMcp")}
                     onClick={() =>
                       updateState((draft) => {
                         const target = draft.mcpConfig.mcpServers[name];
@@ -757,11 +758,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             listItems={sortedSkillPathEntries.map((path) => path.id)}
             itemLabel={(item) => {
               const path = sortedSkillPathEntries.find((entry) => entry.id === item);
-              return path ? formatSkillPathLabel(path) : item;
+              return path ? formatSkillPathLabel(path, locale) : item;
             }}
             renderItemLabel={(item) => {
               const path = sortedSkillPathEntries.find((entry) => entry.id === item);
-              return path ? renderSkillPathLabel(path) : item;
+              return path ? renderSkillPathLabel(path, locale) : item;
             }}
             itemTitle={(item) => {
               const path = sortedSkillPathEntries.find((entry) => entry.id === item);
@@ -867,7 +868,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       }
                       options={DISPLAY_OPEN_OPTIONS.map((option) => ({
                         value: option.value,
-                        label: option.label[locale],
+                        label: labelForLocale(option.label, locale),
                       }))}
                     />
                   </div>
@@ -883,7 +884,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       selectedIcon={(THEME_OPTIONS.find((option) => option.value === state.panelSettings.theme) ?? THEME_OPTIONS[0]).icon}
                       options={THEME_OPTIONS.map((option) => ({
                         value: option.value,
-                        label: option.label[locale],
+                        label: labelForLocale(option.label, locale),
                         icon: option.icon,
                       }))}
                     />
@@ -898,7 +899,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       selectedIcon={(APPEARANCE_THEME_OPTIONS.find((option) => option.value === state.panelSettings.appearance_theme) ?? APPEARANCE_THEME_OPTIONS[0]).icon}
                       options={APPEARANCE_THEME_OPTIONS.map((option) => ({
                         value: option.value,
-                        label: option.label[locale],
+                        label: labelForLocale(option.label, locale),
                         icon: option.icon,
                       }))}
                     />
@@ -941,7 +942,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       }
                       options={CLOSE_BEHAVIOR_OPTIONS.map((option) => ({
                         value: option.value,
-                        label: option.label[locale],
+                        label: labelForLocale(option.label, locale),
                       }))}
                     />
                   ) : null}
@@ -955,7 +956,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                     }
                     options={TERMINAL_APP_OPTIONS.map((option) => ({
                       value: option.value,
-                      label: option.label[locale],
+                      label: labelForLocale(option.label, locale),
                     }))}
                   />
                 </SettingsGroup>
@@ -1049,12 +1050,12 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                             className={isConflicting ? "shortcut-row has-conflict" : "shortcut-row"}
                           >
                             <div className="shortcut-row-copy">
-                              <strong>{definition.label[locale]}</strong>
+                              <strong>{labelForLocale(definition.label, locale)}</strong>
                               {isConflicting ? <em>{conflictText}</em> : <span>{definition.action}</span>}
                             </div>
                             <div className="shortcut-row-actions">
                               <ShortcutRecorderField
-                                label={definition.label[locale]}
+                                label={labelForLocale(definition.label, locale)}
                                 displayValue={formatAcceleratorForPlatform(binding.accelerator, shortcutPlatform)}
                                 placeholder={t(locale, "shortcutClickToRecord")}
                                 recordingHint={t(locale, "shortcutRecorderHint")}
@@ -1230,6 +1231,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                         draft.panelSettings.backup_webdav_password = value;
                       })
                     }
+                    showLabel={t(locale, "showSecret")}
+                    hideLabel={t(locale, "hideSecret")}
                   />
                   <Field
                     label={t(locale, "backupWebdavPath")}

@@ -24,6 +24,7 @@ export const DEFAULT_CONFIG_PATH = "~/.kimi/config.toml";
 export const DEFAULT_PANEL_DIRECTORY = "~/.kimi/.panel";
 export const DEFAULT_PANEL_SETTINGS_PATH = `${DEFAULT_PANEL_DIRECTORY}/${PANEL_SETTINGS_FILENAME}`;
 export const LEGACY_PANEL_SETTINGS_PATH = "~/.kimi/config.panel.toml";
+const SUPPORTED_LOCALES = new Set<PanelSettings["locale"]>(["zh-CN", "zh-TW", "en-US", "ja-JP", "de-DE", "es-ES"]);
 
 const PROFILE_KEYS: Array<keyof Profile> = [
   "default_model",
@@ -238,7 +239,7 @@ function panelSettingsFromUnknown(data: Record<string, unknown>, fallback: Panel
     theme: parseAppearanceMode(data.theme, fallback.theme),
     appearance_theme: parseAppearanceTheme(data.appearance_theme, fallback.appearance_theme),
     ui_font_size: parseUiFontSize(data.ui_font_size, fallback.ui_font_size),
-    locale: data.locale === "en-US" ? "en-US" : "zh-CN",
+    locale: parseLocale(data.locale, fallback.locale),
     tray_icon: trayIcon,
     sidebar_collapsed: asBoolean(data.sidebar_collapsed, fallback.sidebar_collapsed),
     display_open_mode: parseDisplayOpenMode(data.display_open_mode, fallback.display_open_mode),
@@ -606,6 +607,12 @@ function asBoolean(value: unknown, fallback: boolean): boolean {
 
 function parseAppearanceMode(value: unknown, fallback: PanelSettings["theme"]): PanelSettings["theme"] {
   return value === "light" || value === "dark" || value === "auto" ? value : fallback;
+}
+
+function parseLocale(value: unknown, fallback: PanelSettings["locale"]): PanelSettings["locale"] {
+  return typeof value === "string" && SUPPORTED_LOCALES.has(value as PanelSettings["locale"])
+    ? value as PanelSettings["locale"]
+    : fallback;
 }
 
 function parseAppearanceTheme(

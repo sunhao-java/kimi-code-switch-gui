@@ -1,11 +1,11 @@
-import type { Locale, ShortcutAction, ShortcutBinding, ShortcutScope } from "./types";
+import type { LocalizedText, ShortcutAction, ShortcutBinding, ShortcutScope } from "./types";
 
 export interface ShortcutActionDefinition {
   action: ShortcutAction;
   scope: ShortcutScope;
   defaultAccelerator: string;
   defaultEnabled: boolean;
-  label: Record<Locale, string>;
+  label: LocalizedText;
 }
 
 export interface ShortcutConflict {
@@ -20,84 +20,168 @@ export const SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
     scope: "global",
     defaultAccelerator: "CommandOrControl+Shift+K",
     defaultEnabled: true,
-    label: { "zh-CN": "显示/隐藏主窗口", "en-US": "Show / Hide Window" },
+    label: {
+      "zh-CN": "显示/隐藏主窗口",
+      "zh-TW": "顯示/隱藏主視窗",
+      "en-US": "Show / Hide Window",
+      "ja-JP": "メインウィンドウを表示/非表示",
+      "de-DE": "Hauptfenster anzeigen/ausblenden",
+      "es-ES": "Mostrar/Ocultar ventana principal",
+    },
   },
   {
     action: "profile.next",
     scope: "global",
     defaultAccelerator: "",
     defaultEnabled: false,
-    label: { "zh-CN": "切换到下一个 Profile", "en-US": "Next Profile" },
+    label: {
+      "zh-CN": "切换到下一个 Profile",
+      "zh-TW": "切換到下一個 Profile",
+      "en-US": "Next Profile",
+      "ja-JP": "次の Profile へ切り替え",
+      "de-DE": "Zum nächsten Profil wechseln",
+      "es-ES": "Cambiar al perfil siguiente",
+    },
   },
   {
     action: "profile.previous",
     scope: "global",
     defaultAccelerator: "",
     defaultEnabled: false,
-    label: { "zh-CN": "切换到上一个 Profile", "en-US": "Previous Profile" },
+    label: {
+      "zh-CN": "切换到上一个 Profile",
+      "zh-TW": "切換到上一個 Profile",
+      "en-US": "Previous Profile",
+      "ja-JP": "前の Profile へ切り替え",
+      "de-DE": "Zum vorherigen Profil wechseln",
+      "es-ES": "Cambiar al perfil anterior",
+    },
   },
   {
     action: "app.reloadConfig",
     scope: "window",
     defaultAccelerator: "CommandOrControl+R",
     defaultEnabled: true,
-    label: { "zh-CN": "重新加载配置", "en-US": "Reload Config" },
+    label: {
+      "zh-CN": "重新加载配置",
+      "zh-TW": "重新載入設定",
+      "en-US": "Reload Config",
+      "ja-JP": "設定を再読み込み",
+      "de-DE": "Konfiguration neu laden",
+      "es-ES": "Recargar configuración",
+    },
   },
   {
     action: "app.save",
     scope: "window",
     defaultAccelerator: "CommandOrControl+S",
     defaultEnabled: true,
-    label: { "zh-CN": "保存全部", "en-US": "Save All" },
+    label: {
+      "zh-CN": "保存全部",
+      "zh-TW": "全部儲存",
+      "en-US": "Save All",
+      "ja-JP": "すべて保存",
+      "de-DE": "Alles speichern",
+      "es-ES": "Guardar todo",
+    },
   },
   {
     action: "tab.overview",
     scope: "window",
     defaultAccelerator: "CommandOrControl+1",
     defaultEnabled: true,
-    label: { "zh-CN": "切换到总览", "en-US": "Switch to Overview" },
+    label: {
+      "zh-CN": "切换到总览",
+      "zh-TW": "切換到總覽",
+      "en-US": "Switch to Overview",
+      "ja-JP": "概要へ切り替え",
+      "de-DE": "Zur Übersicht wechseln",
+      "es-ES": "Cambiar a Resumen",
+    },
   },
   {
     action: "tab.profiles",
     scope: "window",
     defaultAccelerator: "CommandOrControl+2",
     defaultEnabled: true,
-    label: { "zh-CN": "切换到 Profiles", "en-US": "Switch to Profiles" },
+    label: {
+      "zh-CN": "切换到 Profiles",
+      "zh-TW": "切換到 Profiles",
+      "en-US": "Switch to Profiles",
+      "ja-JP": "Profiles へ切り替え",
+      "de-DE": "Zu Profilen wechseln",
+      "es-ES": "Cambiar a Perfiles",
+    },
   },
   {
     action: "tab.providers",
     scope: "window",
     defaultAccelerator: "CommandOrControl+3",
     defaultEnabled: true,
-    label: { "zh-CN": "切换到 Providers", "en-US": "Switch to Providers" },
+    label: {
+      "zh-CN": "切换到 Providers",
+      "zh-TW": "切換到 Providers",
+      "en-US": "Switch to Providers",
+      "ja-JP": "Providers へ切り替え",
+      "de-DE": "Zu Providern wechseln",
+      "es-ES": "Cambiar a Proveedores",
+    },
   },
   {
     action: "tab.models",
     scope: "window",
     defaultAccelerator: "CommandOrControl+4",
     defaultEnabled: true,
-    label: { "zh-CN": "切换到 Models", "en-US": "Switch to Models" },
+    label: {
+      "zh-CN": "切换到 Models",
+      "zh-TW": "切換到 Models",
+      "en-US": "Switch to Models",
+      "ja-JP": "Models へ切り替え",
+      "de-DE": "Zu Modellen wechseln",
+      "es-ES": "Cambiar a Modelos",
+    },
   },
   {
     action: "tab.mcp",
     scope: "window",
     defaultAccelerator: "CommandOrControl+5",
     defaultEnabled: true,
-    label: { "zh-CN": "切换到 MCP", "en-US": "Switch to MCP" },
+    label: {
+      "zh-CN": "切换到 MCP",
+      "zh-TW": "切換到 MCP",
+      "en-US": "Switch to MCP",
+      "ja-JP": "MCP へ切り替え",
+      "de-DE": "Zu MCP wechseln",
+      "es-ES": "Cambiar a MCP",
+    },
   },
   {
     action: "tab.skills",
     scope: "window",
     defaultAccelerator: "CommandOrControl+6",
     defaultEnabled: true,
-    label: { "zh-CN": "切换到 Skills", "en-US": "Switch to Skills" },
+    label: {
+      "zh-CN": "切换到 Skills",
+      "zh-TW": "切換到 Skills",
+      "en-US": "Switch to Skills",
+      "ja-JP": "Skills へ切り替え",
+      "de-DE": "Zu Skills wechseln",
+      "es-ES": "Cambiar a Skills",
+    },
   },
   {
     action: "tab.settings",
     scope: "window",
     defaultAccelerator: "CommandOrControl+7",
     defaultEnabled: true,
-    label: { "zh-CN": "切换到设置", "en-US": "Switch to Settings" },
+    label: {
+      "zh-CN": "切换到设置",
+      "zh-TW": "切換到設定",
+      "en-US": "Switch to Settings",
+      "ja-JP": "設定へ切り替え",
+      "de-DE": "Zu Einstellungen wechseln",
+      "es-ES": "Cambiar a Ajustes",
+    },
   },
 ];
 

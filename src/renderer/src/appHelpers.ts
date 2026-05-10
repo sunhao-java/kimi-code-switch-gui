@@ -174,6 +174,30 @@ export function getResourceLabel(
     if (resource === "profile") return "Profile";
     return "MCP";
   }
+  if (locale === "zh-TW") {
+    if (resource === "provider") return "提供者";
+    if (resource === "model") return "模型";
+    if (resource === "profile") return "Profile";
+    return "MCP";
+  }
+  if (locale === "ja-JP") {
+    if (resource === "provider") return "プロバイダー";
+    if (resource === "model") return "モデル";
+    if (resource === "profile") return "Profile";
+    return "MCP";
+  }
+  if (locale === "de-DE") {
+    if (resource === "provider") return "Provider";
+    if (resource === "model") return "Modell";
+    if (resource === "profile") return "Profil";
+    return "MCP";
+  }
+  if (locale === "es-ES") {
+    if (resource === "provider") return "proveedor";
+    if (resource === "model") return "modelo";
+    if (resource === "profile") return "perfil";
+    return "MCP";
+  }
   if (resource === "provider") return "provider";
   if (resource === "model") return "model";
   if (resource === "profile") return "profile";

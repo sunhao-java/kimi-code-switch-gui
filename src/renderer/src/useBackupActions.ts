@@ -39,7 +39,7 @@ export function useBackupActions(ctx: BackupActionsContext) {
     const api = getApi();
     if (!api) {
       setNotice("");
-      setError("Electron preload API is unavailable. Backup cannot continue.");
+      setError(t(locale, "backupPreloadUnavailable"));
       return;
     }
     if (typeof api.runBackup !== "function") {
@@ -68,7 +68,7 @@ export function useBackupActions(ctx: BackupActionsContext) {
     const api = getApi();
     if (!api) {
       setNotice("");
-      setError("Electron preload API is unavailable. Backup test cannot continue.");
+      setError(t(locale, "backupTestPreloadUnavailable"));
       return;
     }
     if (typeof api.testBackupWebdav !== "function") {
@@ -100,7 +100,7 @@ export function useBackupActions(ctx: BackupActionsContext) {
     const api = getApi();
     if (!api) {
       setNotice("");
-      setError("Electron preload API is unavailable. Backup records cannot be loaded.");
+      setError(t(locale, "backupRecordsPreloadUnavailable"));
       return;
     }
     if (typeof api.listBackups !== "function") {
@@ -145,7 +145,7 @@ export function useBackupActions(ctx: BackupActionsContext) {
     const api = getApi();
     if (!api) {
       setNotice("");
-      setError("Electron preload API is unavailable. Backup deletion cannot continue.");
+      setError(t(locale, "backupDeletePreloadUnavailable"));
       return;
     }
     if (typeof api.deleteBackup !== "function") {
@@ -155,7 +155,7 @@ export function useBackupActions(ctx: BackupActionsContext) {
     }
 
     void (async () => {
-      const resourceLabel = locale === "zh-CN" ? "备份" : "backup";
+      const resourceLabel = t(locale, "backupRecordsPath");
       const confirmed = await confirmDeleteResource(resourceLabel, record.name);
       if (!confirmed) {
         return;
@@ -194,7 +194,7 @@ export function useBackupActions(ctx: BackupActionsContext) {
     const api = getApi();
     if (!api) {
       setNotice("");
-      setError("Electron preload API is unavailable. Backup restore cannot continue.");
+      setError(t(locale, "backupRestorePreloadUnavailable"));
       return;
     }
     if (typeof api.restoreBackup !== "function") {

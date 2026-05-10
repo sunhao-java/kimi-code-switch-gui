@@ -11,6 +11,7 @@ import type {
   PanelSettings,
   PreviewBundle,
   OpenKimiTerminalRequest,
+  ProfileConnectivityTestResult,
   RestoreBackupResult,
   RestoreDryRunResult,
   SaveStateConflictResult,
@@ -123,8 +124,8 @@ const api = {
     ipcRenderer.invoke("mcp:auth-server", name),
   resetMcpServerAuth: (name: string): Promise<{ ok: true; stdout: string; stderr: string }> =>
     ipcRenderer.invoke("mcp:reset-auth", name),
-  testProfileConnectivity: (state: AppState, profileName: string): Promise<{ ok: true; stdout: string; stderr: string }> =>
-    ipcRenderer.invoke("profile:test-connectivity", state, profileName),
+  testProfileConnectivity: (state: AppState, profileName: string, modelName?: string): Promise<ProfileConnectivityTestResult> =>
+    ipcRenderer.invoke("profile:test-connectivity", state, profileName, modelName),
   onTrayCommand: (callback: (command: TrayCommand) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, command: TrayCommand): void => callback(command);
     ipcRenderer.on("tray:command", listener);

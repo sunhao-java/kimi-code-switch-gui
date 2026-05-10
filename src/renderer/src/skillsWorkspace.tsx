@@ -330,14 +330,14 @@ function SkillsDetailDialog(props: {
       ? [{ label: t(props.locale, "skillsOverrideTarget"), value: props.skill.overriddenBy }]
       : []),
     ...(props.skill.metadata.license
-      ? [{ label: "license", value: props.skill.metadata.license }]
+      ? [{ label: t(props.locale, "skillsLicense"), value: props.skill.metadata.license }]
       : []),
     ...(props.skill.metadata.compatibility
-      ? [{ label: "compatibility", value: props.skill.metadata.compatibility }]
+      ? [{ label: t(props.locale, "skillsCompatibility"), value: props.skill.metadata.compatibility }]
       : []),
     ...(Object.keys(props.skill.metadata.metadata).length > 0
       ? [{
-          label: "metadata",
+          label: t(props.locale, "skillsMetadata"),
           value: Object.entries(props.skill.metadata.metadata).map(([key, value]) => `${key}: ${value}`).join(" · "),
         }]
       : []),
@@ -390,6 +390,7 @@ function SkillsDetailDialog(props: {
         <CodePanel
           title={props.skill.skillFilePath}
           content={props.skill.content}
+          locale={props.locale}
           onCopy={props.onCopy}
           copied={props.copied}
         />

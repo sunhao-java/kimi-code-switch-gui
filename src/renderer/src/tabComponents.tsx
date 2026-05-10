@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import {
-  Boxes, Eye, EyeOff, FileText, FolderOpen, LoaderCircle,
-  MoonStar, PenSquare, Save, Sparkles, X,
+  Boxes, Check, Eye, EyeOff, FileText, FolderOpen, LoaderCircle,
+  MoonStar, PenSquare, Play, RefreshCw, Save, Sparkles, X,
 } from "lucide-react";
 
 import { normalizeEntryName } from "@shared/nameRules";
@@ -11,12 +12,12 @@ import type {
   AppState,
   AppearanceMode, AppearanceTheme, BackupDestinationType, BackupFrequency, BackupStrategy,
   CloseBehavior, DisplayOpenMode, Locale,
-  McpServerConfig, McpTransport, Profile, UiFontSize,
+  McpServerConfig, McpTransport, Profile, ProfileConnectivityTestResult, UiFontSize,
 } from "@shared/types";
 
 import { getApi } from "./appHelpers";
 import {
-  MCP_TRANSPORT_OPTIONS, MODEL_CAPABILITY_OPTIONS,
+  labelForLocale, MCP_TRANSPORT_OPTIONS, MODEL_CAPABILITY_OPTIONS,
   PROVIDER_TYPE_OPTIONS, UI_FONT_SIZE_OPTIONS,
 } from "./appOptions";
 import { t } from "./i18n";
@@ -26,7 +27,11 @@ import {
 } from "./formControls";
 
 export function createCopyName(sourceName: string, existing: Record<string, unknown>): string {
-  const baseName = `${sourceName} Copy`;
+  return createLocalizedCopyName(sourceName, existing, "Copy");
+}
+
+export function createLocalizedCopyName(sourceName: string, existing: Record<string, unknown>, copySuffix: string): string {
+  const baseName = `${sourceName} ${copySuffix}`;
   if (!existing[baseName]) {
     return baseName;
   }
@@ -120,7 +125,7 @@ export function ProviderForm(props: {
   const providerTypeOptions = ensureEnumOptions(
     PROVIDER_TYPE_OPTIONS.map((option) => ({
       value: option.value,
-      label: option.label[props.locale],
+      label: labelForLocale(option.label, props.locale),
     })),
     props.value.type,
     props.locale,
@@ -128,7 +133,7 @@ export function ProviderForm(props: {
 
   return (
     <section className="glass-panel form-panel">
-      <div className="section-title">{props.locale === "zh-CN" ? "Provider 编辑" : "Provider Editor"}</div>
+      <div className="section-title">{t(props.locale, "providerEditor")}</div>
       {props.nameEditable ? (
         <Field label={t(props.locale, "formName")} value={props.name} onChange={(value) => props.onChange(value, {})} />
       ) : (
@@ -148,6 +153,8 @@ export function ProviderForm(props: {
         visible={isApiKeyVisible}
         onToggleVisible={() => setIsApiKeyVisible((current) => !current)}
         onChange={(value) => props.onChange(props.name, { api_key: value })}
+        showLabel={t(props.locale, "showSecret")}
+        hideLabel={t(props.locale, "hideSecret")}
       />
       <div className="button-row">
         <button className="action-button action-button-primary" onClick={props.onSave}>
@@ -217,7 +224,7 @@ export function ModelForm(props: {
   const capabilityOptions = ensureEnumOptions(
     MODEL_CAPABILITY_OPTIONS.map((option) => ({
       value: option.value,
-      label: option.label[props.locale],
+      label: labelForLocale(option.label, props.locale),
     })),
     props.value.capabilities,
     props.locale,
@@ -225,7 +232,7 @@ export function ModelForm(props: {
 
   return (
     <section className="glass-panel form-panel">
-      <div className="section-title">{props.locale === "zh-CN" ? "Model 编辑" : "Model Editor"}</div>
+      <div className="section-title">{t(props.locale, "modelEditor")}</div>
       <ReadOnlyField label={t(props.locale, "formName")} value={props.name} />
       <SelectField
         label={t(props.locale, "formProvider")}
@@ -275,12 +282,12 @@ export function McpServerForm(props: {
 }): JSX.Element {
   const transportOptions = MCP_TRANSPORT_OPTIONS.map((option) => ({
     value: option.value,
-    label: option.label[props.locale],
+    label: labelForLocale(option.label, props.locale),
   }));
 
   return (
     <section className="glass-panel form-panel">
-      <div className="section-title">{props.locale === "zh-CN" ? "MCP 编辑" : "MCP Editor"}</div>
+      <div className="section-title">{t(props.locale, "mcpEditor")}</div>
       {props.nameEditable ? (
         <Field label={t(props.locale, "formName")} value={props.name} onChange={(next) => props.onChange(next, { ...props.value })} />
       ) : (
@@ -305,8 +312,8 @@ export function McpServerForm(props: {
             label={t(props.locale, "formHeaders")}
             value={props.value.headers}
             addLabel={t(props.locale, "addHeader")}
-            keyPlaceholder={props.locale === "zh-CN" ? "Header 名称" : "Header name"}
-            valuePlaceholder={props.locale === "zh-CN" ? "Header 值" : "Header value"}
+            keyPlaceholder={t(props.locale, "headerNamePlaceholder")}
+            valuePlaceholder={t(props.locale, "headerValuePlaceholder")}
             onChange={(next) => props.onChange(props.name, { ...props.value, headers: next })}
           />
         </>
@@ -328,8 +335,8 @@ export function McpServerForm(props: {
             label={t(props.locale, "formEnv")}
             value={props.value.env}
             addLabel={t(props.locale, "addEnv")}
-            keyPlaceholder={props.locale === "zh-CN" ? "变量名称" : "Variable name"}
-            valuePlaceholder={props.locale === "zh-CN" ? "变量值" : "Variable value"}
+            keyPlaceholder={t(props.locale, "variableNamePlaceholder")}
+            valuePlaceholder={t(props.locale, "variableValuePlaceholder")}
             onChange={(next) => props.onChange(props.name, { ...props.value, env: next })}
           />
         </>
@@ -431,15 +438,16 @@ export function ProfileForm(props: {
   isTesting: boolean;
   onChange: (name: string, value: Profile) => void;
   onSave: () => void;
-  onTest: () => void;
+  onTest: (modelName: string) => Promise<ProfileConnectivityTestResult>;
   onActivate: () => void;
   onClone: () => void;
   onDelete: () => void;
 }): JSX.Element {
   const value = props.value;
+  const [isTestDialogOpen, setIsTestDialogOpen] = useState(false);
   return (
     <section className="glass-panel form-panel">
-      <div className="section-title">{props.locale === "zh-CN" ? "Profile 编辑" : "Profile Editor"}</div>
+      <div className="section-title">{t(props.locale, "profileEditor")}</div>
       {props.nameEditable ? (
         <Field label={t(props.locale, "formName")} value={props.name} onChange={(next) => props.onChange(next, { ...value, name: next })} />
       ) : (
@@ -466,7 +474,7 @@ export function ProfileForm(props: {
           className={props.isTesting ? "action-button is-loading" : "action-button"}
           type="button"
           disabled={props.isTesting}
-          onClick={props.onTest}
+          onClick={() => setIsTestDialogOpen(true)}
         >
           {props.isTesting ? <LoaderCircle size={16} className="button-spinner" /> : null}
           <span>{props.isTesting ? t(props.locale, "profileTesting") : t(props.locale, "profileTest")}</span>
@@ -475,7 +483,162 @@ export function ProfileForm(props: {
         <button className="action-button" onClick={props.onClone}>{t(props.locale, "clone")}</button>
         <button className="action-button danger" onClick={props.onDelete}>{t(props.locale, "delete")}</button>
       </div>
+      {isTestDialogOpen ? (
+        <ProfileTestDialog
+          locale={props.locale}
+          profile={value}
+          profileName={props.name}
+          models={props.models}
+          onTest={props.onTest}
+          onClose={() => setIsTestDialogOpen(false)}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function ProfileTestDialog(props: {
+  locale: Locale;
+  profile: Profile;
+  profileName: string;
+  models: string[];
+  onTest: (modelName: string) => Promise<ProfileConnectivityTestResult>;
+  onClose: () => void;
+}): JSX.Element {
+  const testModel = props.profile.default_model;
+  const [isTesting, setIsTesting] = useState(false);
+  const [result, setResult] = useState<ProfileConnectivityTestResult | null>(null);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [hasStarted, setHasStarted] = useState(false);
+
+  useDialogEscape(props.onClose);
+
+  const runTest = async (modelName: string): Promise<void> => {
+    setHasStarted(true);
+    setIsTesting(true);
+    setErrorMessage("");
+    try {
+      const nextResult = await props.onTest(modelName);
+      setResult(nextResult);
+    } catch (error) {
+      setResult(null);
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const providerType = result?.providerType || "apikey";
+  const prompt = result?.prompt ?? "hi";
+  const displayModel = result?.modelName ?? testModel;
+
+  return createPortal(
+    <div
+      className="profile-test-backdrop"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          props.onClose();
+        }
+      }}
+    >
+      <section className="profile-test-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="profile-test-title">
+        <div className="profile-test-header">
+          <h3 id="profile-test-title">{t(props.locale, "profileTestDialogTitle")}</h3>
+          <button className="profile-test-close" type="button" aria-label={t(props.locale, "close")} onClick={props.onClose}>
+            <X size={24} />
+          </button>
+        </div>
+
+        <div className="profile-test-body">
+          <div className="profile-test-account-card">
+            <div className="profile-test-play">
+              <Play size={28} />
+            </div>
+            <div className="profile-test-account-copy">
+              <strong>{props.profileName}</strong>
+              <span><b>{providerType.toUpperCase()}</b>{t(props.locale, "profileTestAccountLabel")}</span>
+            </div>
+            <span className="profile-test-active">{t(props.locale, "active")}</span>
+          </div>
+
+          <ProfileTestConsole
+            locale={props.locale}
+            profileName={props.profileName}
+            providerType={providerType}
+            modelName={displayModel}
+            prompt={prompt}
+            result={result}
+            errorMessage={errorMessage}
+            isTesting={isTesting}
+            hasStarted={hasStarted}
+          />
+
+        </div>
+
+        <div className="profile-test-actions">
+          <button className="action-button" type="button" onClick={props.onClose}>
+            {t(props.locale, "close")}
+          </button>
+          <button
+            className={isTesting ? "action-button action-button-primary is-loading" : "action-button action-button-primary"}
+            type="button"
+            disabled={isTesting}
+            onClick={() => void runTest(testModel)}
+          >
+            {isTesting ? <LoaderCircle size={17} className="button-spinner" /> : <RefreshCw size={17} />}
+            <span>{isTesting ? t(props.locale, "profileTesting") : hasStarted ? t(props.locale, "profileTestRetry") : t(props.locale, "profileTestStart")}</span>
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+function ProfileTestConsole(props: {
+  locale: Locale;
+  profileName: string;
+  providerType: string;
+  modelName: string;
+  prompt: string;
+  result: ProfileConnectivityTestResult | null;
+  errorMessage: string;
+  isTesting: boolean;
+  hasStarted: boolean;
+}): JSX.Element {
+  const response = props.result?.stdout || props.result?.stderr || "";
+  return (
+    <div className="profile-test-console">
+      {props.hasStarted ? (
+        <p className="is-info">{formatMessage(t(props.locale, "profileTestStartAccount"), { name: props.profileName })}</p>
+      ) : null}
+      <p>{formatMessage(t(props.locale, "profileTestAccountType"), { type: props.providerType })}</p>
+      <p className={props.errorMessage ? "is-danger" : props.result ? "is-success" : "is-muted"}>
+        {props.errorMessage
+          ? t(props.locale, "profileTestFailed")
+          : props.result
+            ? t(props.locale, "profileTestConnected")
+            : t(props.locale, "profileTestStart")}
+      </p>
+      <p className="is-cyan">{formatMessage(t(props.locale, "profileTestUsingModel"), { model: props.modelName })}</p>
+      <p>{formatMessage(t(props.locale, "profileTestSendingPrompt"), { prompt: props.prompt })}</p>
+      <p className="is-warning">{t(props.locale, "profileTestResponse")}</p>
+      {props.isTesting ? (
+        <p className="is-muted">{t(props.locale, "profileTesting")}</p>
+      ) : props.errorMessage ? (
+        <pre className="is-danger">{props.errorMessage}</pre>
+      ) : response ? (
+        <pre className="is-output">{response}</pre>
+      ) : null}
+      <div className="profile-test-console-divider" />
+      {!props.isTesting && props.hasStarted ? (
+        <p className={props.errorMessage ? "is-danger profile-test-console-status" : "is-success profile-test-console-status"}>
+          {props.errorMessage ? <X size={18} /> : <Check size={18} />}
+          <span>{props.errorMessage ? t(props.locale, "profileTestFailed") : t(props.locale, "profileTestCompleted")}</span>
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -642,7 +805,7 @@ export function ensureEnumOptions(
     }
     merged.push({
       value,
-      label: locale === "zh-CN" ? `未知值（${value}）` : `Unknown Value (${value})`,
+      label: formatMessage(t(locale, "unknownValue"), { value }),
     });
   }
   return merged;
@@ -684,14 +847,16 @@ export function formatMessage(template: string, values: Record<string, string | 
 
 export function formatSkillPathLabel(
   path: SkillsScanReport["paths"][number],
+  locale: Locale,
 ): string {
-  return predictSkillLibrary(path.path).label;
+  return predictSkillLibrary(path.path, locale).label;
 }
 
 export function renderSkillPathLabel(
   path: SkillsScanReport["paths"][number],
+  locale: Locale,
 ): JSX.Element {
-  const prediction = predictSkillLibrary(path.path);
+  const prediction = predictSkillLibrary(path.path, locale);
   return (
     <span className="skill-path-label">
       <span className={`skill-path-icon ${prediction.className}`} aria-hidden="true">
@@ -702,22 +867,22 @@ export function renderSkillPathLabel(
   );
 }
 
-export function predictSkillLibrary(path: string): { icon: typeof Sparkles; className: string; label: string } {
+export function predictSkillLibrary(path: string, locale: Locale): { icon: typeof Sparkles; className: string; label: string } {
   const normalized = path.toLowerCase();
   if (normalized.includes("/.claude/")) {
-    return { icon: Sparkles, className: "is-claude", label: "Claude 技能库" };
+    return { icon: Sparkles, className: "is-claude", label: t(locale, "skillLibraryClaude") };
   }
   if (normalized.includes("/.codex/")) {
-    return { icon: Boxes, className: "is-codex", label: "Codex 技能库" };
+    return { icon: Boxes, className: "is-codex", label: t(locale, "skillLibraryCodex") };
   }
   if (normalized.includes("/.kimi/")) {
-    return { icon: MoonStar, className: "is-kimi", label: "Kimi 技能库" };
+    return { icon: MoonStar, className: "is-kimi", label: t(locale, "skillLibraryKimi") };
   }
   if (normalized.includes("/agents/")) {
-    return { icon: PenSquare, className: "is-agents", label: "Agents 技能库" };
+    return { icon: PenSquare, className: "is-agents", label: t(locale, "skillLibraryAgents") };
   }
   if (path === "(managed by CLI package)") {
-    return { icon: FileText, className: "is-generic", label: "内置技能库" };
+    return { icon: FileText, className: "is-generic", label: t(locale, "skillLibraryBuiltin") };
   }
-  return { icon: FolderOpen, className: "is-generic", label: "自定义技能库" };
+  return { icon: FolderOpen, className: "is-generic", label: t(locale, "skillLibraryCustom") };
 }

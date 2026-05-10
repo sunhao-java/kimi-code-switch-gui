@@ -4,7 +4,7 @@ import { Boxes, Check, FileText, Globe, Layers3, Zap } from "lucide-react";
 import type { AppState, Locale } from "@shared/types";
 
 import { ABOUT_INFO } from "./aboutPage";
-import { APPEARANCE_THEME_OPTIONS } from "./appOptions";
+import { APPEARANCE_THEME_OPTIONS, labelForLocale } from "./appOptions";
 import { t } from "./i18n";
 
 export type DiagnosticLevel = "ok" | "failed" | "pending" | "unavailable";
@@ -88,7 +88,7 @@ export function OverviewDashboard(props: {
 
   function themeLabel(theme: string): string {
     const option = APPEARANCE_THEME_OPTIONS.find((o) => o.value === theme);
-    return option ? option.label[locale] : theme || "aurora";
+    return option ? labelForLocale(option.label, locale) : theme || "aurora";
   }
 
   function BoolPill({ value }: { value: boolean }): JSX.Element {

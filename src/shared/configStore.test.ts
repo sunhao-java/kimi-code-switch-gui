@@ -294,6 +294,18 @@ describe("configStore", () => {
     expect(loaded.last_display_id).toBe(2);
   });
 
+  it("loads supported non-English panel locales", async () => {
+    for (const locale of ["zh-TW", "ja-JP", "de-DE", "es-ES"] as const) {
+      const files = createMemoryFs({
+        "/tmp/config.panel.toml": `locale = "${locale}"\n`,
+      });
+
+      const loaded = await loadPanelSettings(files, "/tmp/config.panel.toml");
+
+      expect(loaded.locale).toBe(locale);
+    }
+  });
+
   it("clamps invalid backup settings to safe defaults", async () => {
     const files = createMemoryFs({
       "/tmp/config.panel.toml":

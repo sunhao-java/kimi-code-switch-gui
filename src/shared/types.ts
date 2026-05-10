@@ -6,7 +6,8 @@ export type ProviderType =
   | "gemini"
   | "vertexai";
 
-export type Locale = "zh-CN" | "en-US";
+export type Locale = "zh-CN" | "zh-TW" | "en-US" | "ja-JP" | "de-DE" | "es-ES";
+export type LocalizedText = Partial<Record<Locale, string>> & Record<"en-US", string>;
 export type AppearanceMode = "auto" | "dark" | "light";
 export type AppearanceTheme = "aurora" | "ocean" | "violet" | "sunset";
 export type UiFontSize = "mini" | "compact" | "small" | "standard" | "large" | "extra-large";
@@ -144,6 +145,21 @@ export interface OpenKimiTerminalRequest {
   settings: PanelSettings;
   state?: AppState;
   profileName?: string;
+}
+
+export interface ProfileConnectivityTestResult {
+  ok: true;
+  stdout: string;
+  stderr: string;
+  profileName: string;
+  modelName: string;
+  providerName: string;
+  providerType: string;
+  prompt: string;
+  endpoint: string;
+  firstTokenMs: number;
+  totalMs: number;
+  status: number;
 }
 
 export interface PreviewBundle {

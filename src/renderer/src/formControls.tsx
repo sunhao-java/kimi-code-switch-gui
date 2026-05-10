@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import type { HTMLAttributes, ReactNode } from "react";
 import { Check, ChevronDown, Globe, Plus, X } from "lucide-react";
 
-import type { Locale, UiFontSize } from "@shared/types";
+import type { Locale, LocalizedText, UiFontSize } from "@shared/types";
 
+import { labelForLocale } from "./appOptions";
 import { t } from "./i18n";
 import { eventToAccelerator } from "./useShortcuts";
 
@@ -284,7 +285,7 @@ export function FontSizeSliderField(props: {
   value: UiFontSize;
   options: Array<{
     value: UiFontSize;
-    label: Record<Locale, string>;
+    label: LocalizedText;
     fontSize: string;
   }>;
   onChange: (value: UiFontSize) => void;
@@ -324,7 +325,7 @@ export function FontSizeSliderField(props: {
                 key={option.value}
                 className={option.value === props.value ? "is-active" : undefined}
               >
-                {option.label[props.locale]}
+                {labelForLocale(option.label, props.locale)}
               </span>
             ))}
           </div>

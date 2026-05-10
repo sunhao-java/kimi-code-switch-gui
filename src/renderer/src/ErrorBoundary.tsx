@@ -1,8 +1,11 @@
 import { Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
+import type { Locale } from "@shared/types";
+import { t } from "./i18n";
 
 interface ErrorBoundaryProps {
   fallback?: ReactNode;
+  locale?: Locale;
   onError?: (error: Error, info: ErrorInfo) => void;
   children: ReactNode;
 }
@@ -36,15 +39,16 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       if (this.props.fallback) {
         return this.props.fallback;
       }
+      const locale = this.props.locale ?? "en-US";
       return (
         <section className="glass-panel form-panel empty-state" style={{ padding: "28px", borderRadius: "20px" }}>
-          <div className="section-title">Something went wrong</div>
+          <div className="section-title">{t(locale, "errorBoundaryTitle")}</div>
           <p style={{ color: "var(--muted)", lineHeight: 1.7, marginBottom: "16px" }}>
-            {this.state.error?.message ?? "An unexpected error occurred in this section."}
+            {this.state.error?.message ?? t(locale, "errorBoundaryDescription")}
           </p>
           <div className="button-row">
             <button className="action-button" type="button" onClick={this.handleReset}>
-              Try Again
+              {t(locale, "tryAgain")}
             </button>
           </div>
         </section>
