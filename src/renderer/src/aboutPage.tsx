@@ -25,7 +25,7 @@ interface UpdateCheckResult {
 }
 
 export const ABOUT_INFO = {
-  version: "1.1.3",
+  version: "1.1.4",
   author: "Hulk Sun",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",
@@ -389,6 +389,13 @@ export function AboutPage(props: {
     },
   ];
   const history = [
+    {
+      version: "v1.1.4",
+      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.4`,
+      text: isZh
+        ? "新增侧边栏展开/收缩状态持久化，面板会在下次启动时恢复上一次的侧边栏状态。"
+        : "Persisted the sidebar expanded/collapsed state so the panel restores the previous sidebar state on next launch.",
+    },
     {
       version: "v1.1.3",
       url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.3`,
