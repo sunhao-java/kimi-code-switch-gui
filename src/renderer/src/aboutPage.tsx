@@ -25,7 +25,7 @@ interface UpdateCheckResult {
 }
 
 export const ABOUT_INFO = {
-  version: "1.1.4",
+  version: "1.1.5",
   author: "Hulk Sun",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",
@@ -389,6 +389,13 @@ export function AboutPage(props: {
     },
   ];
   const history = [
+    {
+      version: "v1.1.5",
+      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.5`,
+      text: isZh
+        ? "修复 Homebrew 打包后 iTerm2 打开 Kimi 依赖 System Events 发送按键导致权限失败的问题。"
+        : "Fixed iTerm2 launch failures in Homebrew builds by avoiding System Events simulated keystrokes.",
+    },
     {
       version: "v1.1.4",
       url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.4`,

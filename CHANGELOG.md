@@ -4,6 +4,12 @@
 
 格式参考 Keep a Changelog，当前项目采用 `major.minor.patch` 版本号方案。
 
+## [1.1.5] - 2026-05-10
+
+### 修复
+
+- 修复 Homebrew 打包后 iTerm2 打开 Kimi 依赖 `System Events` 发送按键导致 macOS 权限失败的问题，改用 iTerm2 原生 AppleScript 写入命令。
+
 ## [1.1.4] - 2026-05-10
 
 ### 新增
