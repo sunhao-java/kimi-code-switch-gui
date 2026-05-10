@@ -191,7 +191,7 @@ textarea:focus-visible {
   min-width: 0;
   height: 100vh;
   overflow: hidden;
-  transition: grid-template-columns 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* No transition on grid - layout changes are instant */
 }
 
 .shell.sidebar-collapsed {
@@ -210,7 +210,6 @@ textarea:focus-visible {
   background:
     linear-gradient(90deg, rgba(15, 36, 67, 0.96) 0%, rgba(12, 31, 56, 0.88) 42%, rgba(10, 44, 55, 0.82) 100%);
   border-bottom: 1px solid rgba(124, 179, 255, 0.12);
-  backdrop-filter: blur(18px);
 }
 
 :root[data-theme="light"] .window-titlebar {
@@ -236,10 +235,9 @@ textarea:focus-visible {
 }
 
 .glass-panel {
-  background: var(--panel);
+  background: var(--panel-strong);
   border: 1px solid var(--line);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(22px);
 }
 
 .drag-region {
@@ -266,10 +264,7 @@ textarea:focus-visible {
   height: calc(100vh - var(--titlebar-height) - 34px);
   overflow: hidden;
   min-width: 0;
-  transition:
-    width 200ms cubic-bezier(0.4, 0, 0.2, 1),
-    padding 200ms cubic-bezier(0.4, 0, 0.2, 1),
-    border-radius 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  contain: layout style;
 }
 
 .shell.sidebar-collapsed .sidebar {
@@ -298,9 +293,6 @@ textarea:focus-visible {
   place-items: center;
   width: 54px;
   height: 54px;
-  transition:
-    width 200ms cubic-bezier(0.4, 0, 0.2, 1),
-    height 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .shell.sidebar-collapsed .brand-mark {
@@ -644,6 +636,7 @@ textarea:focus-visible {
   overflow: hidden;
   min-width: 0;
   min-height: 0;
+  contain: layout style;
 }
 
 .content-scroll {
@@ -694,7 +687,6 @@ textarea:focus-visible {
   background:
     radial-gradient(circle at top, rgba(87, 177, 255, 0.1), transparent 34%),
     rgba(4, 10, 20, 0.26);
-  backdrop-filter: blur(14px) saturate(1.08);
 }
 
 :root[data-theme="light"] .confirm-dialog-backdrop,
@@ -1685,7 +1677,6 @@ textarea:focus-visible {
   border: 1px solid var(--line);
   background: rgba(8, 17, 31, 0.92);
   box-shadow: 0 24px 50px rgba(2, 8, 18, 0.34);
-  backdrop-filter: blur(24px);
   opacity: 0;
   visibility: hidden;
   transform: translateY(8px) scale(0.98);
@@ -2061,7 +2052,6 @@ textarea:focus-visible {
     0 28px 66px rgba(1, 8, 17, 0.42),
     0 0 0 1px rgba(87, 177, 255, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(24px) saturate(1.25);
   opacity: 0;
   visibility: hidden;
   transform: translateY(10px) scale(0.96);
@@ -2220,7 +2210,6 @@ textarea:focus-visible {
   border-radius: 16px;
   border: 1px solid var(--line);
   box-shadow: 0 14px 30px rgba(1, 9, 18, 0.22);
-  backdrop-filter: blur(18px);
   pointer-events: auto;
 }
 
@@ -2335,9 +2324,8 @@ textarea:focus-visible {
   align-content: start;
   padding: 18px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--panel-strong);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(22px);
 }
 
 :root[data-theme="light"] .overview-grid {
@@ -3138,7 +3126,6 @@ textarea:focus-visible {
   place-items: center;
   padding: 24px;
   background: rgba(2, 8, 18, 0.18);
-  backdrop-filter: blur(5px) saturate(1.02);
 }
 
 :root[data-theme="light"] .mcp-import-backdrop {
@@ -4417,7 +4404,6 @@ textarea:focus-visible {
   place-items: center;
   padding: 24px;
   background: rgba(2, 8, 18, 0.18);
-  backdrop-filter: blur(5px) saturate(1.02);
 }
 
 :root[data-theme="light"] .document-viewer-backdrop {
@@ -4494,7 +4480,6 @@ textarea:focus-visible {
   place-items: center;
   padding: 24px;
   background: rgba(2, 8, 18, 0.18);
-  backdrop-filter: blur(5px) saturate(1.02);
 }
 
 :root[data-theme="light"] .backup-records-backdrop {
@@ -5607,7 +5592,6 @@ textarea:focus-visible {
   place-items: center;
   padding: 24px;
   background: rgba(2, 8, 18, 0.18);
-  backdrop-filter: blur(5px) saturate(1.02);
 }
 
 :root[data-theme="light"] .skills-detail-dialog-backdrop {
