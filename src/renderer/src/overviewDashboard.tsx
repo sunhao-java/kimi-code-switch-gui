@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Boxes, Check, FileText, Globe, Layers3, Zap } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Boxes, Check, Download, FileText, Globe, Layers3, LoaderCircle, RefreshCw, Zap } from "lucide-react";
 
 import type { AppState, Locale } from "@shared/types";
 
@@ -17,6 +17,12 @@ export interface DiagnosticsState {
 }
 
 type OverviewTabId = "profiles" | "providers" | "models";
+type CliVersionState = {
+  version: string;
+  installed: boolean;
+  latestVersion?: string;
+  hasUpdate?: boolean;
+};
 
 export function SummaryCard(props: {
   label: string;
@@ -79,10 +85,40 @@ export function OverviewDashboard(props: {
   const visibleModels = modelEntries.slice(0, 3);
   const visibleProfiles = profileEntries.slice(0, 4);
 
-  const [cliVersion, setCliVersion] = useState<{ version: string; installed: boolean }>({ version: "", installed: false });
-  useEffect(() => {
-    window.kimiSwitch?.getCliVersion?.().then(setCliVersion).catch(() => setCliVersion({ version: "", installed: false }));
+  const [cliVersion, setCliVersion] = useState<CliVersionState>({ version: "", installed: false });
+  const [isCliVersionChecking, setIsCliVersionChecking] = useState(false);
+  const [isCliUpdating, setIsCliUpdating] = useState(false);
+  const checkCliVersion = useCallback(async (checkLatest = false): Promise<void> => {
+    setIsCliVersionChecking(true);
+    try {
+      const version = await window.kimiSwitch?.getCliVersion?.({ checkLatest });
+      setCliVersion(version ?? { version: "", installed: false });
+    } catch {
+      setCliVersion({ version: "", installed: false });
+    } finally {
+      setIsCliVersionChecking(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void checkCliVersion();
+  }, [checkCliVersion]);
+
+  const upgradeCli = useCallback(async (): Promise<void> => {
+    setIsCliUpdating(true);
+    try {
+      await window.kimiSwitch?.upgradeKimiCli?.();
+      await checkCliVersion(true);
+    } finally {
+      setIsCliUpdating(false);
+    }
+  }, [checkCliVersion]);
+
+  const cliVersionText = cliVersion.installed
+    ? cliVersion.hasUpdate && cliVersion.latestVersion
+      ? `${cliVersion.version} -> ${cliVersion.latestVersion}`
+      : cliVersion.version
+    : t(locale, "overviewCliNotFound");
 
   const boolLabel = (v: boolean): string => t(locale, v ? "overviewOn" : "overviewOff");
 
@@ -116,7 +152,7 @@ export function OverviewDashboard(props: {
         <div className="overview-hero-body">
           <div className="overview-hero-col">
             <div className="overview-hero-col-title">{t(locale, "overviewAppVersion")}</div>
-            <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewCliVersion")}</span><span className={cliVersion.installed ? "overview-hero-kv-value" : "overview-hero-kv-value text-warn"}>{cliVersion.installed ? cliVersion.version : t(locale, "overviewCliNotFound")}</span></div>
+            <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewCliVersion")}</span><span className={cliVersion.installed ? "overview-hero-kv-value overview-cli-version-value" : "overview-hero-kv-value overview-cli-version-value text-warn"}><span>{cliVersionText}</span><button className="overview-cli-check-button" type="button" title={t(locale, "overviewCliCheck")} aria-label={t(locale, "overviewCliCheck")} disabled={isCliVersionChecking || isCliUpdating} onClick={() => void checkCliVersion(true)}>{isCliVersionChecking ? <LoaderCircle size={13} className="button-spinner" /> : <RefreshCw size={13} />}</button>{cliVersion.hasUpdate ? <button className="overview-cli-check-button" type="button" title={t(locale, "overviewCliUpdate")} aria-label={t(locale, "overviewCliUpdate")} disabled={isCliUpdating || isCliVersionChecking} onClick={() => void upgradeCli()}>{isCliUpdating ? <LoaderCircle size={13} className="button-spinner" /> : <Download size={13} />}</button> : null}</span></div>
             <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewDefaultModel")}</span><span className="overview-hero-kv-value">{activeProfile?.default_model || "-"}</span></div>
             <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewTheme")}</span><span className="overview-hero-kv-value">{themeLabel(state.panelSettings.appearance_theme)}</span></div>
           </div>

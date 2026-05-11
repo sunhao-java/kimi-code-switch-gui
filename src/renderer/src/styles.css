@@ -2515,6 +2515,40 @@ textarea:focus-visible {
   color: var(--text);
 }
 
+.overview-cli-version-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.overview-cli-check-button {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(var(--primary-rgb), 0.18);
+  border-radius: 999px;
+  background: rgba(var(--primary-rgb), 0.08);
+  color: var(--primary);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    transform 160ms ease;
+}
+
+.overview-cli-check-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(var(--primary-rgb), 0.34);
+  background: rgba(var(--primary-rgb), 0.14);
+}
+
+.overview-cli-check-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
 /* Paths section */
 .overview-hero-paths {
   margin-top: 18px;
