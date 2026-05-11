@@ -28,7 +28,7 @@ import { scanSkills } from "@shared/skillsStore";
 import { normalizeShortcuts } from "@shared/shortcutStore";
 import type { OpenKimiTerminalRequest, PanelSettings } from "@shared/types";
 import { buildRestoreDryRun, restoreBackupSafely } from "./modules/backupRestore";
-import { getCliEnv, getCliVersion, runKimiConnectivityTest, runKimiMcpCommand } from "./modules/cli";
+import { getCliEnv, getCliVersion, runKimiConnectivityTest, runKimiMcpCommand, upgradeKimiCli } from "./modules/cli";
 import { captureSnapshotForState, detectExternalChangeConflict, readManagedDocuments, resolveManagedPaths } from "./modules/fileSnapshots";
 import { fileAccess, resolveHome, skillFileAccess } from "./modules/fileAccess";
 import { registerGlobalShortcuts, unregisterGlobalShortcuts } from "./modules/shortcuts";
@@ -1106,8 +1106,12 @@ app.whenReady().then(async () => {
     return detectInstallSource(getCliEnv);
   });
 
-  ipcMain.handle("app:cli-version", async () => {
-    return getCliVersion();
+  ipcMain.handle("app:cli-version", async (_, options?: { checkLatest?: boolean }) => {
+    return getCliVersion(options);
+  });
+
+  ipcMain.handle("app:upgrade-kimi-cli", async () => {
+    return upgradeKimiCli();
   });
 
   ipcMain.handle("dialog:pick-file", async (_, options): Promise<FileDialogResult> => {

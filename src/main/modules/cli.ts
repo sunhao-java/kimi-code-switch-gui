@@ -3,8 +3,10 @@ import { homedir } from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
+import { compareReleaseVersions, normalizeReleaseVersion } from "@shared/versionUtils";
 import type { AppState, ModelConfig, ProfileConnectivityTestResult, ProviderConfig } from "@shared/types";
 
+const KIMI_CLI_PYPI_URL = "https://pypi.org/pypi/kimi-cli/json";
 const EXTRA_CLI_PATHS = [
   "/opt/homebrew/bin",
   "/usr/local/bin",
@@ -35,9 +37,18 @@ export function getCliEnv(): NodeJS.ProcessEnv {
 export interface CliVersionResult {
   version: string;
   installed: boolean;
+  latestVersion?: string;
+  hasUpdate?: boolean;
 }
 
-export async function getCliVersion(): Promise<CliVersionResult> {
+export interface CliUpgradeResult {
+  ok: true;
+  stdout: string;
+  stderr: string;
+}
+
+export async function getCliVersion(options: { checkLatest?: boolean } = {}): Promise<CliVersionResult> {
+  let result: CliVersionResult;
   try {
     const { stdout } = await execFileAsync("kimi", ["--version"], {
       env: getCliEnv(),
@@ -45,10 +56,52 @@ export async function getCliVersion(): Promise<CliVersionResult> {
       timeout: 3000,
     });
     const match = stdout.match(/(\d+\.\d+\.\d+)/);
-    return { version: match ? match[1] : stdout.trim(), installed: true };
+    result = { version: match ? match[1] : stdout.trim(), installed: true };
   } catch {
-    return { version: "", installed: false };
+    result = { version: "", installed: false };
   }
+
+  if (!options.checkLatest) {
+    return result;
+  }
+
+  try {
+    const response = await fetch(KIMI_CLI_PYPI_URL, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "kimi-code-switch-gui",
+      },
+    });
+    if (!response.ok) {
+      return result;
+    }
+    const payload = await response.json() as { info?: { version?: string } };
+    const latestVersion = normalizeReleaseVersion(payload.info?.version ?? "");
+    if (!latestVersion) {
+      return result;
+    }
+    return {
+      ...result,
+      latestVersion,
+      hasUpdate: result.version ? compareReleaseVersions(latestVersion, result.version) > 0 : false,
+    };
+  } catch {
+    return result;
+  }
+}
+
+export async function upgradeKimiCli(): Promise<CliUpgradeResult> {
+  const { stdout, stderr } = await execFileAsync("uv", ["tool", "upgrade", "kimi-cli", "--no-cache"], {
+    env: getCliEnv(),
+    windowsHide: true,
+    timeout: 120000,
+  });
+  return {
+    ok: true,
+    stdout: stdout.trim(),
+    stderr: stderr.trim(),
+  };
 }
 
 export async function runKimiMcpCommand(args: string[]): Promise<{ ok: true; stdout: string; stderr: string }> {
