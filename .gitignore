@@ -10,3 +10,4 @@ coverage
 *.log
 .deepseek
 .sisyphus
+kimi-launch.sh
