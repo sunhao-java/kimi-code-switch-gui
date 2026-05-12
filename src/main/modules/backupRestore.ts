@@ -1,8 +1,6 @@
 import { dirname, join } from "node:path";
 
 import {
-  DEFAULT_CONFIG_PATH,
-  PROFILE_FILENAME,
   buildPanelSettingsDocument,
   createLineDiff,
   loadAppState,
@@ -15,7 +13,6 @@ import type {
   AppState,
   FileSnapshotBundle,
   ManagedFileId,
-  PanelSettings,
   RestoreBackupResult,
   RestoreDryRunFilePlan,
   RestoreDryRunResult,
@@ -50,15 +47,25 @@ export async function readBackupDocuments(state: AppState, backupName: string): 
 export async function resolveRestoreTargets(state: AppState, backupName: string): Promise<RestoreResolvedTargets> {
   const normalizedState = normalizeStatePaths(state);
   const restoreDocuments = await readBackupDocuments(normalizedState, backupName);
+  validateRestoreDocuments(restoreDocuments);
   const restoredPanelSettings = parsePanelSettingsDocument(restoreDocuments.panelSettingsDocument);
-  const configPath = restoredPanelSettings.config_path.trim() || DEFAULT_CONFIG_PATH;
-  const profilesPath = resolveProfilesPathFromPanelSettings(configPath, restoredPanelSettings);
+  const configPath = normalizedState.configPath;
+  const profilesPath = normalizedState.profilesPath;
+  const panelSettingsDocument = buildPanelSettingsDocument({
+    ...restoredPanelSettings,
+    config_path: configPath,
+    profiles_path: "",
+    follow_config_profiles: true,
+  });
   const draftState = await loadAppState(createRestoreFileAccess({
     configPath,
     profilesPath,
     panelSettingsPath: normalizedState.panelSettingsPath,
     mcpConfigPath: normalizedState.mcpConfigPath,
-    documents: restoreDocuments,
+    documents: {
+      ...restoreDocuments,
+      panelSettingsDocument,
+    },
   }), {
     configPath,
     profilesPath,
@@ -76,7 +83,7 @@ export async function resolveRestoreTargets(state: AppState, backupName: string)
     documents: {
       config: restoreDocuments.configDocument,
       profiles: restoreDocuments.profilesDocument,
-      panel: restoreDocuments.panelSettingsDocument,
+      panel: panelSettingsDocument,
       mcp: restoreDocuments.mcpDocument,
     },
     draftState,
@@ -123,7 +130,7 @@ export async function restoreBackupSafely(options: {
   expectedSnapshot?: FileSnapshotBundle;
   allowOverwrite?: boolean;
   createBackupSnapshot: (state: AppState, trigger: "pre-restore" | "rollback") => Promise<{ backupName: string }>;
-  loadRestoredState: (paths: { panelSettingsPath: string; mcpConfigPath: string }) => Promise<AppState>;
+  loadRestoredState: (paths: { configPath: string; profilesPath: string; panelSettingsPath: string; mcpConfigPath: string }) => Promise<AppState>;
   onRestored: (state: AppState) => void;
   captureSnapshot: (state: AppState) => Promise<FileSnapshotBundle>;
 }): Promise<RestoreBackupResult | SaveStateConflictResult> {
@@ -156,21 +163,16 @@ export async function restoreBackupSafely(options: {
   ]);
 
   await fileAccess.writeText(resolved.paths.panel, resolved.documents.panel);
-  const persistedPanelSettings = parsePanelSettingsDocument(
-    (await fileAccess.readText(resolved.paths.panel)) ?? buildPanelSettingsDocument(normalizedState.panelSettings),
-  );
-  const persistedConfigPath = resolveHome(persistedPanelSettings.config_path.trim() || DEFAULT_CONFIG_PATH);
-  const persistedProfilesPath = resolveHome(resolveProfilesPathFromPanelSettings(persistedConfigPath, persistedPanelSettings));
 
   await Promise.all([
-    fileAccess.ensureDir(dirname(persistedConfigPath)),
-    fileAccess.ensureDir(dirname(persistedProfilesPath)),
-    fileAccess.writeText(persistedConfigPath, resolved.documents.config),
-    fileAccess.writeText(persistedProfilesPath, resolved.documents.profiles),
+    fileAccess.writeText(resolved.paths.config, resolved.documents.config),
+    fileAccess.writeText(resolved.paths.profiles, resolved.documents.profiles),
     fileAccess.writeText(resolved.paths.mcp, resolved.documents.mcp),
   ]);
 
   const restoredState = await options.loadRestoredState({
+    configPath: resolved.paths.config,
+    profilesPath: resolved.paths.profiles,
     panelSettingsPath: resolved.paths.panel,
     mcpConfigPath: resolved.paths.mcp,
   });
@@ -327,11 +329,13 @@ function mergeShortcutsBackupDocument(panelSettingsDocument: string, shortcutsDo
   }
 }
 
-function resolveProfilesPathFromPanelSettings(configPath: string, panelSettings: PanelSettings): string {
-  if (panelSettings.follow_config_profiles) {
-    return join(dirname(configPath), PROFILE_FILENAME);
+function validateRestoreDocuments(documents: RestoreDocuments): void {
+  if (!documents.configDocument.trim()) {
+    throw new Error("Backup is missing config.toml.");
   }
-  return panelSettings.profiles_path.trim() || join(dirname(configPath), PROFILE_FILENAME);
+  if (!documents.profilesDocument.trim()) {
+    throw new Error("Backup is missing config.profiles.toml.");
+  }
 }
 
 export function getRestoreManagedPaths(state: AppState): Record<ManagedFileId, string> {
