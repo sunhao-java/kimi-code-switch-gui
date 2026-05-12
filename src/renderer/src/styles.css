@@ -2309,6 +2309,52 @@ textarea:focus-visible {
   background: var(--primary-2);
 }
 
+.app-tip-warning {
+  border-color: rgba(var(--primary-rgb), 0.35);
+  gap: 10px;
+}
+
+.app-tip-warning::before {
+  background: var(--primary);
+}
+
+.app-tip-icon {
+  flex: 0 0 auto;
+  color: var(--primary);
+  margin-top: 1px;
+}
+
+.app-tip-action {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  margin-top: 1px;
+  border-radius: 8px;
+  border: 1px solid rgba(var(--primary-rgb), 0.3);
+  background: rgba(var(--primary-rgb), 0.1);
+  color: var(--primary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+.app-tip-action:hover {
+  background: rgba(var(--primary-rgb), 0.2);
+  border-color: rgba(var(--primary-rgb), 0.5);
+}
+
+.app-tip-action:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(var(--primary-rgb), 0.25);
+}
+
 :root[data-theme="light"] .app-tip {
   border-color: rgba(40, 92, 160, 0.16);
   background:
@@ -2326,6 +2372,7 @@ textarea:focus-visible {
 :root[data-theme="light"] .app-tip-success {
   border-color: rgba(20, 155, 116, 0.18);
 }
+
 
 @media (max-width: 760px) {
   .app-tip-layer {

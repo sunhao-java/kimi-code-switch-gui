@@ -7,7 +7,7 @@ import {
   normalizeStatePaths,
   parsePanelSettingsDocument,
 } from "@shared/configStore";
-import { buildConfigDoctorReport, redactDocumentText } from "@shared/configSafety";
+import { buildConfigDoctorReport, buildManagedDocuments, redactDocumentText } from "@shared/configSafety";
 import { normalizeShortcuts } from "@shared/shortcutStore";
 import type {
   AppState,
@@ -19,7 +19,7 @@ import type {
   SaveStateConflictResult,
 } from "@shared/types";
 import { fileAccess, resolveHome } from "./fileAccess";
-import { detectExternalChangeConflict, resolveManagedPaths } from "./fileSnapshots";
+import { captureSnapshotForPaths, detectExternalChangeConflict, resolveManagedPaths } from "./fileSnapshots";
 import { buildWebDavUrl, getWebDavAuthHeader } from "./webdav";
 
 const SHORTCUTS_BACKUP_FILENAME = "shortcuts.json";
@@ -93,17 +93,19 @@ export async function resolveRestoreTargets(state: AppState, backupName: string)
 export async function buildRestoreDryRun(
   state: AppState,
   backupName: string,
-  expectedSnapshot?: FileSnapshotBundle,
+  _expectedSnapshot?: FileSnapshotBundle,
 ): Promise<RestoreDryRunResult | SaveStateConflictResult> {
-  const resolved = await resolveRestoreTargets(state, backupName);
+  const normalizedState = normalizeStatePaths(state);
+  const resolved = await resolveRestoreTargets(normalizedState, backupName);
   const doctor = buildConfigDoctorReport(resolved.draftState);
-  const conflictCheck = await detectExternalChangeConflict({
-    expectedSnapshot,
-    targetPaths: resolved.paths,
-    draftDocuments: resolved.documents,
-  });
-
-  if (conflictCheck.conflict) {
+  const currentDocuments = await readCurrentDocuments(resolved.paths);
+  const conflictCheck = await detectRestoreExternalChangeConflict(
+    normalizedState,
+    resolved,
+    currentDocuments,
+    _expectedSnapshot,
+  );
+  if (conflictCheck) {
     return {
       ok: false,
       reason: "external-change",
@@ -113,7 +115,6 @@ export async function buildRestoreDryRun(
     };
   }
 
-  const currentDocuments = await readCurrentDocuments(resolved.paths);
   return {
     backupName,
     doctor,
@@ -137,13 +138,14 @@ export async function restoreBackupSafely(options: {
   const normalizedState = normalizeStatePaths(options.state);
   const resolved = await resolveRestoreTargets(normalizedState, options.backupName);
   const doctor = buildConfigDoctorReport(resolved.draftState);
-  const conflictCheck = await detectExternalChangeConflict({
-    expectedSnapshot: options.expectedSnapshot,
-    targetPaths: resolved.paths,
-    draftDocuments: resolved.documents,
-  });
-
-  if (conflictCheck.conflict && options.allowOverwrite !== true) {
+  const currentDocuments = await readCurrentDocuments(resolved.paths);
+  const conflictCheck = await detectRestoreExternalChangeConflict(
+    normalizedState,
+    resolved,
+    currentDocuments,
+    options.expectedSnapshot,
+  );
+  if (conflictCheck && options.allowOverwrite !== true) {
     return {
       ok: false,
       reason: "external-change",
@@ -202,6 +204,77 @@ async function readCurrentDocuments(
     profiles: profilesDocument ?? "",
     panel: panelDocument ?? "",
     mcp: mcpDocument ?? "",
+  };
+}
+
+async function detectRestoreExternalChangeConflict(
+  state: AppState,
+  resolved: RestoreResolvedTargets,
+  currentDocuments: Record<ManagedFileId, string>,
+  expectedSnapshot?: FileSnapshotBundle,
+): Promise<Pick<SaveStateConflictResult, "snapshot" | "conflict"> | null> {
+  const expectedDocuments = buildManagedDocuments(state);
+  const snapshotConflictCheck = await detectExternalChangeConflict({
+    expectedSnapshot,
+    targetPaths: resolved.paths,
+    draftDocuments: resolved.documents,
+  });
+  if (snapshotConflictCheck.conflict) {
+    const changedFiles = snapshotConflictCheck.conflict.changedFiles.filter((file) => {
+      const diskDocument = currentDocuments[file.id] ?? "";
+      const expectedDocument = expectedDocuments[file.id] ?? "";
+      return diskDocument !== expectedDocument;
+    });
+    if (changedFiles.length > 0) {
+      return {
+        snapshot: snapshotConflictCheck.snapshot,
+        conflict: { changedFiles },
+      };
+    }
+  }
+
+  const changedFiles = (Object.keys(resolved.paths) as ManagedFileId[]).flatMap((id) => {
+    const diskDocument = currentDocuments[id] ?? "";
+    const expectedDocument = expectedDocuments[id] ?? "";
+    if (diskDocument === expectedDocument) {
+      return [];
+    }
+
+    const redactedDisk = redactDocumentText(diskDocument).text;
+    const redactedDraft = redactDocumentText(resolved.documents[id] ?? "").text;
+    return [{
+      id,
+      path: resolved.paths[id],
+      reason: diskDocument ? "modified" as const : "deleted" as const,
+      expected: {
+        id,
+        path: resolved.paths[id],
+        exists: Boolean(expectedDocument),
+        size: expectedDocument.length,
+        mtimeMs: 0,
+        sha256: "",
+      },
+      actual: {
+        id,
+        path: resolved.paths[id],
+        exists: Boolean(diskDocument),
+        size: diskDocument.length,
+        mtimeMs: 0,
+        sha256: "",
+      },
+      diskDocument: redactedDisk,
+      draftDocument: redactedDraft,
+      diff: createLineDiff(redactedDisk, redactedDraft),
+    }];
+  });
+
+  if (changedFiles.length === 0) {
+    return null;
+  }
+
+  return {
+    snapshot: await captureSnapshotForPaths(resolved.paths),
+    conflict: { changedFiles },
   };
 }
 

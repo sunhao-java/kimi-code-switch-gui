@@ -6,6 +6,7 @@ import type {
   BackupRecord,
   BackupResult,
   ConfigDoctorReport,
+  ExternalChangeNotifyPayload,
   FileDialogResult,
   FileSnapshotBundle,
   PanelSettings,
@@ -132,6 +133,11 @@ const api = {
     const listener = (_event: Electron.IpcRendererEvent, command: TrayCommand): void => callback(command);
     ipcRenderer.on("tray:command", listener);
     return () => ipcRenderer.removeListener("tray:command", listener);
+  },
+  onExternalFileChange: (callback: (payload: ExternalChangeNotifyPayload) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: ExternalChangeNotifyPayload): void => callback(payload);
+    ipcRenderer.on("file:external-change", listener);
+    return () => { ipcRenderer.removeListener("file:external-change", listener); };
   },
 };
 

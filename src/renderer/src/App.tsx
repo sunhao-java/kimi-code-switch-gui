@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { ChevronsLeft, ChevronsRight, Terminal, X } from "lucide-react";
+import { AlertTriangle, ChevronsLeft, ChevronsRight, RefreshCw, Terminal, X } from "lucide-react";
 
 import type { McpServerConfig, ShortcutAction, ShortcutBinding } from "@shared/types";
 import { parseMcpConfigStrict } from "@shared/mcpStore";
@@ -41,7 +41,7 @@ export function App(): JSX.Element {
     documentViewer, setDocumentViewer,
     backupRecordsDialog, setBackupRecordsDialog,
     doctorReport,
-    error, setError, notice, setNotice,
+    error, setError, notice, setNotice, externalChange, setExternalChange,
     isMcpImportOpen, setIsMcpImportOpen,
     mcpImportDraft, setMcpImportDraft,
     mcpImportInitialDraft, setMcpImportInitialDraft,
@@ -107,7 +107,36 @@ export function App(): JSX.Element {
           </div>
         </div>
       ) : null}
-      {!error && notice ? (
+      {!error && externalChange ? (
+        <div className="app-tip-layer" role="status" aria-live="polite">
+          <div className="app-tip app-tip-warning">
+            <AlertTriangle size={18} className="app-tip-icon" />
+            <span className="app-tip-message">
+              {t(locale, "fileWatchExternalChange").replace("{files}", externalChange.changedFileNames.join(", "))}
+            </span>
+            <button
+              type="button"
+              className="app-tip-action"
+              onClick={() => {
+                setExternalChange(null);
+                void loadState();
+              }}
+            >
+              <RefreshCw size={13} />
+              {t(locale, "fileWatchReload")}
+            </button>
+            <button
+              type="button"
+              className="app-tip-close"
+              aria-label={t(locale, "close")}
+              onClick={() => setExternalChange(null)}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      ) : null}
+      {!error && !externalChange && notice ? (
         <div className="app-tip-layer" role="status" aria-live="polite">
           <div className="app-tip app-tip-success">
             <span className="app-tip-message">{notice}</span>

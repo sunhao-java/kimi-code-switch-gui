@@ -247,6 +247,11 @@ export interface SaveStateConflictResult {
   conflict: ExternalChangeConflict;
 }
 
+export interface ExternalChangeNotifyPayload {
+  changedFileIds: ManagedFileId[];
+  changedFileNames: string[];
+}
+
 export interface RestoreDryRunFilePlan {
   id: ManagedFileId;
   path: string;

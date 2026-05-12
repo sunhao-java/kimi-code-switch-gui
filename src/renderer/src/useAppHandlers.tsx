@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { AppState, ConfigDoctorReport, FileSnapshotBundle } from "@shared/types";
+import type { AppState, ConfigDoctorReport, ExternalChangeNotifyPayload, FileSnapshotBundle } from "@shared/types";
 import type { BackupRecordsDialogState, DocumentViewerState } from "./dialogs";
 import type { DiagnosticsState } from "./overviewDashboard";
 import { SkillsViewMode } from "./skillsWorkspace";
@@ -34,6 +34,7 @@ export function useAppHandlers() {
   const [doctorReport, setDoctorReport] = useState<ConfigDoctorReport | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [externalChange, setExternalChange] = useState<ExternalChangeNotifyPayload | null>(null);
   const [isMcpImportOpen, setIsMcpImportOpen] = useState(false);
   const [mcpImportDraft, setMcpImportDraft] = useState("");
   const [mcpImportInitialDraft, setMcpImportInitialDraft] = useState("");
@@ -212,6 +213,20 @@ export function useAppHandlers() {
     });
   }, []);
 
+  useEffect(() => {
+    const api = getApi();
+    if (!api?.onExternalFileChange) return;
+    return api.onExternalFileChange((payload) => {
+      void (async () => {
+        try {
+          const nextSnapshot = await api.captureSnapshot(state);
+          setFileSnapshot(nextSnapshot);
+        } catch { /* snapshot 更新失败不影响通知 */ }
+      })();
+      setExternalChange(payload);
+    });
+  }, [state, locale]);
+
   const title = t(locale, "appTitle");
 
   const closeMcpImportDialog = useCallback((): void => {
@@ -388,6 +403,8 @@ export function useAppHandlers() {
     setError,
     notice,
     setNotice,
+    externalChange,
+    setExternalChange,
     isMcpImportOpen,
     setIsMcpImportOpen,
     mcpImportDraft,

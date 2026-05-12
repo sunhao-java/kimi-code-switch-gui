@@ -97,7 +97,7 @@ export async function detectExternalChangeConflict(options: {
   };
 }
 
-async function fingerprintFile(id: ManagedFileId, path: string): Promise<FileFingerprint> {
+export async function fingerprintFile(id: ManagedFileId, path: string): Promise<FileFingerprint> {
   try {
     const [info, content] = await Promise.all([stat(path), readFile(path)]);
     return {
@@ -134,7 +134,7 @@ async function readTextIfExists(path: string): Promise<string | null> {
   }
 }
 
-function detectChangeReason(
+export function detectChangeReason(
   expected: FileFingerprint,
   actual: FileFingerprint,
 ): ExternalChangeDetail["reason"] | null {

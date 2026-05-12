@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, safeStorage, screen, shell, Tray } from "electron";
 import type { NativeImage } from "electron";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { hostname } from "node:os";
 import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 
@@ -26,10 +26,11 @@ import { buildConfigDoctorReport, buildManagedDocuments, buildRedactedPreviewBun
 import { buildMcpConfigDocument } from "@shared/mcpStore";
 import { scanSkills } from "@shared/skillsStore";
 import { normalizeShortcuts } from "@shared/shortcutStore";
-import type { OpenKimiTerminalRequest, PanelSettings } from "@shared/types";
+import type { ManagedFileId, OpenKimiTerminalRequest, PanelSettings } from "@shared/types";
 import { buildRestoreDryRun, restoreBackupSafely } from "./modules/backupRestore";
 import { getCliEnv, getCliVersion, runKimiConnectivityTest, runKimiMcpCommand, upgradeKimiCli } from "./modules/cli";
 import { captureSnapshotForState, detectExternalChangeConflict, readManagedDocuments, resolveManagedPaths } from "./modules/fileSnapshots";
+import { markSelfWrite, startWatching, stopWatching, updateBaseline } from "./modules/fileWatcher";
 import { fileAccess, resolveHome, skillFileAccess } from "./modules/fileAccess";
 import { registerGlobalShortcuts, unregisterGlobalShortcuts } from "./modules/shortcuts";
 import { openKimiInTerminal } from "./modules/terminal";
@@ -523,7 +524,11 @@ async function saveStateWithSafety(
   }
 
   encryptWebDavPassword(normalizedState);
+  for (const id of Object.keys(targetPaths) as ManagedFileId[]) {
+    markSelfWrite(id);
+  }
   await saveAppState(fileAccess, normalizedState);
+  void updateBaseline();
   updateBackupSchedule(normalizedState);
   refreshGlobalShortcuts(normalizedState);
   queueChangeBackup(normalizedState);
@@ -624,6 +629,19 @@ function queueTrayCommand(command: "reload"): void {
     return;
   }
   mainWindow.webContents.send("tray:command", command);
+}
+
+function onExternalFileChange(changedFileIds: ManagedFileId[]): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const paths = latestAppState ? resolveManagedPaths(latestAppState) : null;
+  const changedFileNames = changedFileIds.map((id) => paths ? basename(resolveHome(paths[id])) : id);
+  if (mainWindow.webContents.isLoading()) {
+    mainWindow.webContents.once("did-finish-load", () => {
+      mainWindow?.webContents.send("file:external-change", { changedFileIds, changedFileNames });
+    });
+    return;
+  }
+  mainWindow.webContents.send("file:external-change", { changedFileIds, changedFileNames });
 }
 
 async function updateTrayMenu(): Promise<void> {
@@ -728,7 +746,11 @@ async function updateTrayMenu(): Promise<void> {
 async function activateProfileFromTray(profileName: string): Promise<void> {
   const state = await loadAppState(fileAccess);
   applyProfile(state, profileName);
+  for (const id of Object.keys(resolveManagedPaths(state)) as ManagedFileId[]) {
+    markSelfWrite(id);
+  }
   await saveAppState(fileAccess, state);
+  void updateBaseline();
   updateBackupSchedule(state);
   queueChangeBackup(state);
   await updateTrayMenu();
@@ -769,7 +791,11 @@ async function updateLocaleFromTray(locale: Locale): Promise<void> {
     return;
   }
   state.panelSettings.locale = locale;
+  for (const id of Object.keys(resolveManagedPaths(state)) as ManagedFileId[]) {
+    markSelfWrite(id);
+  }
   await saveAppState(fileAccess, state);
+  void updateBaseline();
   latestAppState = cloneState(normalizeStatePaths(state));
   await updateTrayMenu();
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -783,7 +809,11 @@ async function updateThemeFromTray(theme: AppearanceMode): Promise<void> {
     return;
   }
   state.panelSettings.theme = theme;
+  for (const id of Object.keys(resolveManagedPaths(state)) as ManagedFileId[]) {
+    markSelfWrite(id);
+  }
   await saveAppState(fileAccess, state);
+  void updateBaseline();
   latestAppState = cloneState(normalizeStatePaths(state));
   await updateTrayMenu();
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1059,6 +1089,7 @@ app.whenReady().then(async () => {
       createTray();
     }
     void updateTrayMenu();
+    void startWatching(state, onExternalFileChange);
     return state;
   });
 
@@ -1178,6 +1209,9 @@ app.whenReady().then(async () => {
       backupName: string,
       options?: { expectedSnapshot?: FileSnapshotBundle; allowOverwrite?: boolean },
     ): Promise<RestoreBackupResult | SaveStateConflictResult> => {
+      for (const id of Object.keys(resolveManagedPaths(state)) as ManagedFileId[]) {
+        markSelfWrite(id);
+      }
       return restoreBackupSafely({
         state,
         backupName,
@@ -1193,6 +1227,7 @@ app.whenReady().then(async () => {
           updateBackupSchedule(restoredState);
           latestAppState = cloneState(restoredState);
           refreshGlobalShortcuts(restoredState);
+          void updateBaseline();
           void updateTrayMenu();
         },
         captureSnapshot: captureSnapshotForState,
@@ -1248,6 +1283,7 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   clearBackupSchedule();
+  stopWatching();
   unregisterGlobalShortcuts();
   if (process.platform !== "darwin") {
     app.quit();
@@ -1255,5 +1291,6 @@ app.on("window-all-closed", () => {
 });
 
 app.on("will-quit", () => {
+  stopWatching();
   unregisterGlobalShortcuts();
 });

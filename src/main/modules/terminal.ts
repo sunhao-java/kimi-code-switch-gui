@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { dirname, join } from "node:path";
+import { chmod, writeFile, mkdir } from "node:fs/promises";
 import { promisify } from "node:util";
 
 import {
@@ -76,7 +77,7 @@ export function buildKimiShellCommand(
   return `export PATH=${quoteForShell(envPath)}; cd ${quoteForShell(workingDirectory)}; kimi --config-file ${quoteForShell(configPath)}`;
 }
 
-export function buildAppleScriptLines(app: TerminalApp, shellCommand: string): string[] {
+export function buildAppleScriptLines(app: TerminalApp, shellCommand: string, scriptPath?: string): string[] {
   const escapedCommand = escapeForAppleScript(shellCommand);
   if (app === "system-terminal") {
     return [
@@ -86,6 +87,8 @@ export function buildAppleScriptLines(app: TerminalApp, shellCommand: string): s
       "end tell",
     ];
   }
+  // iTerm2: use script file to avoid long-command truncation via write text
+  const textToWrite = scriptPath ? `source ${escapeForAppleScript(scriptPath)}` : escapedCommand;
   return [
     'tell application "iTerm"',
     "activate",
@@ -97,7 +100,7 @@ export function buildAppleScriptLines(app: TerminalApp, shellCommand: string): s
     "end tell",
     "end if",
     "tell current session of current window",
-    `write text "${escapedCommand}"`,
+    `write text "${textToWrite}"`,
     "end tell",
     "end tell",
   ];
@@ -143,7 +146,17 @@ export async function openKimiInTerminal(
     ? await writeProfileConfigForTerminal(request as OpenKimiTerminalRequest, targetProfileName, options)
     : getTerminalConfigPath(settings);
   const shellCommand = buildKimiShellCommand(env.PATH ?? "", workingDirectory, configPath);
-  const appleScript = buildAppleScriptLines(settings.terminal_app, shellCommand);
+
+  let scriptPath: string | undefined;
+  if (settings.terminal_app === "iterm2") {
+    const scriptDir = resolveHome(join(DEFAULT_PANEL_DIRECTORY, "tmp", "terminal"));
+    scriptPath = join(scriptDir, "kimi-launch.sh");
+    await mkdir(scriptDir, { recursive: true });
+    await writeFile(scriptPath, `#!/bin/sh\n${shellCommand}\n`, "utf-8");
+    await chmod(scriptPath, 0o755);
+  }
+
+  const appleScript = buildAppleScriptLines(settings.terminal_app, shellCommand, scriptPath);
 
   try {
     await execRunner("osascript", buildAppleScriptArgs(appleScript), { env, windowsHide: true });
