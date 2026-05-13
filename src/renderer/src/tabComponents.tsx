@@ -258,13 +258,12 @@ export function ModelForm(props: {
         emptyLabel={t(props.locale, "formCapabilitiesEmpty")}
         popoverClassName="field-select-popover-full"
       />
-      <div className="button-row">
-        <button className="action-button action-button-primary" onClick={props.onSave}>
-          <Save size={16} />
-          <span>{t(props.locale, "saveModel")}</span>
-        </button>
-        <button className="action-button danger" onClick={props.onDelete}>{t(props.locale, "delete")}</button>
-      </div>
+      <ActionFooter
+        onSave={props.onSave}
+        onDelete={props.onDelete}
+        saveLabel={t(props.locale, "saveModel")}
+        deleteLabel={t(props.locale, "delete")}
+      />
     </section>
   );
 }
@@ -341,11 +340,12 @@ export function McpServerForm(props: {
           />
         </>
       )}
-      <div className="button-row">
-        <button className="action-button action-button-primary" onClick={props.onSave}>
-          <Save size={16} />
-          <span>{t(props.locale, "saveMcpServer")}</span>
-        </button>
+      <ActionFooter
+        onSave={props.onSave}
+        onDelete={props.onDelete}
+        saveLabel={t(props.locale, "saveMcpServer")}
+        deleteLabel={t(props.locale, "delete")}
+      >
         <button
           className={props.isTesting ? "action-button is-loading" : "action-button"}
           type="button"
@@ -355,8 +355,7 @@ export function McpServerForm(props: {
           {props.isTesting ? <LoaderCircle size={16} className="button-spinner" /> : null}
           <span>{props.isTesting ? t(props.locale, "mcpTesting") : t(props.locale, "mcpTest")}</span>
         </button>
-        <button className="action-button danger" onClick={props.onDelete}>{t(props.locale, "delete")}</button>
-      </div>
+      </ActionFooter>
     </section>
   );
 }
@@ -403,14 +402,12 @@ export function McpImportDialog(props: {
             onChange={(event) => props.onChange(event.target.value)}
           />
         </label>
-        <div className="button-row">
-          <button className="action-button action-button-primary" type="button" onClick={props.onImport}>
-            <span>{t(props.locale, "mcpImportApply")}</span>
-          </button>
-          <button className="action-button" type="button" onClick={props.onCancel}>
-            <span>{t(props.locale, "mcpImportCancel")}</span>
-          </button>
-        </div>
+        <ActionFooter
+          onSave={props.onImport}
+          onCancel={props.onCancel}
+          saveLabel={t(props.locale, "mcpImportApply")}
+          cancelLabel={t(props.locale, "mcpImportCancel")}
+        />
       </section>
     </div>
   );
@@ -453,11 +450,12 @@ export function ProfileForm(props: {
       <Toggle label={t(props.locale, "formPlanMode")} checked={value.default_plan_mode} onChange={(checked) => props.onChange(props.name, { ...value, default_plan_mode: checked })} />
       <Toggle label={t(props.locale, "formStream")} checked={value.show_thinking_stream} onChange={(checked) => props.onChange(props.name, { ...value, show_thinking_stream: checked })} />
       <Toggle label={t(props.locale, "formMergeSkills")} checked={value.merge_all_available_skills} onChange={(checked) => props.onChange(props.name, { ...value, merge_all_available_skills: checked })} />
-      <div className="button-row">
-        <button className="action-button action-button-primary" onClick={props.onSave}>
-          <Save size={16} />
-          <span>{t(props.locale, "saveProfile")}</span>
-        </button>
+      <ActionFooter
+        onSave={props.onSave}
+        onDelete={props.onDelete}
+        saveLabel={t(props.locale, "saveProfile")}
+        deleteLabel={t(props.locale, "delete")}
+      >
         <button
           className={props.isTesting ? "action-button is-loading" : "action-button"}
           type="button"
@@ -469,8 +467,7 @@ export function ProfileForm(props: {
         </button>
         <button className={props.isActive ? "action-button action-button-primary" : "action-button"} onClick={props.onActivate}>{t(props.locale, "activate")}</button>
         <button className="action-button" onClick={props.onClone}>{t(props.locale, "clone")}</button>
-        <button className="action-button danger" onClick={props.onDelete}>{t(props.locale, "delete")}</button>
-      </div>
+      </ActionFooter>
       {isTestDialogOpen ? (
         <ProfileTestDialog
           locale={props.locale}

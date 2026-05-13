@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { HTMLAttributes, ReactNode } from "react";
-import { Check, ChevronDown, Globe, Plus, X } from "lucide-react";
+import { Check, ChevronDown, Globe, Plus, Save, Trash2, X } from "lucide-react";
 
 import type { Locale, LocalizedText, UiFontSize } from "@shared/types";
 
@@ -428,6 +428,36 @@ export function Toggle(props: { label: string; checked: boolean; onChange: (chec
       <span>{props.label}</span>
       <input type="checkbox" checked={props.checked} onChange={(event) => props.onChange(event.target.checked)} />
     </label>
+  );
+}
+
+export interface ActionFooterProps {
+  onSave: () => void;
+  onDelete?: () => void;
+  onCancel?: () => void;
+  saveLabel: string;
+  deleteLabel?: string;
+  cancelLabel?: string;
+  isSaveDisabled?: boolean;
+  isDeleteDisabled?: boolean;
+  children?: ReactNode;
+}
+
+export function ActionFooter(props: ActionFooterProps): JSX.Element {
+  return (
+    <div className="button-row">
+      <button className="action-button action-button-primary" type="button" disabled={props.isSaveDisabled} onClick={props.onSave}>
+        <Save size={16} />
+        <span>{props.saveLabel}</span>
+      </button>
+      {props.children}
+      {props.onDelete && props.deleteLabel ? (
+        <button className="action-button danger" type="button" disabled={props.isDeleteDisabled} onClick={props.onDelete}>{props.deleteLabel}</button>
+      ) : null}
+      {props.onCancel && props.cancelLabel ? (
+        <button className="action-button" type="button" onClick={props.onCancel}>{props.cancelLabel}</button>
+      ) : null}
+    </div>
   );
 }
 
