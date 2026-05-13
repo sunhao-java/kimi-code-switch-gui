@@ -1,0 +1,107 @@
+:root {
+  color-scheme: dark;
+  --bg: #040b14;
+  --panel: rgba(10, 18, 31, 0.8);
+  --panel-strong: rgba(15, 28, 48, 0.92);
+  --line: rgba(124, 179, 255, 0.18);
+  --line-strong: rgba(124, 179, 255, 0.34);
+  --text: #eef5ff;
+  --muted: #97a9c4;
+  --primary: #57b1ff;
+  --primary-2: #84f7d3;
+  --primary-rgb: 87, 177, 255;
+  --primary-2-rgb: 132, 247, 211;
+  --danger: #ff6b8b;
+  --shadow: 0 22px 80px rgba(1, 9, 18, 0.48);
+  --radius: 24px;
+  --scrollbar-track: rgba(255, 255, 255, 0.04);
+  --scrollbar-thumb: linear-gradient(180deg, rgba(87, 177, 255, 0.78), rgba(132, 247, 211, 0.66));
+  --scrollbar-thumb-border: rgba(3, 10, 19, 0.75);
+  --focus-ring: 0 0 0 3px rgba(var(--primary-rgb), 0.2), 0 0 0 1px rgba(var(--primary-2-rgb), 0.55);
+  --surface-quiet: rgba(255, 255, 255, 0.035);
+  --surface-hover: rgba(var(--primary-rgb), 0.08);
+  --surface-pressed: rgba(var(--primary-rgb), 0.14);
+  --motion-fast: 160ms;
+  --motion-standard: 220ms;
+  --motion-popover: 280ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasis: cubic-bezier(0.22, 1, 0.36, 1);
+  font-family: "IBM Plex Sans", "Space Grotesk", "SF Pro Display", sans-serif;
+  --titlebar-height: 40px;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #edf3fb;
+  --panel: rgba(255, 255, 255, 0.92);
+  --panel-strong: rgba(248, 251, 255, 0.98);
+  --line: rgba(40, 92, 160, 0.16);
+  --line-strong: rgba(40, 92, 160, 0.28);
+  --text: #152235;
+  --muted: #3a4f68;
+  --primary: #176edc;
+  --primary-2: #149b74;
+  --primary-rgb: 23, 110, 220;
+  --primary-2-rgb: 20, 155, 116;
+  --danger: #d23f64;
+  --shadow: 0 18px 60px rgba(41, 73, 114, 0.16);
+  --scrollbar-track: rgba(255, 255, 255, 0.7);
+  --scrollbar-thumb: linear-gradient(180deg, rgba(23, 110, 220, 0.7), rgba(20, 155, 116, 0.55));
+  --scrollbar-thumb-border: rgba(237, 243, 251, 0.9);
+  --focus-ring: 0 0 0 3px rgba(var(--primary-rgb), 0.14), 0 0 0 1px rgba(var(--primary-rgb), 0.42);
+  --surface-quiet: rgba(255, 255, 255, 0.68);
+  --surface-hover: rgba(var(--primary-rgb), 0.065);
+  --surface-pressed: rgba(var(--primary-rgb), 0.11);
+}
+
+:root[data-appearance-theme="ocean"] {
+  --line: rgba(96, 165, 250, 0.2);
+  --line-strong: rgba(129, 140, 248, 0.38);
+  --primary: #60a5fa;
+  --primary-2: #818cf8;
+  --primary-rgb: 96, 165, 250;
+  --primary-2-rgb: 129, 140, 248;
+  --scrollbar-thumb: linear-gradient(180deg, rgba(96, 165, 250, 0.78), rgba(129, 140, 248, 0.66));
+}
+
+:root[data-theme="light"][data-appearance-theme="ocean"] {
+  --line: rgba(37, 99, 235, 0.15);
+  --line-strong: rgba(79, 70, 229, 0.3);
+  --primary: #2563eb;
+  --primary-2: #4f46e5;
+  --primary-rgb: 37, 99, 235;
+  --primary-2-rgb: 79, 70, 229;
+  --scrollbar-thumb: linear-gradient(180deg, rgba(37, 99, 235, 0.7), rgba(79, 70, 229, 0.55));
+}
+
+:root[data-appearance-theme="violet"] {
+  --primary: #a78bfa;
+  --primary-2: #f0abfc;
+  --primary-rgb: 167, 139, 250;
+  --primary-2-rgb: 240, 171, 252;
+  --scrollbar-thumb: linear-gradient(180deg, rgba(167, 139, 250, 0.78), rgba(240, 171, 252, 0.66));
+}
+
+:root[data-theme="light"][data-appearance-theme="violet"] {
+  --primary: #7c3aed;
+  --primary-2: #c026d3;
+  --primary-rgb: 124, 58, 237;
+  --primary-2-rgb: 192, 38, 211;
+  --scrollbar-thumb: linear-gradient(180deg, rgba(124, 58, 237, 0.7), rgba(192, 38, 211, 0.55));
+}
+
+:root[data-appearance-theme="sunset"] {
+  --primary: #fb923c;
+  --primary-2: #f472b6;
+  --primary-rgb: 251, 146, 60;
+  --primary-2-rgb: 244, 114, 182;
+  --scrollbar-thumb: linear-gradient(180deg, rgba(251, 146, 60, 0.78), rgba(244, 114, 182, 0.66));
+}
+
+:root[data-theme="light"][data-appearance-theme="sunset"] {
+  --primary: #ea580c;
+  --primary-2: #db2777;
+  --primary-rgb: 234, 88, 12;
+  --primary-2-rgb: 219, 39, 119;
+  --scrollbar-thumb: linear-gradient(180deg, rgba(234, 88, 12, 0.7), rgba(219, 39, 119, 0.55));
+}

@@ -1,0 +1,271 @@
+.boot-screen {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  color: var(--muted);
+}
+
+.shell {
+  position: relative;
+  display: grid;
+  grid-template-columns: clamp(272px, 22vw, 310px) minmax(0, 1fr);
+  min-width: 0;
+  height: 100vh;
+  overflow: hidden;
+  /* No transition on grid - layout changes are instant */
+}
+
+.shell.sidebar-collapsed {
+  grid-template-columns: 118px 1fr;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: calc(var(--titlebar-height) + 16px) 18px 18px 0;
+  height: 100vh;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  contain: layout style;
+}
+
+.content-scroll {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding-right: 2px;
+}
+
+.tab-panel-shell {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  animation: content-enter 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.tab-panel-shell > .overview-grid,
+.tab-panel-shell > .split-layout,
+.tab-panel-shell > .settings-grid,
+.tab-panel-shell > .about-page {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  border-radius: 28px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.tab-panel-shell > .settings-grid {
+  background: transparent;
+}
+
+/* Overview dashboard */
+.overview-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-content: start;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+}
+
+:root[data-theme="light"] .overview-grid {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.overview-card {
+  cursor: default;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+  border-radius: 20px;
+  padding: 20px;
+}
+
+.overview-card-wide {
+  grid-column: 1 / -1;
+}
+
+.overview-right-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+
+.split-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  grid-template-rows: minmax(auto, 1fr);
+  gap: 18px;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: stretch;
+}
+
+.split-layout-reverse {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 320px);
+}
+
+.list-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.split-layout> :nth-child(2) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  align-self: stretch;
+}
+
+.split-layout-reverse>.list-panel {
+  order: 2;
+}
+
+.split-layout-reverse> :nth-child(2) {
+  order: 1;
+}
+
+
+/* ============ Responsive: 1024px (desktop) ============ */
+@media (max-width: 1024px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+
+  .shell.sidebar-collapsed {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    width: auto;
+    margin: 18px 18px 0;
+  }
+
+  .shell.sidebar-collapsed .sidebar {
+    width: auto;
+    padding: 22px;
+  }
+
+  .shell.sidebar-collapsed .brand {
+    flex-direction: row;
+    gap: 14px;
+    justify-content: flex-start;
+  }
+
+  .shell.sidebar-collapsed .brand-copy {
+    display: block;
+  }
+
+  .shell.sidebar-collapsed .sidebar-collapse-button {
+    position: static;
+    display: inline-flex;
+    width: 34px;
+    height: 34px;
+    margin-left: auto;
+    border-radius: 14px;
+    box-shadow: none;
+  }
+
+  .shell.sidebar-collapsed .brand-mark {
+    width: 54px;
+    height: 54px;
+  }
+
+  .shell.sidebar-collapsed .nav {
+    justify-items: stretch;
+  }
+
+  .shell.sidebar-collapsed .nav-item {
+    justify-content: flex-start;
+    width: 100%;
+    height: auto;
+    padding: 13px 14px;
+  }
+
+  .shell.sidebar-collapsed .nav-item > span,
+  .shell.sidebar-collapsed .nav-shortcut {
+    display: inline-flex;
+  }
+
+  .main {
+    height: auto;
+    min-height: 0;
+    padding: 0 18px 18px;
+    overflow: visible;
+  }
+
+  .content-scroll {
+    display: block;
+    overflow: visible;
+  }
+
+  .tab-panel-shell {
+    display: block;
+  }
+
+  .tab-panel-shell > .overview-grid,
+  .tab-panel-shell > .split-layout,
+  .tab-panel-shell > .settings-grid,
+  .tab-panel-shell > .about-page {
+    height: auto;
+    overflow: visible;
+  }
+
+  .summary-grid,
+  .overview-grid,
+  .overview-footer,
+  .overview-paths-compact,
+  .diagnostics-inline,
+  .diagnostics-grid,
+  .split-layout,
+  .split-layout-reverse {
+    grid-template-columns: 1fr;
+  }
+
+  .overview-hero-body {
+    grid-template-columns: 1fr;
+  }
+
+  .overview-hero-paths-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============ Responsive: 1280px (wide desktop) ============ */
+@media (min-width: 1181px) and (max-width: 1280px) {
+  .shell {
+    grid-template-columns: clamp(252px, 23vw, 288px) minmax(0, 1fr);
+  }
+
+  .overview-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr);
+  }
+
+  .split-layout {
+    grid-template-columns: minmax(264px, 296px) minmax(0, 1fr);
+  }
+
+  .split-layout-reverse {
+    grid-template-columns: minmax(0, 1fr) minmax(264px, 296px);
+  }
+
+  .overview-grid,
+  .overview-footer {
+    grid-template-columns: 1fr;
+  }
+
+  .split-layout,
+  .split-layout-reverse {
+    grid-template-columns: minmax(248px, 284px) minmax(0, 1fr);
+  }
+}
