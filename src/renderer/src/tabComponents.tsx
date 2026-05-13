@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Boxes, Check, Eye, EyeOff, FileText, FolderOpen, LoaderCircle,
-  MoonStar, PenSquare, Play, RefreshCw, Save, Sparkles, X,
+  MoonStar, PenSquare, Play, RefreshCw, Sparkles, X,
 } from "lucide-react";
 
 import { normalizeEntryName } from "@shared/nameRules";
@@ -20,9 +20,10 @@ import {
   labelForLocale, MCP_TRANSPORT_OPTIONS, MODEL_CAPABILITY_OPTIONS,
   PROVIDER_TYPE_OPTIONS, UI_FONT_SIZE_OPTIONS,
 } from "./appOptions";
+import { useDialogEscape, useFocusTrap } from "./dialogs";
 import { t } from "./i18n";
 import {
-  Field, KeyValueListField, MultiSelectField,
+  ActionFooter, Field, KeyValueListField, MultiSelectField,
   ReadOnlyField, SelectField, TextAreaField, Toggle,
 } from "./formControls";
 
@@ -156,13 +157,12 @@ export function ProviderForm(props: {
         showLabel={t(props.locale, "showSecret")}
         hideLabel={t(props.locale, "hideSecret")}
       />
-      <div className="button-row">
-        <button className="action-button action-button-primary" onClick={props.onSave}>
-          <Save size={16} />
-          <span>{t(props.locale, "saveProvider")}</span>
-        </button>
-        <button className="action-button danger" onClick={props.onDelete}>{t(props.locale, "delete")}</button>
-      </div>
+      <ActionFooter
+        onSave={props.onSave}
+        onDelete={props.onDelete}
+        saveLabel={t(props.locale, "saveProvider")}
+        deleteLabel={t(props.locale, "delete")}
+      />
     </section>
   );
 }
@@ -368,7 +368,10 @@ export function McpImportDialog(props: {
   onImport: () => void;
   onCancel: () => void;
 }): JSX.Element {
+  const dialogRef = useRef<HTMLElement>(null);
+
   useDialogEscape(props.onCancel);
+  useFocusTrap(dialogRef);
 
   return (
     <div
@@ -380,7 +383,7 @@ export function McpImportDialog(props: {
         }
       }}
     >
-      <section className="glass-panel form-panel mcp-import-dialog" role="dialog" aria-modal="true" aria-labelledby="mcp-import-title">
+      <section ref={dialogRef} className="glass-panel form-panel mcp-import-dialog" role="dialog" aria-modal="true" aria-labelledby="mcp-import-title">
         <div className="mcp-import-header">
           <div>
             <div className="section-title" id="mcp-import-title">{t(props.locale, "importMcpJson")}</div>
@@ -411,21 +414,6 @@ export function McpImportDialog(props: {
       </section>
     </div>
   );
-}
-
-export function useDialogEscape(onClose: () => void): void {
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== "Escape") {
-        return;
-      }
-      event.preventDefault();
-      onClose();
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
 }
 
 export function ProfileForm(props: {
@@ -505,6 +493,7 @@ function ProfileTestDialog(props: {
   onTest: (modelName: string) => Promise<ProfileConnectivityTestResult>;
   onClose: () => void;
 }): JSX.Element {
+  const dialogRef = useRef<HTMLElement>(null);
   const testModel = props.profile.default_model;
   const [isTesting, setIsTesting] = useState(false);
   const [result, setResult] = useState<ProfileConnectivityTestResult | null>(null);
@@ -512,6 +501,7 @@ function ProfileTestDialog(props: {
   const [hasStarted, setHasStarted] = useState(false);
 
   useDialogEscape(props.onClose);
+  useFocusTrap(dialogRef);
 
   const runTest = async (modelName: string): Promise<void> => {
     setHasStarted(true);
@@ -542,7 +532,7 @@ function ProfileTestDialog(props: {
         }
       }}
     >
-      <section className="profile-test-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="profile-test-title">
+      <section ref={dialogRef} className="profile-test-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="profile-test-title">
         <div className="profile-test-header">
           <h3 id="profile-test-title">{t(props.locale, "profileTestDialogTitle")}</h3>
           <button className="profile-test-close" type="button" aria-label={t(props.locale, "close")} onClick={props.onClose}>

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { createPortal } from "react-dom";
 import { FileText, History, LoaderCircle, Save, Trash2, X } from "lucide-react";
 
@@ -34,17 +35,85 @@ export interface BackupRecordsDialogState {
   restoringName?: string;
 }
 
-function useDialogEscape(onClose: () => void): void {
+export function useDialogEscape(onClose: () => void): void {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        onClose();
+      if (event.key !== "Escape") {
+        return;
       }
+      event.preventDefault();
+      onClose();
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
+}
+
+export function DialogShell(props: {
+  onClose?: () => void;
+  backdropClassName: string;
+  dialogClassName: string;
+  dialogRef?: RefObject<HTMLElement | null>;
+  children: React.ReactNode;
+}): JSX.Element {
+  return createPortal(
+    <div
+      className={props.backdropClassName}
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget && props.onClose) {
+          props.onClose();
+        }
+      }}
+    >
+      <section ref={props.dialogRef} className={props.dialogClassName} role="dialog" aria-modal="true">
+        {props.children}
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+const FOCUSABLE_SELECTOR =
+  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+
+export function useFocusTrap(dialogRef: RefObject<HTMLElement | null>): void {
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent): void => {
+      if (event.key !== "Tab" || !dialogRef.current) {
+        return;
+      }
+
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+      );
+      if (focusable.length === 0) {
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (event.shiftKey) {
+        if (document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    },
+    [dialogRef],
+  );
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleKeyDown]);
 }
 
 function parseBackupDisplayDate(value: string): Date | null {
@@ -89,7 +158,11 @@ export function ConfirmDialog(
     onCancel: () => void;
   },
 ): JSX.Element {
+  const dialogRef = useRef<HTMLElement>(null);
   const Icon = props.kind === "delete" ? Trash2 : Save;
+
+  useDialogEscape(props.onCancel);
+  useFocusTrap(dialogRef);
 
   return createPortal(
     <div
@@ -101,7 +174,7 @@ export function ConfirmDialog(
         }
       }}
     >
-      <section className="confirm-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+      <section ref={dialogRef} className="confirm-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
         <div className="confirm-dialog-header">
           <div className={props.tone === "danger" ? "confirm-dialog-icon danger" : "confirm-dialog-icon"}>
             <Icon size={20} />
@@ -139,9 +212,11 @@ export function DocumentViewerDialog(
     onClose: () => void;
   },
 ): JSX.Element {
+  const dialogRef = useRef<HTMLElement>(null);
   const [copied, setCopied] = useState(false);
 
   useDialogEscape(props.onClose);
+  useFocusTrap(dialogRef);
 
   const handleCopy = (): void => {
     void navigator.clipboard.writeText(props.content).then(() => {
@@ -160,7 +235,7 @@ export function DocumentViewerDialog(
         }
       }}
     >
-      <section className="document-viewer glass-panel" role="dialog" aria-modal="true" aria-labelledby="document-viewer-title">
+      <section ref={dialogRef} className="document-viewer glass-panel" role="dialog" aria-modal="true" aria-labelledby="document-viewer-title">
         <div className="document-viewer-header">
           <div className="document-viewer-title">
             <div className="document-viewer-icon">
@@ -198,12 +273,14 @@ export function BackupRecordsDialog(
     onClose: () => void;
   },
 ): JSX.Element {
+  const dialogRef = useRef<HTMLElement>(null);
   const sourceLabel =
     props.destinationType === "webdav"
       ? t(props.locale, "backupRecordsSourceWebdav")
       : t(props.locale, "backupRecordsSourceLocal");
 
   useDialogEscape(props.onClose);
+  useFocusTrap(dialogRef);
 
   return createPortal(
     <div
@@ -215,7 +292,7 @@ export function BackupRecordsDialog(
         }
       }}
     >
-      <section className="backup-records-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="backup-records-title">
+      <section ref={dialogRef} className="backup-records-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="backup-records-title">
         <div className="backup-records-header">
           <div className="backup-records-title">
             <div className="backup-records-icon">

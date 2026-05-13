@@ -1,4 +1,5 @@
-import { useCallback } from "react";
+import { useCallback, useRef } from "react";
+import type { KeyboardEvent } from "react";
 import { AlertTriangle, ChevronsLeft, ChevronsRight, RefreshCw, Terminal, X } from "lucide-react";
 
 import type { McpServerConfig, ShortcutAction, ShortcutBinding } from "@shared/types";
@@ -87,6 +88,71 @@ export function App(): JSX.Element {
     onNavigate: (tab) => runAfterUnsavedHandled(() => setActiveTab(tab)),
   });
 
+  const tabListRef = useRef<HTMLDivElement>(null);
+  const mainTabIds = TAB_ITEMS.map((item) => item.id);
+
+  const focusTab = useCallback((tabId: string): void => {
+    const button = document.getElementById(`tab-${tabId}`);
+    if (button instanceof HTMLElement) {
+      button.focus();
+    }
+  }, []);
+
+  const handleMainTabKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>): void => {
+      const currentIndex = mainTabIds.indexOf(activeTab);
+      if (currentIndex === -1) {
+        return;
+      }
+
+      let nextIndex: number | null = null;
+
+      switch (event.key) {
+        case "ArrowRight":
+        case "ArrowDown":
+          nextIndex = (currentIndex + 1) % mainTabIds.length;
+          break;
+        case "ArrowLeft":
+        case "ArrowUp":
+          nextIndex = (currentIndex - 1 + mainTabIds.length) % mainTabIds.length;
+          break;
+        case "Home":
+          nextIndex = 0;
+          break;
+        case "End":
+          nextIndex = mainTabIds.length - 1;
+          break;
+        default:
+          return;
+      }
+
+      event.preventDefault();
+      const nextTab = mainTabIds[nextIndex];
+      if (nextTab) {
+        runAfterUnsavedHandled(() => {
+          setActiveTab(nextTab);
+          focusTab(nextTab);
+        });
+      }
+    },
+    [activeTab, mainTabIds, runAfterUnsavedHandled, setActiveTab, focusTab],
+  );
+
+  const handleAboutTabKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>): void => {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp"
+        || event.key === "ArrowLeft" || event.key === "ArrowRight"
+        || event.key === "Home" || event.key === "End") {
+        event.preventDefault();
+        runAfterUnsavedHandled(() => {
+          setActiveTab(ABOUT_TAB.id);
+          focusTab(ABOUT_TAB.id);
+        });
+      }
+    },
+    [runAfterUnsavedHandled, setActiveTab, focusTab],
+  );
+
   return (
     <div className={isSidebarCollapsed ? "shell sidebar-collapsed" : "shell"}>
       <div className="window-titlebar drag-region" aria-hidden="true">
@@ -172,13 +238,17 @@ export function App(): JSX.Element {
             {isSidebarCollapsed ? <ChevronsRight size={16} /> : <ChevronsLeft size={16} />}
           </button>
         </div>
-        <nav className="nav">
+        <nav className="nav" role="tablist" ref={tabListRef} onKeyDown={handleMainTabKeyDown}>
           {TAB_ITEMS.map(({ id, icon: Icon, labelKey }) => (
             <button
               key={id}
+              id={`tab-${id}`}
+              role="tab"
+              aria-selected={activeTab === id}
               className={id === activeTab ? "nav-item active" : "nav-item"}
               title={t(locale, labelKey)}
               aria-label={t(locale, labelKey)}
+              tabIndex={id === activeTab ? 0 : -1}
               onClick={() => {
                 if (id === activeTab) return;
                 runAfterUnsavedHandled(() => setActiveTab(id));
@@ -190,11 +260,15 @@ export function App(): JSX.Element {
             </button>
           ))}
         </nav>
-        <nav className="nav nav-bottom">
+        <nav className="nav nav-bottom" role="tablist" onKeyDown={handleAboutTabKeyDown}>
           <button
+            id={`tab-${ABOUT_TAB.id}`}
+            role="tab"
+            aria-selected={activeTab === ABOUT_TAB.id}
             className={ABOUT_TAB.id === activeTab ? "nav-item active" : "nav-item"}
             title={t(locale, ABOUT_TAB.labelKey)}
             aria-label={t(locale, ABOUT_TAB.labelKey)}
+            tabIndex={activeTab === ABOUT_TAB.id ? 0 : -1}
             onClick={() => {
               if (ABOUT_TAB.id === activeTab) return;
               runAfterUnsavedHandled(() => setActiveTab(ABOUT_TAB.id));
@@ -313,7 +387,7 @@ export function App(): JSX.Element {
           </div>
         </header>
 
-        <div className="content-scroll">
+        <div className="content-scroll" role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`}>
           <TabPanels
             state={state}
             shortcuts={shortcuts}
