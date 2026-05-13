@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, safeStorage, screen, shell, Tray } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, nativeTheme, safeStorage, screen, Tray } from "electron";
 import type { NativeImage } from "electron";
 import { basename, dirname, join, resolve } from "node:path";
 import { hostname } from "node:os";
@@ -12,7 +12,6 @@ import {
   buildProfilesDocument,
   buildPanelSettingsDocument,
   cloneState,
-  createDefaultPanelSettings,
   DEFAULT_CONFIG_PATH,
   DEFAULT_PANEL_DIRECTORY,
   DEFAULT_PANEL_SETTINGS_PATH,
@@ -22,18 +21,14 @@ import {
   loadPanelSettings,
   saveAppState,
 } from "@shared/configStore";
-import { buildConfigDoctorReport, buildManagedDocuments, buildRedactedPreviewBundle } from "@shared/configSafety";
+import { buildConfigDoctorReport, buildManagedDocuments } from "@shared/configSafety";
 import { buildMcpConfigDocument } from "@shared/mcpStore";
-import { scanSkills } from "@shared/skillsStore";
 import { normalizeShortcuts } from "@shared/shortcutStore";
-import type { ManagedFileId, OpenKimiTerminalRequest, PanelSettings } from "@shared/types";
-import { buildRestoreDryRun, restoreBackupSafely } from "./modules/backupRestore";
-import { getCliEnv, getCliVersion, runKimiConnectivityTest, runKimiMcpCommand, upgradeKimiCli } from "./modules/cli";
-import { captureSnapshotForState, detectExternalChangeConflict, readManagedDocuments, resolveManagedPaths } from "./modules/fileSnapshots";
+import type { ManagedFileId } from "@shared/types";
+import { captureSnapshotForState, detectExternalChangeConflict, resolveManagedPaths } from "./modules/fileSnapshots";
 import { markSelfWrite, startWatching, stopWatching, updateBaseline } from "./modules/fileWatcher";
 import { fileAccess, resolveHome, skillFileAccess } from "./modules/fileAccess";
 import { registerGlobalShortcuts, unregisterGlobalShortcuts } from "./modules/shortcuts";
-import { openKimiInTerminal } from "./modules/terminal";
 import {
   buildWebDavUrl,
   deleteWebDavPath,
@@ -41,10 +36,15 @@ import {
   getWebDavAuthHeader,
   pruneWebDavBackups,
   readWebDavManifest,
-  testWebDavConnection,
   uploadWebDavFile,
 } from "./modules/webdav";
-import { checkForUpdates, detectInstallSource } from "./modules/updates";
+import { registerStateIpc } from "./modules/stateIpc";
+import { registerDialogIpc } from "./modules/dialogIpc";
+import { registerCliIpc } from "./modules/cliIpc";
+import { registerBackupIpc } from "./modules/backupIpc";
+import { registerTrayIpc } from "./modules/trayIpc";
+import { registerMcpProfileIpc } from "./modules/mcpProfileIpc";
+import { getTrayLabels } from "./modules/trayLabels";
 import type {
   AppState,
   AppearanceMode,
@@ -53,11 +53,8 @@ import type {
   BackupRecord,
   BackupResult,
   FileSnapshotBundle,
-  FileDialogResult,
   Locale,
   PanelSettings,
-  RestoreBackupResult,
-  RestoreDryRunResult,
   SaveStateConflictResult,
   SaveStateResult,
 } from "@shared/types";
@@ -821,81 +818,6 @@ async function updateThemeFromTray(theme: AppearanceMode): Promise<void> {
   }
 }
 
-function getTrayLabels(
-  locale: Locale,
-): Record<
-  "showWindow" | "switchProfile" | "switchLanguage" | "switchTheme" | "themeAuto" | "themeLight" | "themeDark" | "quit",
-  string
-> {
-  type TrayLabels = Record<
-    "showWindow" | "switchProfile" | "switchLanguage" | "switchTheme" | "themeAuto" | "themeLight" | "themeDark" | "quit",
-    string
-  >;
-  const labels: Record<Locale, TrayLabels> = {
-    "zh-CN": {
-      showWindow: "显示/隐藏窗口",
-      switchProfile: "切换 Profile",
-      switchLanguage: "切换语言",
-      switchTheme: "切换主题",
-      themeAuto: "自动",
-      themeLight: "明亮",
-      themeDark: "暗色",
-      quit: "退出",
-    },
-    "zh-TW": {
-      showWindow: "顯示/隱藏視窗",
-      switchProfile: "切換 Profile",
-      switchLanguage: "切換語言",
-      switchTheme: "切換主題",
-      themeAuto: "自動",
-      themeLight: "明亮",
-      themeDark: "深色",
-      quit: "退出",
-    },
-    "en-US": {
-      showWindow: "Show / Hide Window",
-      switchProfile: "Switch Profile",
-      switchLanguage: "Language",
-      switchTheme: "Theme",
-      themeAuto: "Auto",
-      themeLight: "Light",
-      themeDark: "Dark",
-      quit: "Quit",
-    },
-    "ja-JP": {
-      showWindow: "ウィンドウを表示/非表示",
-      switchProfile: "Profile を切り替え",
-      switchLanguage: "言語",
-      switchTheme: "テーマ",
-      themeAuto: "自動",
-      themeLight: "ライト",
-      themeDark: "ダーク",
-      quit: "終了",
-    },
-    "de-DE": {
-      showWindow: "Fenster anzeigen/ausblenden",
-      switchProfile: "Profil wechseln",
-      switchLanguage: "Sprache",
-      switchTheme: "Design",
-      themeAuto: "Automatisch",
-      themeLight: "Hell",
-      themeDark: "Dunkel",
-      quit: "Beenden",
-    },
-    "es-ES": {
-      showWindow: "Mostrar/Ocultar ventana",
-      switchProfile: "Cambiar perfil",
-      switchLanguage: "Idioma",
-      switchTheme: "Tema",
-      themeAuto: "Automático",
-      themeLight: "Claro",
-      themeDark: "Oscuro",
-      quit: "Salir",
-    },
-  };
-  return labels[locale] ?? labels["en-US"];
-}
-
 function destroyTray(): void {
   if (tray) {
     tray.destroy();
@@ -1080,197 +1002,48 @@ app.whenReady().then(async () => {
   electronApp.setAppUserModelId("cn.crazycoder.kimi-code-switch-gui");
   await migrateLegacyPanelSettingsFile();
 
-  ipcMain.handle("app:load-state", async (_, paths) => {
-    const state = await loadAppState(fileAccess, paths);
-    decryptWebDavPassword(state);
-    updateBackupSchedule(state);
-    refreshGlobalShortcuts(state);
-    if (state.panelSettings.tray_icon) {
-      createTray();
-    }
-    void updateTrayMenu();
-    void startWatching(state, onExternalFileChange);
-    return state;
+  registerStateIpc(ipcMain, {
+    fileAccess,
+    skillFileAccess,
+    decryptWebDavPassword,
+    saveStateWithSafety,
+    updateBackupSchedule,
+    refreshGlobalShortcuts,
+    createTray,
+    updateTrayMenu,
+    onExternalFileChange,
   });
 
-  ipcMain.handle("app:capture-snapshot", async (_, state: AppState) => {
-    return captureSnapshotForState(state);
+  registerCliIpc(ipcMain);
+
+  registerDialogIpc(ipcMain, {
+    getMainWindow: () => mainWindow,
+    openKimiInTerminal,
   });
 
-  ipcMain.handle("app:run-doctor", async (_, state: AppState) => {
-    return buildConfigDoctorReport(state);
+  registerBackupIpc(ipcMain, {
+    runBackup,
+    listBackups,
+    deleteBackup,
+    createBackupSnapshot,
+    loadAppState: (paths?) => loadAppState(fileAccess, paths),
+    decryptWebDavPassword,
+    updateBackupSchedule,
+    refreshGlobalShortcuts,
+    cloneState,
+    updateBaseline,
+    updateTrayMenu,
+    setLatestAppState: (state) => { latestAppState = state; },
+    captureSnapshotForState,
   });
 
-  ipcMain.handle(
-    "app:save-state",
-    async (
-      _,
-      state: AppState,
-      options?: { expectedSnapshot?: FileSnapshotBundle; allowOverwrite?: boolean },
-    ) => {
-      return saveStateWithSafety(state, options);
-    },
-  );
-
-  ipcMain.handle("app:preview-state", async (_, state: AppState) => {
-    const normalizedState = normalizeStatePaths(state);
-    const targetPaths = resolveManagedPaths(normalizedState);
-    const diskDocuments = await readManagedDocuments(targetPaths);
-    return buildRedactedPreviewBundle(normalizedState, diskDocuments);
-  });
-  ipcMain.handle("skills:scan", async (_, state: AppState) => {
-    const normalizedState = normalizeStatePaths(state);
-    return scanSkills(skillFileAccess, {
-      mergeAllAvailableSkills: normalizedState.mainConfig.merge_all_available_skills,
-    });
+  registerTrayIpc(ipcMain, {
+    createTray,
+    destroyTray,
+    updateTrayMenu,
   });
 
-  ipcMain.handle("app:default-settings", () => {
-    return createDefaultPanelSettings();
-  });
-
-  ipcMain.handle("app:check-for-updates", async () => {
-    return checkForUpdates(getCliEnv);
-  });
-
-  ipcMain.handle("app:get-install-source", async () => {
-    return detectInstallSource(getCliEnv);
-  });
-
-  ipcMain.handle("app:cli-version", async (_, options?: { checkLatest?: boolean }) => {
-    return getCliVersion(options);
-  });
-
-  ipcMain.handle("app:upgrade-kimi-cli", async () => {
-    return upgradeKimiCli();
-  });
-
-  ipcMain.handle("dialog:pick-file", async (_, options): Promise<FileDialogResult> => {
-    if (!mainWindow) {
-      return { canceled: true };
-    }
-    const result = await dialog.showOpenDialog(mainWindow, {
-      properties: ["openFile"],
-      ...options,
-    });
-    return {
-      canceled: result.canceled,
-      filePath: result.filePaths[0],
-    };
-  });
-
-  ipcMain.handle("app:open-external", async (_, url: string) => {
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(url);
-    } catch {
-      throw new Error("Invalid URL provided.");
-    }
-    if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "mailto:") {
-      throw new Error("Only HTTPS and mailto URLs can be opened.");
-    }
-    await shell.openExternal(url);
-    return { ok: true };
-  });
-
-  ipcMain.handle("app:open-kimi-in-terminal", async (_, request: PanelSettings | OpenKimiTerminalRequest) => {
-    return openKimiInTerminal(request);
-  });
-
-  ipcMain.handle("backup:run", async (_, state?: AppState) => {
-    return runBackup(state);
-  });
-
-  ipcMain.handle("backup:list", async (_, state: AppState) => {
-    return listBackups(state);
-  });
-
-  ipcMain.handle("backup:delete", async (_, state: AppState, backupName: string) => {
-    return deleteBackup(state, backupName);
-  });
-
-  ipcMain.handle(
-    "backup:restore-dry-run",
-    async (
-      _,
-      state: AppState,
-      backupName: string,
-      options?: { expectedSnapshot?: FileSnapshotBundle },
-    ): Promise<RestoreDryRunResult | SaveStateConflictResult> => {
-      return buildRestoreDryRun(state, backupName, options?.expectedSnapshot);
-    },
-  );
-
-  ipcMain.handle(
-    "backup:restore",
-    async (
-      _,
-      state: AppState,
-      backupName: string,
-      options?: { expectedSnapshot?: FileSnapshotBundle; allowOverwrite?: boolean },
-    ): Promise<RestoreBackupResult | SaveStateConflictResult> => {
-      for (const id of Object.keys(resolveManagedPaths(state)) as ManagedFileId[]) {
-        markSelfWrite(id);
-      }
-      return restoreBackupSafely({
-        state,
-        backupName,
-        expectedSnapshot: options?.expectedSnapshot,
-        allowOverwrite: options?.allowOverwrite,
-        createBackupSnapshot: async (snapshotState, trigger) => createBackupSnapshot(snapshotState, trigger),
-        loadRestoredState: async (paths) => {
-          const restoredState = await loadAppState(fileAccess, paths);
-          decryptWebDavPassword(restoredState);
-          return restoredState;
-        },
-        onRestored: (restoredState) => {
-          updateBackupSchedule(restoredState);
-          latestAppState = cloneState(restoredState);
-          refreshGlobalShortcuts(restoredState);
-          void updateBaseline();
-          void updateTrayMenu();
-        },
-        captureSnapshot: captureSnapshotForState,
-      });
-    },
-  );
-
-  ipcMain.handle("backup:test-webdav", async (_, state: AppState) => {
-    return testWebDavConnection(state.panelSettings);
-  });
-
-  ipcMain.handle("app:set-tray", (_, enabled: boolean) => {
-    if (enabled) {
-      createTray();
-      void updateTrayMenu();
-    } else {
-      destroyTray();
-    }
-    return { ok: true };
-  });
-
-  ipcMain.handle("app:refresh-tray-menu", async () => {
-    await updateTrayMenu();
-    return { ok: true };
-  });
-
-  ipcMain.handle("mcp:test-server", async (_, name: string) => {
-    return runKimiMcpCommand(["test", name]);
-  });
-
-  ipcMain.handle("mcp:auth-server", async (_, name: string) => {
-    return runKimiMcpCommand(["auth", name]);
-  });
-
-  ipcMain.handle("mcp:reset-auth", async (_, name: string) => {
-    return runKimiMcpCommand(["reset-auth", name]);
-  });
-
-  ipcMain.handle("profile:test-connectivity", async (_, state: AppState, profileName: string, modelName?: string) => {
-    const draft = cloneState(state);
-    applyProfile(draft, profileName);
-    return runKimiConnectivityTest(draft, modelName ?? draft.mainConfig.default_model);
-  });
+  registerMcpProfileIpc(ipcMain);
 
   void createWindow();
 
