@@ -32,15 +32,30 @@ export interface BackupIpcContext {
 
 export function registerBackupIpc(ipcMain: IpcMain, ctx: BackupIpcContext): void {
   ipcMain.handle("backup:run", async (_, state?: AppState) => {
-    return ctx.runBackup(state);
+    try {
+      return await ctx.runBackup(state);
+    } catch (error) {
+      console.error("backup:run", error);
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   ipcMain.handle("backup:list", async (_, state: AppState) => {
-    return ctx.listBackups(state);
+    try {
+      return await ctx.listBackups(state);
+    } catch (error) {
+      console.error("backup:list", error);
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   ipcMain.handle("backup:delete", async (_, state: AppState, backupName: string) => {
-    return ctx.deleteBackup(state, backupName);
+    try {
+      return await ctx.deleteBackup(state, backupName);
+    } catch (error) {
+      console.error("backup:delete", error);
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   ipcMain.handle(
@@ -51,7 +66,12 @@ export function registerBackupIpc(ipcMain: IpcMain, ctx: BackupIpcContext): void
       backupName: string,
       options?: { expectedSnapshot?: FileSnapshotBundle },
     ): Promise<RestoreDryRunResult | SaveStateConflictResult> => {
-      return buildRestoreDryRun(state, backupName, options?.expectedSnapshot);
+      try {
+        return await buildRestoreDryRun(state, backupName, options?.expectedSnapshot);
+      } catch (error) {
+        console.error("backup:restore-dry-run", error);
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
     },
   );
 
@@ -63,33 +83,43 @@ export function registerBackupIpc(ipcMain: IpcMain, ctx: BackupIpcContext): void
       backupName: string,
       options?: { expectedSnapshot?: FileSnapshotBundle; allowOverwrite?: boolean },
     ): Promise<RestoreBackupResult | SaveStateConflictResult> => {
-      for (const id of Object.keys(resolveManagedPaths(state)) as ManagedFileId[]) {
-        markSelfWrite(id);
+      try {
+        for (const id of Object.keys(resolveManagedPaths(state)) as ManagedFileId[]) {
+          markSelfWrite(id);
+        }
+        return await restoreBackupSafely({
+          state,
+          backupName,
+          expectedSnapshot: options?.expectedSnapshot,
+          allowOverwrite: options?.allowOverwrite,
+          createBackupSnapshot: async (snapshotState, trigger) => ctx.createBackupSnapshot(snapshotState, trigger),
+          loadRestoredState: async (paths) => {
+            const restoredState = await ctx.loadAppState(paths);
+            ctx.decryptWebDavPassword(restoredState);
+            return restoredState;
+          },
+          onRestored: (restoredState) => {
+            ctx.updateBackupSchedule(restoredState);
+            ctx.setLatestAppState(ctx.cloneState(restoredState));
+            ctx.refreshGlobalShortcuts(restoredState);
+            void ctx.updateBaseline();
+            void ctx.updateTrayMenu();
+          },
+          captureSnapshot: ctx.captureSnapshotForState,
+        });
+      } catch (error) {
+        console.error("backup:restore", error);
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
-      return restoreBackupSafely({
-        state,
-        backupName,
-        expectedSnapshot: options?.expectedSnapshot,
-        allowOverwrite: options?.allowOverwrite,
-        createBackupSnapshot: async (snapshotState, trigger) => ctx.createBackupSnapshot(snapshotState, trigger),
-        loadRestoredState: async (paths) => {
-          const restoredState = await ctx.loadAppState(paths);
-          ctx.decryptWebDavPassword(restoredState);
-          return restoredState;
-        },
-        onRestored: (restoredState) => {
-          ctx.updateBackupSchedule(restoredState);
-          ctx.setLatestAppState(ctx.cloneState(restoredState));
-          ctx.refreshGlobalShortcuts(restoredState);
-          void ctx.updateBaseline();
-          void ctx.updateTrayMenu();
-        },
-        captureSnapshot: ctx.captureSnapshotForState,
-      });
     },
   );
 
   ipcMain.handle("backup:test-webdav", async (_, state: AppState) => {
-    return testWebDavConnection(state.panelSettings);
+    try {
+      return await testWebDavConnection(state.panelSettings);
+    } catch (error) {
+      console.error("backup:test-webdav", error);
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   });
 }

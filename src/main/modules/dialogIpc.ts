@@ -10,35 +10,50 @@ export interface DialogIpcContext {
 
 export function registerDialogIpc(ipcMain: IpcMain, ctx: DialogIpcContext): void {
   ipcMain.handle("dialog:pick-file", async (_, options): Promise<FileDialogResult> => {
-    const mainWindow = ctx.getMainWindow();
-    if (!mainWindow) {
-      return { canceled: true };
+    try {
+      const mainWindow = ctx.getMainWindow();
+      if (!mainWindow) {
+        return { canceled: true };
+      }
+      const result = await dialog.showOpenDialog(mainWindow, {
+        properties: ["openFile"],
+        ...options,
+      });
+      return {
+        canceled: result.canceled,
+        filePath: result.filePaths[0],
+      };
+    } catch (error) {
+      console.error("dialog:pick-file", error);
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
-    const result = await dialog.showOpenDialog(mainWindow, {
-      properties: ["openFile"],
-      ...options,
-    });
-    return {
-      canceled: result.canceled,
-      filePath: result.filePaths[0],
-    };
   });
 
   ipcMain.handle("app:open-external", async (_, url: string) => {
-    let parsedUrl: URL;
     try {
-      parsedUrl = new URL(url);
-    } catch {
-      throw new Error("Invalid URL provided.");
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(url);
+      } catch {
+        throw new Error("Invalid URL provided.");
+      }
+      if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "mailto:") {
+        throw new Error("Only HTTPS and mailto URLs can be opened.");
+      }
+      await shell.openExternal(url);
+      return { ok: true };
+    } catch (error) {
+      console.error("app:open-external", error);
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
     }
-    if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "mailto:") {
-      throw new Error("Only HTTPS and mailto URLs can be opened.");
-    }
-    await shell.openExternal(url);
-    return { ok: true };
   });
 
   ipcMain.handle("app:open-kimi-in-terminal", async (_, request: PanelSettings | OpenKimiTerminalRequest) => {
-    return ctx.openKimiInTerminal(request);
+    try {
+      return await ctx.openKimiInTerminal(request);
+    } catch (error) {
+      console.error("app:open-kimi-in-terminal", error);
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
   });
 }
