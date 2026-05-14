@@ -13,6 +13,7 @@ import {
 import type {
   AppearanceMode,
   AppearanceTheme,
+  AppState,
   BackupDestinationType,
   BackupFrequency,
   BackupStrategy,
@@ -29,6 +30,7 @@ import type {
 } from "@shared/types";
 
 import { AboutPage } from "../aboutPage";
+import { getHistory, undoLast } from "../historyManager";
 import { getApi, getMcpAction, getMcpActionNotice, getResourceLabel, createUniqueName, renameModelInState, renameProviderInState } from "../appHelpers";
 import {
   APPEARANCE_THEME_OPTIONS,
@@ -128,7 +130,7 @@ type TabPanelsProps = Pick<
   shortcuts: Record<ShortcutAction, ShortcutBinding>;
 };
 
-type SettingsSubTab = "general" | "shortcuts" | "backup" | "doctor";
+type SettingsSubTab = "general" | "shortcuts" | "backup" | "doctor" | "history";
 
 export function TabPanels(props: TabPanelsProps): JSX.Element {
   const {
@@ -252,6 +254,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
       id: "doctor",
       label: t(locale, "settingsTabDoctor"),
       description: t(locale, "settingsTabDoctorDescription"),
+    },
+    {
+      id: "history",
+      label: t(locale, "historyTitle"),
+      description: t(locale, "historyTitle"),
     },
   ];
 
@@ -1504,6 +1511,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               </div>
               </SettingsGroup>
             ) : null}
+            {activeSettingsSubTab === "history" ? (
+              <SettingsGroup title={t(locale, "historyTitle")} className="settings-group-wide">
+                <HistoryPanel locale={locale} updateState={updateState} />
+              </SettingsGroup>
+            ) : null}
           </section>
           </SplitLayout>
         ) : null}
@@ -1723,5 +1735,44 @@ function TemplatePickerDialog(props: {
       </section>
     </div>,
     document.body,
+  );
+}
+
+function HistoryPanel(props: {
+  locale: Locale;
+  updateState: (updater: (draft: AppState) => void, options?: { persist?: boolean }) => void;
+}): JSX.Element {
+  const [, forceUpdate] = useState(0);
+  const history = getHistory();
+
+  const handleUndo = (): void => {
+    const previous = undoLast();
+    if (previous) {
+      props.updateState(() => previous, { persist: true });
+      forceUpdate((n) => n + 1);
+    }
+  };
+
+  if (history.length === 0) {
+    return <div className="command-palette-empty">{t(props.locale, "historyNoHistory")}</div>;
+  }
+
+  return (
+    <div className="history-panel">
+      {history.map((entry, index) => (
+        <div key={entry.timestamp} className="history-entry">
+          <div className="history-entry-info">
+            <span className="history-entry-time">{new Date(entry.timestamp).toLocaleTimeString()}</span>
+            <span className="history-entry-summary">{entry.summary}</span>
+          </div>
+          {index === 0 ? (
+            <button type="button" className="action-button" onClick={handleUndo}>
+              <RotateCcw size={14} />
+              <span>{t(props.locale, "historyUndo")}</span>
+            </button>
+          ) : null}
+        </div>
+      ))}
+    </div>
   );
 }

@@ -34,6 +34,15 @@ export type ShortcutAction =
   | "tab.skills"
   | "tab.settings";
 
+export interface ProviderTemplate {
+  id: string;
+  name: string;
+  description: string;
+  type: ProviderType;
+  base_url: string;
+  default_models: Array<{ model: string; max_context_size: number; capabilities: string[] }>;
+}
+
 export interface ProviderConfig {
   type: string;
   base_url: string;
@@ -127,6 +136,16 @@ export interface PanelSettings {
   shortcuts: Record<ShortcutAction, ShortcutBinding>;
   mcp_servers: Record<string, McpServerConfig>;
   last_display_id?: number;
+  uiState?: {
+    activeTab?: string;
+    providerSortBy?: string;
+    profileSortBy?: string;
+  };
+  customTemplates?: ProviderTemplate[];
+  favorites?: {
+    providers?: string[];
+    profiles?: string[];
+  };
 }
 
 export interface AppState {

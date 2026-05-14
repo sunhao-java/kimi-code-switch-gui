@@ -19,6 +19,7 @@ import type {
   PreviewBundle,
   Profile,
   ProfileDiff,
+  ProviderTemplate,
   ProviderType,
   ValidationResult,
 } from "./types";
@@ -325,6 +326,9 @@ function panelSettingsFromUnknown(data: Record<string, unknown>, fallback: Panel
     shortcuts: normalizeShortcuts(data.shortcuts),
     mcp_servers: parsePanelMcpServers(data.mcp_servers),
     last_display_id: typeof data.last_display_id === "number" ? data.last_display_id : undefined,
+    uiState: parseUiState(data.uiState),
+    customTemplates: parseCustomTemplates(data.customTemplates),
+    favorites: parseFavorites(data.favorites),
   };
 }
 
@@ -1008,6 +1012,83 @@ export function importConfig(
   return next;
 }
 
+export function saveCustomTemplate(state: AppState, template: ProviderTemplate): void {
+  if (!state.panelSettings.customTemplates) {
+    state.panelSettings.customTemplates = [];
+  }
+  const index = state.panelSettings.customTemplates.findIndex((t) => t.id === template.id);
+  if (index >= 0) {
+    state.panelSettings.customTemplates[index] = template;
+  } else {
+    state.panelSettings.customTemplates.push(template);
+  }
+}
+
+export function deleteCustomTemplate(state: AppState, templateId: string): void {
+  if (!state.panelSettings.customTemplates) {
+    return;
+  }
+  state.panelSettings.customTemplates = state.panelSettings.customTemplates.filter(
+    (t) => t.id !== templateId,
+  );
+}
+
+export function toggleFavorite(
+  state: AppState,
+  type: "provider" | "profile",
+  name: string,
+): void {
+  if (!state.panelSettings.favorites) {
+    state.panelSettings.favorites = {};
+  }
+  const key = type === "provider" ? "providers" : "profiles";
+  if (!state.panelSettings.favorites[key]) {
+    state.panelSettings.favorites[key] = [];
+  }
+  const list = state.panelSettings.favorites[key]!;
+  const index = list.indexOf(name);
+  if (index >= 0) {
+    list.splice(index, 1);
+  } else {
+    list.push(name);
+  }
+}
+
+export interface SearchResult {
+  type: "provider" | "model" | "profile" | "mcp";
+  name: string;
+  subtitle: string;
+  tabId: string;
+}
+
+export function searchConfig(state: AppState, query: string): SearchResult[] {
+  if (!query.trim()) return [];
+  const q = query.toLowerCase();
+  const results: SearchResult[] = [];
+
+  for (const [name, provider] of Object.entries(state.mainConfig.providers)) {
+    if (name.toLowerCase().includes(q) || provider.base_url.toLowerCase().includes(q)) {
+      results.push({ type: "provider", name, subtitle: provider.base_url, tabId: "providers" });
+    }
+  }
+  for (const [id, model] of Object.entries(state.mainConfig.models)) {
+    if (id.toLowerCase().includes(q) || model.provider.toLowerCase().includes(q)) {
+      results.push({ type: "model", name: id, subtitle: model.provider, tabId: "models" });
+    }
+  }
+  for (const [name, profile] of Object.entries(state.profiles)) {
+    if (name.toLowerCase().includes(q) || profile.default_model.toLowerCase().includes(q)) {
+      results.push({ type: "profile", name, subtitle: profile.default_model, tabId: "profiles" });
+    }
+  }
+  for (const name of Object.keys(state.mcpConfig.mcpServers)) {
+    if (name.toLowerCase().includes(q)) {
+      results.push({ type: "mcp", name, subtitle: "", tabId: "mcp" });
+    }
+  }
+  return results;
+}
+
 function parsePanelMcpServers(value: unknown): Record<string, McpServerConfig> {
   if (!isRecord(value)) {
     return {};
@@ -1074,6 +1155,65 @@ function cloneUnknownRecord(value: Record<string, unknown>): Record<string, unkn
       return [key, entry];
     }),
   );
+}
+
+function parseUiState(value: unknown): PanelSettings["uiState"] {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const result: NonNullable<PanelSettings["uiState"]> = {};
+  if (typeof value.activeTab === "string") {
+    result.activeTab = value.activeTab;
+  }
+  if (typeof value.providerSortBy === "string") {
+    result.providerSortBy = value.providerSortBy;
+  }
+  if (typeof value.profileSortBy === "string") {
+    result.profileSortBy = value.profileSortBy;
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function parseCustomTemplates(value: unknown): ProviderTemplate[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const templates: ProviderTemplate[] = [];
+  for (const item of value) {
+    if (!isRecord(item)) continue;
+    if (typeof item.id !== "string" || typeof item.name !== "string") continue;
+    templates.push({
+      id: item.id,
+      name: item.name,
+      description: typeof item.description === "string" ? item.description : "",
+      type: (typeof item.type === "string" ? item.type : "openai_legacy") as ProviderType,
+      base_url: typeof item.base_url === "string" ? item.base_url : "",
+      default_models: Array.isArray(item.default_models)
+        ? item.default_models.filter(
+            (m: unknown) => isRecord(m) && typeof m.model === "string",
+          ).map((m: Record<string, unknown>) => ({
+            model: m.model as string,
+            max_context_size: typeof m.max_context_size === "number" ? m.max_context_size : 0,
+            capabilities: Array.isArray(m.capabilities) ? m.capabilities.filter((c: unknown) => typeof c === "string") : [],
+          }))
+        : [],
+    });
+  }
+  return templates.length > 0 ? templates : undefined;
+}
+
+function parseFavorites(value: unknown): PanelSettings["favorites"] {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const result: NonNullable<PanelSettings["favorites"]> = {};
+  if (Array.isArray(value.providers)) {
+    result.providers = value.providers.filter((v: unknown) => typeof v === "string");
+  }
+  if (Array.isArray(value.profiles)) {
+    result.profiles = value.profiles.filter((v: unknown) => typeof v === "string");
+  }
+  return (result.providers?.length || result.profiles?.length) ? result : undefined;
 }
 
 function normalizePanelTomlIndentation(document: string): string {

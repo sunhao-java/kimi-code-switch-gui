@@ -1,15 +1,20 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { AlertTriangle, ChevronsLeft, ChevronsRight, RefreshCw, Terminal, X } from "lucide-react";
 
 import type { McpServerConfig, ShortcutAction, ShortcutBinding } from "@shared/types";
+import { applyProfile } from "@shared/configStore";
+import type { SearchResult } from "@shared/configStore";
 import { parseMcpConfigStrict } from "@shared/mcpStore";
 import { formatAcceleratorForPlatform, getBrowserShortcutPlatform, normalizeShortcuts } from "@shared/shortcutStore";
 
+import { CommandPalette } from "./commandPalette";
+import { QuickProfileSwitcher } from "./quickProfileSwitcher";
 import { TabPanels } from "./tabs/TabPanels";
 import { useAppHandlers } from "./useAppHandlers";
 import { useShortcuts } from "./useShortcuts";
 import { TAB_ITEMS, ABOUT_TAB, LOCALE_OPTIONS, THEME_OPTIONS } from "./appOptions";
+import type { TabId } from "./appOptions";
 import {
   BackupRecordsDialog,
   ConfirmDialog,
@@ -87,6 +92,42 @@ export function App(): JSX.Element {
     onReload: () => void loadState(),
     onNavigate: (tab) => runAfterUnsavedHandled(() => setActiveTab(tab)),
   });
+
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false);
+
+  useEffect(() => {
+    function handleGlobalKeyDown(event: globalThis.KeyboardEvent): void {
+      if ((event.metaKey || event.ctrlKey) && event.key === "k" && !event.shiftKey) {
+        event.preventDefault();
+        setCommandPaletteOpen((v) => !v);
+      }
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key === "p") {
+        event.preventDefault();
+        setQuickSwitcherOpen((v) => !v);
+      }
+    }
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, []);
+
+  const handleCommandPaletteSelect = useCallback((result: SearchResult): void => {
+    setCommandPaletteOpen(false);
+    runAfterUnsavedHandled(() => {
+      setActiveTab(result.tabId as TabId);
+      if (result.type === "provider") setSelectedProvider(result.name);
+      else if (result.type === "model") setSelectedModel(result.name);
+      else if (result.type === "profile") setSelectedProfile(result.name);
+      else if (result.type === "mcp") setSelectedMcpServer(result.name);
+    });
+  }, [runAfterUnsavedHandled, setActiveTab, setSelectedProvider, setSelectedModel, setSelectedProfile, setSelectedMcpServer]);
+
+  const handleQuickSwitchActivate = useCallback((profileName: string): void => {
+    setQuickSwitcherOpen(false);
+    updateState((draft) => {
+      applyProfile(draft, profileName);
+    });
+  }, [updateState]);
 
   const tabListRef = useRef<HTMLDivElement>(null);
   const mainTabIds = TAB_ITEMS.map((item) => item.id);
@@ -522,6 +563,22 @@ export function App(): JSX.Element {
               setError(`${t(locale, "mcpImportInvalid")} ${message}`);
             }
           }}
+        />
+      ) : null}
+      {commandPaletteOpen ? (
+        <CommandPalette
+          state={state}
+          locale={locale}
+          onSelect={handleCommandPaletteSelect}
+          onClose={() => setCommandPaletteOpen(false)}
+        />
+      ) : null}
+      {quickSwitcherOpen ? (
+        <QuickProfileSwitcher
+          state={state}
+          locale={locale}
+          onActivate={handleQuickSwitchActivate}
+          onClose={() => setQuickSwitcherOpen(false)}
         />
       ) : null}
     </div>

@@ -42,9 +42,15 @@ export function getAppDerivedData(
   skillsReport: SkillsScanReport | null,
   selections: AppSelections,
 ): AppDerivedData {
-  const providerEntries = Object.entries(state.mainConfig.providers);
+  const favoriteProviders = new Set(state.panelSettings.favorites?.providers ?? []);
+  const favoriteProfiles = new Set(state.panelSettings.favorites?.profiles ?? []);
+  const providerEntries = Object.entries(state.mainConfig.providers).sort(
+    (a, b) => (favoriteProviders.has(b[0]) ? 1 : 0) - (favoriteProviders.has(a[0]) ? 1 : 0),
+  );
   const modelEntries = Object.entries(state.mainConfig.models);
-  const profileEntries = Object.entries(state.profiles);
+  const profileEntries = Object.entries(state.profiles).sort(
+    (a, b) => (favoriteProfiles.has(b[0]) ? 1 : 0) - (favoriteProfiles.has(a[0]) ? 1 : 0),
+  );
   const mcpEntries = Object.entries(state.mcpConfig.mcpServers);
   const skillPathEntries = skillsReport?.paths ?? [];
   const skillEntries = skillsReport?.skills ?? [];

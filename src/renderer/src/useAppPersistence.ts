@@ -4,6 +4,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { cloneState, normalizeStatePaths } from "@shared/configStore";
 import type { AppState, ConfigDoctorReport, FileSnapshotBundle, Locale, PreviewBundle, SaveStateConflictResult } from "@shared/types";
 import { getApi } from "./appHelpers";
+import { pushSnapshot } from "./historyManager";
 import { translateError } from "./i18n";
 import type { DiagnosticsState } from "./overviewDashboard";
 import { applyPrimarySelections, getDefaultPrimarySelections, getRetainedPrimarySelections } from "./primarySelections";
@@ -218,8 +219,11 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     if (!state) {
       return;
     }
+    if (savedState) {
+      pushSnapshot(savedState, "save");
+    }
     await persistState(state);
-  }, [persistState, state]);
+  }, [persistState, state, savedState]);
 
   const persistImmediateState = useCallback(async (
     nextVisibleState: AppState,

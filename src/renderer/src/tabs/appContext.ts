@@ -12,7 +12,7 @@ export interface AppContext {
   locale: Locale;
   title: string;
   activeTab: TabId;
-  setActiveTab: Dispatch<SetStateAction<TabId>>;
+  setActiveTab: (tab: TabId) => void;
   diagnostics: DiagnosticsState;
   setDiagnostics: Dispatch<SetStateAction<DiagnosticsState>>;
   // Selected items

@@ -16,6 +16,7 @@ import {
   copyProfileField,
   createDefaultPanelSettings,
   createLineDiff,
+  deleteCustomTemplate,
   deleteModel,
   deleteProfile,
   deleteProvider,
@@ -23,6 +24,9 @@ import {
   formatMissingModelError,
   getImportPreview,
   importConfig,
+  saveCustomTemplate,
+  searchConfig,
+  toggleFavorite,
   validateImportData,
   loadAppState,
   loadPanelSettings,
@@ -861,5 +865,131 @@ describe("importConfig", () => {
     const data = { version: 1, exportedAt: "", source: "t", providers: { extra: { type: "openai", base_url: "https://e", api_key: "k" } }, models: {}, profiles: {}, mcpServers: {} };
     importConfig(state, data, "skip");
     expect(Object.keys(state.mainConfig.providers).length).toBe(origCount);
+  });
+});
+
+describe("saveCustomTemplate", () => {
+  it("adds template to panelSettings.customTemplates", () => {
+    const state = createState();
+    const template = { id: "my-tpl", name: "My Template", description: "desc", type: "openai_legacy" as const, base_url: "http://localhost", default_models: [] };
+    saveCustomTemplate(state, template);
+    expect(state.panelSettings.customTemplates).toHaveLength(1);
+    expect(state.panelSettings.customTemplates![0].id).toBe("my-tpl");
+  });
+
+  it("overwrites template with same id", () => {
+    const state = createState();
+    const template1 = { id: "tpl-1", name: "V1", description: "", type: "openai_legacy" as const, base_url: "http://a", default_models: [] };
+    const template2 = { id: "tpl-1", name: "V2", description: "", type: "openai_legacy" as const, base_url: "http://b", default_models: [] };
+    saveCustomTemplate(state, template1);
+    saveCustomTemplate(state, template2);
+    expect(state.panelSettings.customTemplates).toHaveLength(1);
+    expect(state.panelSettings.customTemplates![0].name).toBe("V2");
+  });
+
+  it("initializes customTemplates if undefined", () => {
+    const state = createState();
+    state.panelSettings.customTemplates = undefined;
+    const template = { id: "x", name: "X", description: "", type: "gemini" as const, base_url: "", default_models: [] };
+    saveCustomTemplate(state, template);
+    expect(state.panelSettings.customTemplates).toHaveLength(1);
+  });
+});
+
+describe("deleteCustomTemplate", () => {
+  it("removes template by id", () => {
+    const state = createState();
+    const template = { id: "del-me", name: "Del", description: "", type: "openai_legacy" as const, base_url: "", default_models: [] };
+    saveCustomTemplate(state, template);
+    deleteCustomTemplate(state, "del-me");
+    expect(state.panelSettings.customTemplates).toHaveLength(0);
+  });
+
+  it("is no-op for non-existent id", () => {
+    const state = createState();
+    saveCustomTemplate(state, { id: "keep", name: "Keep", description: "", type: "openai_legacy" as const, base_url: "", default_models: [] });
+    deleteCustomTemplate(state, "no-such-id");
+    expect(state.panelSettings.customTemplates).toHaveLength(1);
+  });
+
+  it("is no-op when customTemplates is undefined", () => {
+    const state = createState();
+    state.panelSettings.customTemplates = undefined;
+    deleteCustomTemplate(state, "any");
+    expect(state.panelSettings.customTemplates).toBeUndefined();
+  });
+});
+
+describe("toggleFavorite", () => {
+  it("adds name to favorites", () => {
+    const state = createState();
+    toggleFavorite(state, "provider", "kimi_gateway");
+    expect(state.panelSettings.favorites?.providers).toContain("kimi_gateway");
+  });
+
+  it("removes existing favorite", () => {
+    const state = createState();
+    toggleFavorite(state, "provider", "kimi_gateway");
+    toggleFavorite(state, "provider", "kimi_gateway");
+    expect(state.panelSettings.favorites?.providers).not.toContain("kimi_gateway");
+  });
+
+  it("initializes favorites if undefined", () => {
+    const state = createState();
+    state.panelSettings.favorites = undefined;
+    toggleFavorite(state, "profile", "default");
+    expect(state.panelSettings.favorites?.profiles).toContain("default");
+  });
+
+  it("handles provider and profile independently", () => {
+    const state = createState();
+    toggleFavorite(state, "provider", "kimi_gateway");
+    toggleFavorite(state, "profile", "default");
+    expect(state.panelSettings.favorites?.providers).toContain("kimi_gateway");
+    expect(state.panelSettings.favorites?.profiles).toContain("default");
+  });
+});
+
+describe("searchConfig", () => {
+  it("finds providers by name", () => {
+    const state = createState();
+    const results = searchConfig(state, "kimi");
+    expect(results.some((r) => r.type === "provider" && r.name === "kimi_gateway")).toBe(true);
+  });
+
+  it("finds models by ID", () => {
+    const state = createState();
+    const results = searchConfig(state, "k2.5");
+    expect(results.some((r) => r.type === "model" && r.name === "kimi_gateway/kimi-k2.5")).toBe(true);
+  });
+
+  it("finds profiles by name", () => {
+    const state = createState();
+    const results = searchConfig(state, "default");
+    expect(results.some((r) => r.type === "profile")).toBe(true);
+  });
+
+  it("finds MCP servers by name", () => {
+    const state = createState();
+    const results = searchConfig(state, "context7");
+    expect(results.some((r) => r.type === "mcp" && r.name === "context7")).toBe(true);
+  });
+
+  it("returns empty for empty query", () => {
+    const state = createState();
+    expect(searchConfig(state, "")).toEqual([]);
+    expect(searchConfig(state, "   ")).toEqual([]);
+  });
+
+  it("is case-insensitive", () => {
+    const state = createState();
+    const upper = searchConfig(state, "KIMI");
+    const lower = searchConfig(state, "kimi");
+    expect(upper.length).toBe(lower.length);
+  });
+
+  it("returns empty for no match", () => {
+    const state = createState();
+    expect(searchConfig(state, "zzz_nonexistent")).toEqual([]);
   });
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppState, ConfigDoctorReport, ExternalChangeNotifyPayload, FileSnapshotBundle } from "@shared/types";
 import type { BackupRecordsDialogState, DocumentViewerState } from "./dialogs";
 import type { DiagnosticsState } from "./overviewDashboard";
@@ -172,6 +172,29 @@ export function useAppHandlers() {
   useEffect(() => {
     void loadState();
   }, []);
+
+  // Restore activeTab from persisted uiState after initial load
+  const hasRestoredUiState = useRef(false);
+  useEffect(() => {
+    if (hasRestoredUiState.current) return;
+    if (!savedState) return;
+    const persistedTab = savedState.panelSettings.uiState?.activeTab;
+    if (persistedTab) {
+      setActiveTab(persistedTab as TabId);
+    }
+    hasRestoredUiState.current = true;
+  }, [savedState]);
+
+  // Wrap setActiveTab to persist uiState
+  const handleSetActiveTab = useCallback((tab: TabId): void => {
+    setActiveTab(tab);
+    updateImmediateState((draft) => {
+      if (!draft.panelSettings.uiState) {
+        draft.panelSettings.uiState = {};
+      }
+      draft.panelSettings.uiState.activeTab = tab;
+    });
+  }, [updateImmediateState]);
 
   useEffect(() => {
     applyAppearanceMode(state.panelSettings.theme);
@@ -372,7 +395,7 @@ export function useAppHandlers() {
     savedState,
     setSavedState,
     activeTab,
-    setActiveTab,
+    setActiveTab: handleSetActiveTab,
     selectedProvider,
     setSelectedProvider,
     selectedModel,
