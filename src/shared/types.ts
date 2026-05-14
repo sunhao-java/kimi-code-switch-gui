@@ -162,6 +162,19 @@ export interface ProfileConnectivityTestResult {
   status: number;
 }
 
+export interface ProfileDiffEntry {
+  field: keyof Profile;
+  leftValue: unknown;
+  rightValue: unknown;
+  isSame: boolean;
+}
+
+export interface ProfileDiff {
+  left: Profile;
+  right: Profile;
+  differences: ProfileDiffEntry[];
+}
+
 export interface PreviewBundle {
   configDocument: string;
   profilesDocument: string;
@@ -300,4 +313,32 @@ export interface BackupRecord {
   createdAt: string;
   path: string;
   itemCount?: number;
+}
+
+export type ImportConflictStrategy = "skip" | "overwrite" | "rename";
+
+export interface ImportConflict {
+  name: string;
+  type: "provider" | "model" | "profile" | "mcp_server";
+  existing: boolean;
+}
+
+export interface ImportPreview {
+  conflicts: ImportConflict[];
+  newItems: ImportConflict[];
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
+export interface ExportBundle {
+  version: number;
+  exportedAt: string;
+  source: string;
+  providers: Record<string, ProviderConfig>;
+  models: Record<string, ModelConfig>;
+  profiles: Record<string, Profile>;
+  mcpServers: Record<string, McpServerConfig>;
 }

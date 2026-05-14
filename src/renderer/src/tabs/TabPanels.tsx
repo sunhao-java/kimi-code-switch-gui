@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Bug, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Terminal, Trash2 } from "lucide-react";
-import { applyProfile, cloneProfile, deleteModel, deleteProfile, deleteProvider, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
+import { Bug, CheckSquare, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Square, Terminal, Trash2 } from "lucide-react";
+import { applyProfile, applyTemplate, batchDeleteProviders, batchToggleMcpServers, batchUpdateProviderApiKey, cloneProfile, deleteModel, deleteProfile, deleteProvider, PROVIDER_TEMPLATES, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
 import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
 import {
   formatAcceleratorForPlatform,
@@ -222,6 +222,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
       actions: SHORTCUT_ACTIONS.filter((definition) => definition.scope === "window"),
     },
   ];
+  const [selectedProviders, setSelectedProviders] = useState<Set<string>>(new Set());
+  const [selectedMcpServers, setSelectedMcpServers] = useState<Set<string>>(new Set());
   const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>("general");
   const settingsSubTabs: Array<{ id: SettingsSubTab; label: string; description: string }> = [
     {
@@ -296,6 +298,94 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                 setSelectedProvider(name);
               }, { persist: false })
             }
+            headerActions={
+              <>
+              <button
+                className="action-button compact"
+                type="button"
+                aria-label={t(locale, "templateFromTemplate")}
+                title={t(locale, "templateFromTemplate")}
+                onClick={() => setIsTemplatePickerOpen(true)}
+              >
+                {t(locale, "templateFromTemplate")}
+              </button>
+              {selectedProviders.size > 0 ? (
+                <div className="batch-toolbar">
+                  <span className="batch-count">{formatMessage(t(locale, "batchSelected"), { count: String(selectedProviders.size) })}</span>
+                  <button
+                    className="action-button compact"
+                    type="button"
+                    title={t(locale, "batchUpdateApiKey")}
+                    onClick={() => {
+                      const newKey = window.prompt(t(locale, "batchUpdateApiKey"));
+                      if (newKey === null) return;
+                      updateState((draft) => {
+                        batchUpdateProviderApiKey(draft, [...selectedProviders], newKey);
+                      });
+                    }}
+                  >
+                    {t(locale, "batchUpdateApiKey")}
+                  </button>
+                  <button
+                    className="action-button compact"
+                    type="button"
+                    title={t(locale, "batchDelete")}
+                    onClick={() => {
+                      void (async () => {
+                        const message = formatMessage(t(locale, "batchConfirmDeleteProviders"), { count: String(selectedProviders.size) });
+                        if (!(await confirmDeleteResource(t(locale, "providers"), message))) return;
+                        updateState((draft) => {
+                          batchDeleteProviders(draft, [...selectedProviders]);
+                          setSelectedProviders(new Set());
+                          setSelectedProvider(Object.keys(draft.mainConfig.providers)[0] ?? "");
+                        });
+                      })();
+                    }}
+                  >
+                    <Trash2 size={15} />
+                    <span>{t(locale, "batchDelete")}</span>
+                  </button>
+                  <button
+                    className="action-button compact"
+                    type="button"
+                    title={selectedProviders.size === providerEntries.length ? t(locale, "batchSelectNone") : t(locale, "batchSelectAll")}
+                    onClick={() => {
+                      if (selectedProviders.size === providerEntries.length) {
+                        setSelectedProviders(new Set());
+                      } else {
+                        setSelectedProviders(new Set(providerEntries.map(([name]) => name)));
+                      }
+                    }}
+                  >
+                    {selectedProviders.size === providerEntries.length ? <Square size={15} /> : <CheckSquare size={15} />}
+                    <span>{selectedProviders.size === providerEntries.length ? t(locale, "batchSelectNone") : t(locale, "batchSelectAll")}</span>
+                  </button>
+                </div>
+              ) : null}
+              </>
+            }
+            renderItemAction={(name) => (
+              <button
+                className={selectedProviders.has(name) ? "list-toggle-button" : "list-toggle-button disabled"}
+                type="button"
+                aria-label={selectedProviders.has(name) ? t(locale, "batchSelectNone") : t(locale, "batchSelectAll")}
+                title={selectedProviders.has(name) ? t(locale, "batchSelectNone") : t(locale, "batchSelectAll")}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setSelectedProviders((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(name)) {
+                      next.delete(name);
+                    } else {
+                      next.add(name);
+                    }
+                    return next;
+                  });
+                }}
+              >
+                {selectedProviders.has(name) ? <CheckSquare size={15} /> : <Square size={15} />}
+              </button>
+            )}
           >
             {selectedProviderData ? (
               <ProviderForm
@@ -612,20 +702,68 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               }, { persist: false })
             }
             headerActions={
-              <button
-                className="action-button compact icon-only"
-                type="button"
-                aria-label={t(locale, "importMcpJson")}
-                title={t(locale, "importMcpJson")}
-                onClick={() => {
-                  const initialDraft = t(locale, "mcpImportPlaceholder");
-                  setIsMcpImportOpen(true);
-                  setMcpImportDraft(initialDraft);
-                  setMcpImportInitialDraft(initialDraft);
-                }}
-              >
-                <FileInput size={15} />
-              </button>
+              <>
+                {selectedMcpServers.size > 0 ? (
+                  <div className="batch-toolbar">
+                    <span className="batch-count">{formatMessage(t(locale, "batchSelected"), { count: String(selectedMcpServers.size) })}</span>
+                    <button
+                      className="action-button compact"
+                      type="button"
+                      title={t(locale, "batchEnable")}
+                      onClick={() => {
+                        updateState((draft) => {
+                          batchToggleMcpServers(draft, [...selectedMcpServers], true);
+                        });
+                      }}
+                    >
+                      <Power size={15} />
+                      <span>{t(locale, "batchEnable")}</span>
+                    </button>
+                    <button
+                      className="action-button compact"
+                      type="button"
+                      title={t(locale, "batchDisable")}
+                      onClick={() => {
+                        updateState((draft) => {
+                          batchToggleMcpServers(draft, [...selectedMcpServers], false);
+                        });
+                      }}
+                    >
+                      <Power size={15} />
+                      <span>{t(locale, "batchDisable")}</span>
+                    </button>
+                    <button
+                      className="action-button compact"
+                      type="button"
+                      title={selectedMcpServers.size === mcpEntries.length ? t(locale, "batchSelectNone") : t(locale, "batchSelectAll")}
+                      onClick={() => {
+                        if (selectedMcpServers.size === mcpEntries.length) {
+                          setSelectedMcpServers(new Set());
+                        } else {
+                          setSelectedMcpServers(new Set(mcpEntries.map(([name]) => name)));
+                        }
+                      }}
+                    >
+                      {selectedMcpServers.size === mcpEntries.length ? <Square size={15} /> : <CheckSquare size={15} />}
+                      <span>{selectedMcpServers.size === mcpEntries.length ? t(locale, "batchSelectNone") : t(locale, "batchSelectAll")}</span>
+                    </button>
+                  </div>
+                ) : null}
+                <button
+                  className="action-button compact icon-only"
+                  type="button"
+                  aria-label={t(locale, "importMcpJson")}
+                  title={t(locale, "importMcpJson")}
+                  onClick={() => {
+                    const initialDraft = t(locale, "mcpImportPlaceholder");
+                    setIsMcpImportOpen(true);
+                    setMcpImportDraft(initialDraft);
+                    setMcpImportInitialDraft(initialDraft);
+                  }}
+                >
+                  <FileInput size={15} />
+                </button>
+              </>
             }
             addButtonClassName="action-button compact icon-only"
             addButtonTitle={t(locale, "newMcpServer")}
@@ -640,6 +778,26 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               }
               return (
                 <>
+                  <button
+                    className={selectedMcpServers.has(name) ? "list-toggle-button" : "list-toggle-button disabled"}
+                    type="button"
+                    aria-label={selectedMcpServers.has(name) ? t(locale, "batchSelectNone") : t(locale, "batchSelectAll")}
+                    title={selectedMcpServers.has(name) ? t(locale, "batchSelectNone") : t(locale, "batchSelectAll")}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setSelectedMcpServers((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(name)) {
+                          next.delete(name);
+                        } else {
+                          next.add(name);
+                        }
+                        return next;
+                      });
+                    }}
+                  >
+                    {selectedMcpServers.has(name) ? <CheckSquare size={15} /> : <Square size={15} />}
+                  </button>
                   <button
                     className={server.enabled ? "list-toggle-button" : "list-toggle-button disabled"}
                     type="button"

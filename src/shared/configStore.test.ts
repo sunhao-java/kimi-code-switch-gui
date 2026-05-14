@@ -1,6 +1,9 @@
 import {
   DEFAULT_PROFILE_NAME,
   applyProfile,
+  batchDeleteProviders,
+  batchToggleMcpServers,
+  batchUpdateProviderApiKey,
   bootstrapProfiles,
   buildConfigDocument,
   buildPanelSettingsDocument,
@@ -610,6 +613,105 @@ url = "https://mcp.context7.com/mcp"
     const state = createState();
     expect(() => cloneProfile(state, "missing", "target", "Target")).toThrow(/Profile not found/);
     expect(() => cloneProfile(state, "default", "default", "Default")).toThrow(/already exists/);
+  });
+
+  describe("batchUpdateProviderApiKey", () => {
+    it("updates api_key for multiple providers", () => {
+      const state = createState();
+      upsertProvider(state, "second", {
+        type: "openai",
+        base_url: "https://second.test/v1",
+        api_key: "old",
+      });
+      batchUpdateProviderApiKey(state, ["kimi_gateway", "second"], "new-key");
+      expect(state.mainConfig.providers.kimi_gateway.api_key).toBe("new-key");
+      expect(state.mainConfig.providers.second.api_key).toBe("new-key");
+    });
+
+    it("is a no-op for empty names", () => {
+      const state = createState();
+      const before = state.mainConfig.providers.kimi_gateway.api_key;
+      batchUpdateProviderApiKey(state, [], "irrelevant");
+      expect(state.mainConfig.providers.kimi_gateway.api_key).toBe(before);
+    });
+
+    it("skips non-existent provider names without error", () => {
+      const state = createState();
+      batchUpdateProviderApiKey(state, ["missing"], "key");
+      expect(state.mainConfig.providers.kimi_gateway.api_key).toBe("sk-test");
+    });
+
+    it("updates a single provider", () => {
+      const state = createState();
+      batchUpdateProviderApiKey(state, ["kimi_gateway"], "single-key");
+      expect(state.mainConfig.providers.kimi_gateway.api_key).toBe("single-key");
+    });
+  });
+
+  describe("batchToggleMcpServers", () => {
+    it("disables multiple servers", () => {
+      const state = createState();
+      batchToggleMcpServers(state, ["context7", "chrome_devtools"], false);
+      expect(state.mcpConfig.mcpServers.context7.enabled).toBe(false);
+      expect(state.mcpConfig.mcpServers.chrome_devtools.enabled).toBe(false);
+    });
+
+    it("enables servers", () => {
+      const state = createState();
+      state.mcpConfig.mcpServers.context7.enabled = false;
+      batchToggleMcpServers(state, ["context7"], true);
+      expect(state.mcpConfig.mcpServers.context7.enabled).toBe(true);
+    });
+
+    it("is a no-op for empty names", () => {
+      const state = createState();
+      batchToggleMcpServers(state, [], false);
+      expect(state.mcpConfig.mcpServers.context7.enabled).toBe(true);
+    });
+
+    it("skips non-existent server names without error", () => {
+      const state = createState();
+      batchToggleMcpServers(state, ["missing"], false);
+      expect(state.mcpConfig.mcpServers.context7.enabled).toBe(true);
+    });
+  });
+
+  describe("batchDeleteProviders", () => {
+    it("deletes providers and their dependent models", () => {
+      const state = createState();
+      upsertProvider(state, "extra", {
+        type: "openai",
+        base_url: "https://extra.test/v1",
+        api_key: "sk-extra",
+      });
+      upsertModel(state, "extra/gpt", {
+        provider: "extra",
+        model: "gpt",
+        max_context_size: 128000,
+        capabilities: [],
+      });
+      batchDeleteProviders(state, ["extra"]);
+      expect(state.mainConfig.providers.extra).toBeUndefined();
+      expect(state.mainConfig.models["extra/gpt"]).toBeUndefined();
+    });
+
+    it("preserves models belonging to non-deleted providers", () => {
+      const state = createState();
+      batchDeleteProviders(state, []);
+      expect(state.mainConfig.models["kimi_gateway/kimi-k2.5"]).toBeDefined();
+    });
+
+    it("is a no-op for empty names", () => {
+      const state = createState();
+      batchDeleteProviders(state, []);
+      expect(state.mainConfig.providers.kimi_gateway).toBeDefined();
+    });
+
+    it("skips non-existent provider names without error", () => {
+      const state = createState();
+      batchDeleteProviders(state, ["nonexistent"]);
+      expect(state.mainConfig.providers.kimi_gateway).toBeDefined();
+    });
   });
 });
 

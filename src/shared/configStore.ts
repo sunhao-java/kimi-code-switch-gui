@@ -1,17 +1,26 @@
 import parse from "@iarna/toml/parse-string.js";
 import stringify from "@iarna/toml/stringify.js";
 
+import { redactAppStateSecrets } from "./configSafety";
 import { buildMcpConfigDocument, DEFAULT_MCP_CONFIG_PATH, loadMcpConfig, parseMcpConfigStrict } from "./mcpStore";
 import { createDefaultShortcuts, normalizeShortcuts } from "./shortcutStore";
 import type {
   AppState,
   BackupDestinationType,
   BackupStrategy,
+  ExportBundle,
+  ImportConflict,
+  ImportConflictStrategy,
+  ImportPreview,
   MainConfig,
   McpServerConfig,
+  ModelConfig,
   PanelSettings,
   PreviewBundle,
   Profile,
+  ProfileDiff,
+  ProviderType,
+  ValidationResult,
 } from "./types";
 
 export const PROFILE_VERSION = 1;
@@ -25,6 +34,62 @@ export const DEFAULT_PANEL_DIRECTORY = "~/.kimi/.panel";
 export const DEFAULT_PANEL_SETTINGS_PATH = `${DEFAULT_PANEL_DIRECTORY}/${PANEL_SETTINGS_FILENAME}`;
 export const LEGACY_PANEL_SETTINGS_PATH = "~/.kimi/config.panel.toml";
 const SUPPORTED_LOCALES = new Set<PanelSettings["locale"]>(["zh-CN", "zh-TW", "en-US", "ja-JP", "de-DE", "es-ES"]);
+
+export interface ProviderTemplate {
+  id: string;
+  name: string;
+  description: string;
+  type: ProviderType;
+  base_url: string;
+  default_models: Array<{ model: string; max_context_size: number; capabilities: string[] }>;
+}
+
+export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
+  {
+    id: "openai",
+    name: "OpenAI",
+    description: "OpenAI GPT models via Responses API",
+    type: "openai_responses",
+    base_url: "https://api.openai.com/v1",
+    default_models: [
+      { model: "gpt-4o", max_context_size: 128000, capabilities: ["chat", "tools"] },
+      { model: "gpt-4o-mini", max_context_size: 128000, capabilities: ["chat", "tools"] },
+    ],
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    description: "Anthropic Claude models",
+    type: "anthropic",
+    base_url: "https://api.anthropic.com",
+    default_models: [
+      { model: "claude-sonnet-4-20250514", max_context_size: 200000, capabilities: ["chat", "tools"] },
+      { model: "claude-haiku-4-5-20251001", max_context_size: 200000, capabilities: ["chat", "tools"] },
+    ],
+  },
+  {
+    id: "gemini",
+    name: "Gemini",
+    description: "Google Gemini models",
+    type: "gemini",
+    base_url: "https://generativelanguage.googleapis.com/v1beta",
+    default_models: [
+      { model: "gemini-2.5-pro", max_context_size: 1048576, capabilities: ["chat", "tools"] },
+      { model: "gemini-2.5-flash", max_context_size: 1048576, capabilities: ["chat", "tools"] },
+    ],
+  },
+  {
+    id: "ollama",
+    name: "Ollama",
+    description: "Local Ollama models via OpenAI-compatible API",
+    type: "openai_legacy",
+    base_url: "http://localhost:11434/v1",
+    default_models: [
+      { model: "llama3", max_context_size: 8192, capabilities: ["chat"] },
+      { model: "codellama", max_context_size: 16384, capabilities: ["chat"] },
+    ],
+  },
+];
 
 const PROFILE_KEYS: Array<keyof Profile> = [
   "default_model",
@@ -365,6 +430,65 @@ export function upsertModel(
   state.mainConfig.models[name] = model;
 }
 
+export function applyTemplate(
+  state: AppState,
+  templateId: string,
+  providerName: string,
+  apiKey: string,
+): void {
+  const template = PROVIDER_TEMPLATES.find((t) => t.id === templateId);
+  if (!template) {
+    throw new Error(`Template not found: ${templateId}`);
+  }
+  if (state.mainConfig.providers[providerName]) {
+    throw new Error(`Provider already exists: ${providerName}`);
+  }
+  upsertProvider(state, providerName, {
+    type: template.type,
+    base_url: template.base_url,
+    api_key: apiKey,
+  });
+  for (const modelDef of template.default_models) {
+    const modelKey = `${providerName}/${modelDef.model}`;
+    upsertModel(state, modelKey, {
+      provider: providerName,
+      model: modelDef.model,
+      max_context_size: modelDef.max_context_size,
+      capabilities: [...modelDef.capabilities],
+    });
+  }
+}
+
+export function batchUpdateProviderApiKey(state: AppState, names: string[], apiKey: string): void {
+  for (const name of names) {
+    const provider = state.mainConfig.providers[name];
+    if (provider) {
+      provider.api_key = apiKey;
+    }
+  }
+}
+
+export function batchToggleMcpServers(state: AppState, names: string[], enabled: boolean): void {
+  for (const name of names) {
+    const server = state.mcpConfig.mcpServers[name];
+    if (server) {
+      server.enabled = enabled;
+    }
+  }
+}
+
+export function batchDeleteProviders(state: AppState, names: string[]): void {
+  for (const name of names) {
+    const dependentModels = Object.entries(state.mainConfig.models)
+      .filter(([, model]) => model.provider === name)
+      .map(([modelName]) => modelName);
+    for (const modelName of dependentModels) {
+      delete state.mainConfig.models[modelName];
+    }
+    delete state.mainConfig.providers[name];
+  }
+}
+
 export function deleteModel(state: AppState, name: string): void {
   for (const profile of Object.values(state.profiles)) {
     if (profile.default_model === name) {
@@ -407,6 +531,36 @@ export function cloneProfile(
     name: targetName,
     label,
   });
+}
+
+export function compareProfiles(left: Profile, right: Profile): ProfileDiff {
+  const differences = PROFILE_KEYS.map((key) => ({
+    field: key as keyof Profile,
+    leftValue: left[key],
+    rightValue: right[key],
+    isSame: left[key] === right[key],
+  }));
+  return { left, right, differences };
+}
+
+export function copyProfileField(
+  state: AppState,
+  fromName: string,
+  toName: string,
+  field: keyof Profile,
+): void {
+  if (field === "name") {
+    return;
+  }
+  const from = state.profiles[fromName];
+  const to = state.profiles[toName];
+  if (!from) {
+    throw new Error(`Profile not found: ${fromName}`);
+  }
+  if (!to) {
+    throw new Error(`Profile not found: ${toName}`);
+  }
+  (to as Record<string, unknown>)[field] = (from as Record<string, unknown>)[field];
 }
 
 export function deleteProfile(state: AppState, name: string): void {
@@ -761,6 +915,97 @@ export function normalizeStatePaths(state: AppState): AppState {
       profiles_path: "",
     },
   };
+}
+
+export function exportConfig(state: AppState): ExportBundle {
+  const { state: redacted } = redactAppStateSecrets(state);
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    source: "kimi-code-switch-gui",
+    providers: structuredClone(redacted.mainConfig.providers),
+    models: structuredClone(redacted.mainConfig.models),
+    profiles: structuredClone(redacted.profiles),
+    mcpServers: structuredClone(redacted.mcpConfig.mcpServers),
+  };
+}
+
+export function validateImportData(data: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return { valid: false, errors: ["Data must be a JSON object."] };
+  }
+  const obj = data as Record<string, unknown>;
+  if (typeof obj.version !== "number") {
+    errors.push("Missing or invalid 'version' field (must be a number).");
+  }
+  const hasProviders = obj.providers && typeof obj.providers === "object";
+  const hasModels = obj.models && typeof obj.models === "object";
+  const hasProfiles = obj.profiles && typeof obj.profiles === "object";
+  const hasMcp = obj.mcpServers && typeof obj.mcpServers === "object";
+  if (!hasProviders && !hasModels && !hasProfiles && !hasMcp) {
+    errors.push("Data must contain at least one of: providers, models, profiles, mcpServers.");
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+export function getImportPreview(state: AppState, data: ExportBundle): ImportPreview {
+  const conflicts: ImportConflict[] = [];
+  const newItems: ImportConflict[] = [];
+  for (const name of Object.keys(data.providers ?? {})) {
+    const existing = Boolean(state.mainConfig.providers[name]);
+    const item: ImportConflict = { name, type: "provider", existing };
+    (existing ? conflicts : newItems).push(item);
+  }
+  for (const name of Object.keys(data.models ?? {})) {
+    const existing = Boolean(state.mainConfig.models[name]);
+    const item: ImportConflict = { name, type: "model", existing };
+    (existing ? conflicts : newItems).push(item);
+  }
+  for (const name of Object.keys(data.profiles ?? {})) {
+    const existing = Boolean(state.profiles[name]);
+    const item: ImportConflict = { name, type: "profile", existing };
+    (existing ? conflicts : newItems).push(item);
+  }
+  for (const name of Object.keys(data.mcpServers ?? {})) {
+    const existing = Boolean(state.mcpConfig.mcpServers[name]);
+    const item: ImportConflict = { name, type: "mcp_server", existing };
+    (existing ? conflicts : newItems).push(item);
+  }
+  return { conflicts, newItems };
+}
+
+export function importConfig(
+  state: AppState,
+  data: ExportBundle,
+  strategy: ImportConflictStrategy,
+): AppState {
+  const next = cloneState(state);
+  for (const [name, provider] of Object.entries(data.providers ?? {})) {
+    const exists = Boolean(next.mainConfig.providers[name]);
+    if (exists && strategy === "skip") continue;
+    const key = exists && strategy === "rename" ? `${name}-imported` : name;
+    next.mainConfig.providers[key] = structuredClone(provider);
+  }
+  for (const [name, model] of Object.entries(data.models ?? {})) {
+    const exists = Boolean(next.mainConfig.models[name]);
+    if (exists && strategy === "skip") continue;
+    const key = exists && strategy === "rename" ? `${name}-imported` : name;
+    next.mainConfig.models[key] = structuredClone(model);
+  }
+  for (const [name, profile] of Object.entries(data.profiles ?? {})) {
+    const exists = Boolean(next.profiles[name]);
+    if (exists && strategy === "skip") continue;
+    const key = exists && strategy === "rename" ? `${name}-imported` : name;
+    next.profiles[key] = { ...structuredClone(profile), name: key };
+  }
+  for (const [name, server] of Object.entries(data.mcpServers ?? {})) {
+    const exists = Boolean(next.mcpConfig.mcpServers[name]);
+    if (exists && strategy === "skip") continue;
+    const key = exists && strategy === "rename" ? `${name}-imported` : name;
+    next.mcpConfig.mcpServers[key] = structuredClone(server);
+  }
+  return next;
 }
 
 function parsePanelMcpServers(value: unknown): Record<string, McpServerConfig> {
