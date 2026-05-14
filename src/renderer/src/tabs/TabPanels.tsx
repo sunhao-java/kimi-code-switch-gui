@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bug, CheckSquare, Download, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Square, Terminal, Trash2, Upload, X } from "lucide-react";
-import { applyProfile, applyTemplate, batchDeleteProviders, batchToggleMcpServers, batchUpdateProviderApiKey, cloneProfile, deleteModel, deleteProfile, deleteProvider, exportConfig, getImportPreview, importConfig, PROVIDER_TEMPLATES, validateImportData, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
+import { Bug, CheckSquare, Download, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Square, Star, Terminal, Trash2, Upload, X } from "lucide-react";
+import { applyProfile, applyTemplate, batchDeleteProviders, batchToggleMcpServers, batchUpdateProviderApiKey, cloneProfile, deleteModel, deleteProfile, deleteProvider, deleteCustomTemplate, exportConfig, getImportPreview, importConfig, PROVIDER_TEMPLATES, saveCustomTemplate, toggleFavorite, validateImportData, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
+import type { ProviderTemplate } from "@shared/configStore";
 import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
 import {
   formatAcceleratorForPlatform,
@@ -380,6 +381,19 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               </>
             }
             renderItemAction={(name) => (
+              <>
+              <button
+                className={state.panelSettings.favorites?.providers?.includes(name) ? "list-toggle-button active" : "list-toggle-button"}
+                type="button"
+                aria-label={state.panelSettings.favorites?.providers?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
+                title={state.panelSettings.favorites?.providers?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  updateImmediateState((draft) => { toggleFavorite(draft, "provider", name); });
+                }}
+              >
+                <Star size={14} fill={state.panelSettings.favorites?.providers?.includes(name) ? "currentColor" : "none"} />
+              </button>
               <button
                 className={selectedProviders.has(name) ? "list-toggle-button" : "list-toggle-button disabled"}
                 type="button"
@@ -400,9 +414,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               >
                 {selectedProviders.has(name) ? <CheckSquare size={15} /> : <Square size={15} />}
               </button>
+              </>
             )}
           >
             {selectedProviderData ? (
+              <>
               <ProviderForm
                 locale={locale}
                 name={selectedProviderName}
@@ -435,6 +451,30 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                   })();
                 }}
               />
+              <button
+                className="action-button compact"
+                type="button"
+                style={{ marginTop: "0.5rem" }}
+                onClick={() => {
+                  const provider = state.mainConfig.providers[selectedProviderName];
+                  if (!provider) return;
+                  const template = {
+                    id: `custom-${selectedProviderName}-${Date.now()}`,
+                    name: selectedProviderName,
+                    description: `${provider.type} — ${provider.base_url}`,
+                    type: provider.type,
+                    base_url: provider.base_url,
+                    default_models: Object.entries(state.mainConfig.models)
+                      .filter(([, m]) => m.provider === selectedProviderName)
+                      .map(([name]) => name),
+                  };
+                  updateImmediateState((draft) => { saveCustomTemplate(draft, template as any); });
+                }}
+              >
+                <Download size={14} />
+                <span>{t(locale, "templateSaveAs")}</span>
+              </button>
+              </>
             ) : (
               <EmptyState locale={locale} />
             )}
@@ -443,6 +483,10 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             <TemplatePickerDialog
               locale={locale}
               existingProviders={state.mainConfig.providers}
+              customTemplates={state.panelSettings.customTemplates ?? []}
+              onDeleteCustomTemplate={(templateId) => {
+                updateImmediateState((draft) => { deleteCustomTemplate(draft, templateId); });
+              }}
               onCreate={(templateId, providerName, apiKey) => {
                 updateState((draft) => {
                   applyTemplate(draft, templateId, providerName, apiKey);
@@ -593,6 +637,18 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             renderItemAction={(name) =>
               (
                 <>
+                  <button
+                    className={state.panelSettings.favorites?.profiles?.includes(name) ? "list-toggle-button active" : "list-toggle-button"}
+                    type="button"
+                    aria-label={state.panelSettings.favorites?.profiles?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
+                    title={state.panelSettings.favorites?.profiles?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      updateImmediateState((draft) => { toggleFavorite(draft, "profile", name); });
+                    }}
+                  >
+                    <Star size={14} fill={state.panelSettings.favorites?.profiles?.includes(name) ? "currentColor" : "none"} />
+                  </button>
                   <button
                     className="list-terminal-button"
                     type="button"
@@ -1679,10 +1735,13 @@ function ImportPreviewDialog(props: {
 function TemplatePickerDialog(props: {
   locale: Locale;
   existingProviders: Record<string, unknown>;
+  customTemplates: ProviderTemplate[];
+  onDeleteCustomTemplate: (templateId: string) => void;
   onCreate: (templateId: string, providerName: string, apiKey: string) => void;
   onCancel: () => void;
 }): JSX.Element {
   const dialogRef = useRef<HTMLElement>(null);
+  const [activeTab, setActiveTab] = useState<"builtin" | "custom">("builtin");
   const [selectedTemplateId, setSelectedTemplateId] = useState(PROVIDER_TEMPLATES[0]?.id ?? "");
   const [providerName, setProviderName] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -1691,7 +1750,8 @@ function TemplatePickerDialog(props: {
   useDialogEscape(props.onCancel);
   useFocusTrap(dialogRef);
 
-  const selectedTemplate = PROVIDER_TEMPLATES.find((tpl) => tpl.id === selectedTemplateId);
+  const allTemplates = activeTab === "builtin" ? PROVIDER_TEMPLATES : props.customTemplates;
+  const selectedTemplate = [...PROVIDER_TEMPLATES, ...props.customTemplates].find((tpl) => tpl.id === selectedTemplateId);
 
   const handleCreate = (): void => {
     const name = providerName.trim() || (selectedTemplate?.name ?? "");
@@ -1710,12 +1770,23 @@ function TemplatePickerDialog(props: {
           <div><div className="section-title" id="template-picker-title">{t(props.locale, "templatePickTemplate")}</div></div>
           <button className="action-button compact icon-only" type="button" aria-label={t(props.locale, "cancel")} onClick={props.onCancel}><X size={16} /></button>
         </div>
+        <div className="template-tab-bar">
+          <button className={activeTab === "builtin" ? "template-tab active" : "template-tab"} type="button" onClick={() => setActiveTab("builtin")}>{t(props.locale, "templateBuiltIn")}</button>
+          <button className={activeTab === "custom" ? "template-tab active" : "template-tab"} type="button" onClick={() => setActiveTab("custom")}>{t(props.locale, "templateCustom")} ({props.customTemplates.length})</button>
+        </div>
         <div className="template-picker-grid">
-          {PROVIDER_TEMPLATES.map((template) => (
+          {allTemplates.length === 0 ? (
+            <div className="command-palette-empty">{t(props.locale, "templateNoCustom")}</div>
+          ) : allTemplates.map((template) => (
             <button key={template.id} className={template.id === selectedTemplateId ? "template-card selected" : "template-card"} type="button" onClick={() => { setSelectedTemplateId(template.id); setError(""); }}>
               <strong>{template.name}</strong>
               <span>{template.description}</span>
               <small>{formatMessage(t(props.locale, "templateModels"), { count: String(template.default_models.length) })}</small>
+              {activeTab === "custom" ? (
+                <span className="template-delete" onClick={(e) => { e.stopPropagation(); props.onDeleteCustomTemplate(template.id); }} role="button" aria-label={t(props.locale, "delete")}>
+                  <Trash2 size={12} />
+                </span>
+              ) : null}
             </button>
           ))}
         </div>

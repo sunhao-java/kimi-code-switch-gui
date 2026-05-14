@@ -6397,3 +6397,75 @@ textarea:focus-visible {
   font-size: 13px;
   color: var(--text-primary);
 }
+
+.template-tab-bar {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 0.75rem;
+}
+
+.template-tab {
+  padding: 0.5rem 1rem;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  font-size: 13px;
+}
+
+.template-tab.active {
+  color: var(--accent-color);
+  border-bottom-color: var(--accent-color);
+}
+
+.template-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.template-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  cursor: pointer;
+  text-align: left;
+  position: relative;
+}
+
+.template-card.selected {
+  border-color: var(--accent-color);
+  background: var(--bg-accent-subtle);
+}
+
+.template-card strong { font-size: 13px; }
+.template-card span { font-size: 11px; color: var(--text-secondary); }
+.template-card small { font-size: 11px; color: var(--text-tertiary); }
+
+.template-delete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  opacity: 0.5;
+  cursor: pointer;
+}
+
+.template-delete:hover {
+  opacity: 1;
+  color: var(--danger-color);
+}
+
+.template-picker-error {
+  color: var(--danger-color);
+  font-size: 12px;
+  margin: 0.25rem 0;
+}
