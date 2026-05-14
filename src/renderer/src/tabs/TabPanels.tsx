@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Bug, CheckSquare, Download, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Square, Terminal, Trash2, Upload, X } from "lucide-react";
 import { applyProfile, applyTemplate, batchDeleteProviders, batchToggleMcpServers, batchUpdateProviderApiKey, cloneProfile, deleteModel, deleteProfile, deleteProvider, exportConfig, getImportPreview, importConfig, PROVIDER_TEMPLATES, validateImportData, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
 import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
@@ -34,6 +35,7 @@ import {
   BACKUP_DESTINATION_OPTIONS, BACKUP_FREQUENCY_OPTIONS, BACKUP_STRATEGY_OPTIONS,
   CLOSE_BEHAVIOR_OPTIONS, DISPLAY_OPEN_OPTIONS, labelForLocale, LOCALE_OPTIONS, TERMINAL_APP_OPTIONS, THEME_OPTIONS, UI_FONT_SIZE_OPTIONS,
 } from "../appOptions";
+import { useDialogEscape, useFocusTrap } from "../dialogs";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { Field, FontSizeSliderField, SelectField, SettingsGroup, ShortcutRecorderField } from "../formControls";
 import { t, translateError } from "../i18n";
@@ -227,6 +229,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   ];
   const [selectedProviders, setSelectedProviders] = useState<Set<string>>(new Set());
   const [selectedMcpServers, setSelectedMcpServers] = useState<Set<string>>(new Set());
+  const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>("general");
   const [importDialog, setImportDialog] = useState<{ open: boolean; preview: ImportPreview | null; data: ExportBundle | null; strategy: ImportConflictStrategy }>({ open: false, preview: null, data: null, strategy: "skip" });
   const settingsSubTabs: Array<{ id: SettingsSubTab; label: string; description: string }> = [
@@ -270,6 +273,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
         ) : null}
 
         {activeTab === "providers" ? (
+          <>
           <SplitLayout
             listTitle={t(locale, "providers")}
             listItems={providerEntries.map(([name]) => name)}
@@ -428,7 +432,21 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               <EmptyState locale={locale} />
             )}
           </SplitLayout>
-        ) : null}
+          {isTemplatePickerOpen ? (
+            <TemplatePickerDialog
+              locale={locale}
+              existingProviders={state.mainConfig.providers}
+              onCreate={(templateId, providerName, apiKey) => {
+                updateState((draft) => {
+                  applyTemplate(draft, templateId, providerName, apiKey);
+                  setSelectedProvider(providerName);
+                }, { persist: false });
+                setIsTemplatePickerOpen(false);
+              }}
+              onCancel={() => setIsTemplatePickerOpen(false)}
+            />
+          ) : null}
+        </>) : null}
 
         {activeTab === "models" ? (
           <SplitLayout
@@ -1643,5 +1661,67 @@ function ImportPreviewDialog(props: {
         </div>
       </div>
     </div>
+  );
+}
+
+function TemplatePickerDialog(props: {
+  locale: Locale;
+  existingProviders: Record<string, unknown>;
+  onCreate: (templateId: string, providerName: string, apiKey: string) => void;
+  onCancel: () => void;
+}): JSX.Element {
+  const dialogRef = useRef<HTMLElement>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState(PROVIDER_TEMPLATES[0]?.id ?? "");
+  const [providerName, setProviderName] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [error, setError] = useState("");
+
+  useDialogEscape(props.onCancel);
+  useFocusTrap(dialogRef);
+
+  const selectedTemplate = PROVIDER_TEMPLATES.find((tpl) => tpl.id === selectedTemplateId);
+
+  const handleCreate = (): void => {
+    const name = providerName.trim() || (selectedTemplate?.name ?? "");
+    if (!name) return;
+    if (props.existingProviders[name]) {
+      setError(t(props.locale, "templateAlreadyExists"));
+      return;
+    }
+    props.onCreate(selectedTemplateId, name, apiKey);
+  };
+
+  return createPortal(
+    <div className="mcp-import-backdrop" role="presentation" onClick={(e) => { if (e.target === e.currentTarget) props.onCancel(); }}>
+      <section ref={dialogRef} className="glass-panel form-panel mcp-import-dialog" role="dialog" aria-modal="true" aria-labelledby="template-picker-title">
+        <div className="mcp-import-header">
+          <div><div className="section-title" id="template-picker-title">{t(props.locale, "templatePickTemplate")}</div></div>
+          <button className="action-button compact icon-only" type="button" aria-label={t(props.locale, "cancel")} onClick={props.onCancel}><X size={16} /></button>
+        </div>
+        <div className="template-picker-grid">
+          {PROVIDER_TEMPLATES.map((template) => (
+            <button key={template.id} className={template.id === selectedTemplateId ? "template-card selected" : "template-card"} type="button" onClick={() => { setSelectedTemplateId(template.id); setError(""); }}>
+              <strong>{template.name}</strong>
+              <span>{template.description}</span>
+              <small>{formatMessage(t(props.locale, "templateModels"), { count: String(template.default_models.length) })}</small>
+            </button>
+          ))}
+        </div>
+        <label className="field">
+          <span>{t(props.locale, "templateProviderName")}</span>
+          <input value={providerName} placeholder={selectedTemplate?.name ?? ""} onChange={(e) => { setProviderName(e.target.value); setError(""); }} />
+        </label>
+        <label className="field">
+          <span>{t(props.locale, "templateApiKey")}</span>
+          <input type="password" value={apiKey} placeholder="sk-..." onChange={(e) => setApiKey(e.target.value)} />
+        </label>
+        {error ? <p className="template-picker-error">{error}</p> : null}
+        <div className="button-row" style={{ marginTop: "0.75rem" }}>
+          <button className="action-button" type="button" onClick={props.onCancel}>{t(props.locale, "cancel")}</button>
+          <button className="action-button action-button-primary" type="button" onClick={handleCreate}>{t(props.locale, "templateCreate")}</button>
+        </div>
+      </section>
+    </div>,
+    document.body,
   );
 }

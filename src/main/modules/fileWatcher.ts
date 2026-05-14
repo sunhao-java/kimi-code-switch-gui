@@ -11,9 +11,9 @@ import {
 } from "./fileSnapshots";
 
 const DEBOUNCE_MS = 1500;
-const SELF_WRITE_GRACE_MS = 500;
 const POLL_INTERVAL_MS = 3000;
 const WATCHER_RECHECK_MS = 10000;
+const SELF_WRITE_GRACE_MS = POLL_INTERVAL_MS + DEBOUNCE_MS;
 
 interface FileWatchState {
   watcher: FSWatcher | null;

@@ -45,6 +45,7 @@ import { registerBackupIpc } from "./modules/backupIpc";
 import { registerTrayIpc } from "./modules/trayIpc";
 import { registerMcpProfileIpc } from "./modules/mcpProfileIpc";
 import { getTrayLabels } from "./modules/trayLabels";
+import { openKimiInTerminal } from "./modules/terminal";
 import type {
   AppState,
   AppearanceMode,
@@ -737,6 +738,7 @@ async function updateTrayMenu(): Promise<void> {
       },
     },
   ]);
+  if (!tray) return;
   tray.setContextMenu(contextMenu);
 }
 
@@ -1064,6 +1066,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("will-quit", () => {
+  destroyTray();
   stopWatching();
   unregisterGlobalShortcuts();
 });
