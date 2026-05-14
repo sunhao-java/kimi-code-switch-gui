@@ -87,6 +87,10 @@ const api = {
   defaultSettings: (): Promise<PanelSettings> => ipcRenderer.invoke("app:default-settings"),
   pickFile: (options?: Record<string, unknown>): Promise<FileDialogResult> =>
     ipcRenderer.invoke("dialog:pick-file", options),
+  saveFile: (content: string, options?: { defaultPath?: string; filters?: Array<{ name: string; extensions: string[] }> }): Promise<FileDialogResult> =>
+    ipcRenderer.invoke("dialog:save-file", content, options),
+  readFile: (filePath: string): Promise<{ ok: boolean; content?: string; error?: string }> =>
+    ipcRenderer.invoke("dialog:read-file", filePath),
   setTray: (enabled: boolean): Promise<{ ok: true }> => ipcRenderer.invoke("app:set-tray", enabled),
   refreshTrayMenu: (): Promise<{ ok: true }> => ipcRenderer.invoke("app:refresh-tray-menu"),
   openExternal: (url: string): Promise<{ ok: true }> => ipcRenderer.invoke("app:open-external", url),

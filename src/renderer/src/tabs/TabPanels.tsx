@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Bug, CheckSquare, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Square, Terminal, Trash2 } from "lucide-react";
-import { applyProfile, applyTemplate, batchDeleteProviders, batchToggleMcpServers, batchUpdateProviderApiKey, cloneProfile, deleteModel, deleteProfile, deleteProvider, PROVIDER_TEMPLATES, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
+import { Bug, CheckSquare, Download, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Square, Terminal, Trash2, Upload, X } from "lucide-react";
+import { applyProfile, applyTemplate, batchDeleteProviders, batchToggleMcpServers, batchUpdateProviderApiKey, cloneProfile, deleteModel, deleteProfile, deleteProvider, exportConfig, getImportPreview, importConfig, PROVIDER_TEMPLATES, validateImportData, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
 import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
 import {
   formatAcceleratorForPlatform,
@@ -17,6 +17,9 @@ import type {
   BackupStrategy,
   CloseBehavior,
   DisplayOpenMode,
+  ExportBundle,
+  ImportConflictStrategy,
+  ImportPreview,
   Locale,
   ShortcutAction,
   ShortcutBinding,
@@ -225,6 +228,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   const [selectedProviders, setSelectedProviders] = useState<Set<string>>(new Set());
   const [selectedMcpServers, setSelectedMcpServers] = useState<Set<string>>(new Set());
   const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>("general");
+  const [importDialog, setImportDialog] = useState<{ open: boolean; preview: ImportPreview | null; data: ExportBundle | null; strategy: ImportConflictStrategy }>({ open: false, preview: null, data: null, strategy: "skip" });
   const settingsSubTabs: Array<{ id: SettingsSubTab; label: string; description: string }> = [
     {
       id: "general",
@@ -1153,6 +1157,50 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                     onChange={() => {}}
                   />
                 </SettingsGroup>
+
+                <SettingsGroup title={t(locale, "settingsGroupExportImport")} className="settings-group-export-import">
+                  <div className="button-row settings-action-row">
+                    <button
+                      className="action-button"
+                      type="button"
+                      onClick={async () => {
+                        const bundle = exportConfig(state);
+                        const json = JSON.stringify(bundle, null, 2);
+                        const api = getApi();
+                        if (!api) { setError(t(locale, "openInTerminalUnavailable")); return; }
+                        const result = await api.saveFile(json, { defaultPath: "kimi-config-export.json" });
+                        if (!result.canceled) { setNotice(t(locale, "exportSuccess")); }
+                      }}
+                    >
+                      <Download size={16} />
+                      <span>{t(locale, "exportConfig")}</span>
+                    </button>
+                    <button
+                      className="action-button"
+                      type="button"
+                      onClick={async () => {
+                        const api = getApi();
+                        if (!api) { setError(t(locale, "openInTerminalUnavailable")); return; }
+                        const fileResult = await api.pickFile({ filters: [{ name: "JSON", extensions: ["json"] }] });
+                        if (fileResult.canceled || !fileResult.filePath) return;
+                        try {
+                          const readResult = await api.readFile(fileResult.filePath);
+                          if (!readResult.ok || !readResult.content) { setError(readResult.error ?? t(locale, "importInvalidFile")); return; }
+                          const parsed = JSON.parse(readResult.content);
+                          const validation = validateImportData(parsed);
+                          if (!validation.valid) { setError(validation.errors.join(" ")); return; }
+                          const data = parsed as ExportBundle;
+                          const preview = getImportPreview(state, data);
+                          if (preview.conflicts.length === 0 && preview.newItems.length === 0) { setNotice(t(locale, "importNoItems")); return; }
+                          setImportDialog({ open: true, preview, data, strategy: "skip" });
+                        } catch { setError(t(locale, "importInvalidFile")); }
+                      }}
+                    >
+                      <Upload size={16} />
+                      <span>{t(locale, "importConfig")}</span>
+                    </button>
+                  </div>
+                </SettingsGroup>
               </div>
             ) : null}
             {activeSettingsSubTab === "shortcuts" ? (
@@ -1445,6 +1493,27 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
         {activeTab === "about" ? (
           <AboutPage locale={locale} />
         ) : null}
+        {importDialog.open && importDialog.preview && importDialog.data ? (
+          <ImportPreviewDialog
+            locale={locale}
+            preview={importDialog.preview}
+            data={importDialog.data}
+            strategy={importDialog.strategy}
+            onStrategyChange={(strategy) => setImportDialog((prev) => ({ ...prev, strategy }))}
+            onConfirm={() => {
+              const next = importConfig(state, importDialog.data!, importDialog.strategy);
+              updateState((draft) => {
+                draft.mainConfig.providers = next.mainConfig.providers;
+                draft.mainConfig.models = next.mainConfig.models;
+                draft.profiles = next.profiles;
+                draft.mcpConfig.mcpServers = next.mcpConfig.mcpServers;
+              }, { persist: true });
+              setImportDialog({ open: false, preview: null, data: null, strategy: "skip" });
+              setNotice(t(locale, "importSuccess"));
+            }}
+            onCancel={() => setImportDialog({ open: false, preview: null, data: null, strategy: "skip" })}
+          />
+        ) : null}
       </div>
     </ErrorBoundary>
   );
@@ -1495,6 +1564,84 @@ function DoctorReportPanel(props: {
           ))}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+
+function ImportPreviewDialog(props: {
+  locale: Locale;
+  preview: ImportPreview;
+  data: ExportBundle;
+  strategy: ImportConflictStrategy;
+  onStrategyChange: (strategy: ImportConflictStrategy) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+}): JSX.Element {
+  const { locale, preview, strategy, onStrategyChange, onConfirm, onCancel } = props;
+  const typeLabels: Record<string, string> = {
+    provider: "Provider",
+    model: "Model",
+    profile: "Profile",
+    mcp_server: "MCP",
+  };
+  return (
+    <div className="dialog-overlay" onClick={onCancel}>
+      <div className="dialog import-preview-dialog" onClick={(e) => e.stopPropagation()}>
+        <div className="dialog-header">
+          <h3>{t(locale, "importPreview")}</h3>
+          <button className="icon-button" type="button" onClick={onCancel} aria-label={t(locale, "close")}>
+            <X size={16} />
+          </button>
+        </div>
+        <div className="dialog-body import-preview-body">
+          {preview.conflicts.length > 0 ? (
+            <div className="import-preview-section">
+              <h4>{t(locale, "importConflict")} ({preview.conflicts.length})</h4>
+              <div className="import-preview-list">
+                {preview.conflicts.map((item) => (
+                  <div key={`${item.type}-${item.name}`} className="import-preview-item conflict">
+                    <span className="import-preview-type">{typeLabels[item.type] ?? item.type}</span>
+                    <span className="import-preview-name">{item.name}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="import-preview-strategy">
+                <label>{t(locale, "importStrategy")}</label>
+                <select
+                  value={strategy}
+                  onChange={(e) => onStrategyChange(e.target.value as ImportConflictStrategy)}
+                >
+                  <option value="skip">{t(locale, "importStrategySkip")}</option>
+                  <option value="overwrite">{t(locale, "importStrategyOverwrite")}</option>
+                  <option value="rename">{t(locale, "importStrategyRename")}</option>
+                </select>
+              </div>
+            </div>
+          ) : null}
+          {preview.newItems.length > 0 ? (
+            <div className="import-preview-section">
+              <h4>{t(locale, "importNew")} ({preview.newItems.length})</h4>
+              <div className="import-preview-list">
+                {preview.newItems.map((item) => (
+                  <div key={`${item.type}-${item.name}`} className="import-preview-item new">
+                    <span className="import-preview-type">{typeLabels[item.type] ?? item.type}</span>
+                    <span className="import-preview-name">{item.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+        <div className="dialog-footer">
+          <button className="action-button secondary" type="button" onClick={onCancel}>
+            {t(locale, "cancel")}
+          </button>
+          <button className="action-button primary" type="button" onClick={onConfirm}>
+            {t(locale, "importConfirm")}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
