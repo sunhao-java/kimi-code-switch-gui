@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import type { AppState, ConfigDoctorReport, ExternalChangeNotifyPayload, FileSnapshotBundle } from "@shared/types";
 import type { BackupRecordsDialogState, DocumentViewerState } from "./dialogs";
 import type { DiagnosticsState } from "./overviewDashboard";
@@ -50,6 +51,27 @@ export function useAppHandlers() {
     lastError: "",
   });
   const locale = state.panelSettings.locale;
+  const stateRef = useRef(state);
+  const savedStateRef = useRef(savedState);
+
+  stateRef.current = state;
+  savedStateRef.current = savedState;
+
+  const updateStateSnapshot = useCallback<Dispatch<SetStateAction<AppState>>>((nextState) => {
+    const resolvedState = typeof nextState === "function"
+      ? nextState(stateRef.current)
+      : nextState;
+    stateRef.current = resolvedState;
+    setState(resolvedState);
+  }, []);
+
+  const updateSavedStateSnapshot = useCallback<Dispatch<SetStateAction<AppState | null>>>((nextSavedState) => {
+    const resolvedSavedState = typeof nextSavedState === "function"
+      ? nextSavedState(savedStateRef.current)
+      : nextSavedState;
+    savedStateRef.current = resolvedSavedState;
+    setSavedState(resolvedSavedState);
+  }, []);
   const {
     confirmDialog,
     requestConfirm,
@@ -82,8 +104,8 @@ export function useAppHandlers() {
     restoreWithDryRun,
   } = useSafetyActions({
     locale,
-    setState,
-    setSavedState,
+    setState: updateStateSnapshot,
+    setSavedState: updateSavedStateSnapshot,
     setError,
     setNotice,
     fileSnapshot,
@@ -113,8 +135,8 @@ export function useAppHandlers() {
     state,
     savedState,
     locale,
-    setState,
-    setSavedState,
+    setState: updateStateSnapshot,
+    setSavedState: updateSavedStateSnapshot,
     setPreview,
     setError,
     setNotice,
@@ -159,8 +181,10 @@ export function useAppHandlers() {
   } = useStateMutations({
     state,
     savedState,
+    stateRef,
+    savedStateRef,
     locale,
-    setState,
+    setState: updateStateSnapshot,
     setError,
     setNotice,
     setDiagnostics,
@@ -378,8 +402,8 @@ export function useAppHandlers() {
   } = useBackupActions({
     state,
     locale,
-    setState,
-    setSavedState,
+    setState: updateStateSnapshot,
+    setSavedState: updateSavedStateSnapshot,
     setError,
     setNotice,
     setIsBackupRunning,

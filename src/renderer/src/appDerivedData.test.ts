@@ -208,7 +208,7 @@ describe("getAppDerivedData", () => {
     expect(result.selectedMcpServerName).toBe("serverA");
   });
 
-  it("returns null data when selection does not exist in state", () => {
+  it("falls back to the first entry when selection no longer exists in state", () => {
     const state = createState();
     const selections: AppSelections = {
       provider: "missing",
@@ -221,7 +221,10 @@ describe("getAppDerivedData", () => {
 
     const result = getAppDerivedData(state, null, null, selections);
 
-    // Falls back to first entry data
+    expect(result.selectedProviderName).toBe("provider-a");
+    expect(result.selectedModelName).toBe("provider-a/model-a");
+    expect(result.selectedProfileName).toBe("default");
+    expect(result.selectedMcpServerName).toBe("serverA");
     expect(result.selectedProviderData).toEqual(state.mainConfig.providers["provider-a"]);
     expect(result.selectedModelData).toEqual(state.mainConfig.models["provider-a/model-a"]);
     expect(result.selectedProfileData).toEqual(state.profiles.default);

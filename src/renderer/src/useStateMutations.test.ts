@@ -265,6 +265,35 @@ describe("updateImmediateState", () => {
     expect(persistedDraft.activeProfile).toBe("work");
   });
 
+  it("uses latest state refs for immediate updates after a synchronous restore", () => {
+    const restoredState = createState();
+    const staleState = createState();
+    staleState.mainConfig.providers["draft-provider"] = {
+      type: "kimi",
+      base_url: "https://draft.test",
+      api_key: "",
+    };
+    const ctx = createMockContext({ state: staleState, savedState: staleState });
+    const { updateImmediateState } = useStateMutations({
+      ...ctx,
+      stateRef: { current: restoredState },
+      savedStateRef: { current: restoredState },
+    });
+
+    updateImmediateState((draft) => {
+      draft.panelSettings.uiState = {
+        ...(draft.panelSettings.uiState ?? {}),
+        activeTab: "providers",
+      };
+    });
+
+    const [visibleDraft, persistedDraft] = ctx.persistImmediateState.mock.calls[0];
+    expect(visibleDraft.mainConfig.providers["draft-provider"]).toBeUndefined();
+    expect(persistedDraft.mainConfig.providers["draft-provider"]).toBeUndefined();
+    expect(visibleDraft.panelSettings.uiState?.activeTab).toBe("providers");
+    expect(persistedDraft.panelSettings.uiState?.activeTab).toBe("providers");
+  });
+
   it("catches updater errors and sets error message", () => {
     const ctx = createMockContext({ locale: "en-US" });
     const { updateImmediateState } = useStateMutations(ctx);

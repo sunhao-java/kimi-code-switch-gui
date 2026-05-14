@@ -1,10 +1,6 @@
 import {
   DEFAULT_PROFILE_NAME,
   applyProfile,
-  applyTemplate,
-  batchDeleteProviders,
-  batchToggleMcpServers,
-  batchUpdateProviderApiKey,
   bootstrapProfiles,
   buildConfigDocument,
   buildPanelSettingsDocument,
@@ -16,7 +12,6 @@ import {
   copyProfileField,
   createDefaultPanelSettings,
   createLineDiff,
-  deleteCustomTemplate,
   deleteModel,
   deleteProfile,
   deleteProvider,
@@ -24,7 +19,6 @@ import {
   formatMissingModelError,
   getImportPreview,
   importConfig,
-  saveCustomTemplate,
   searchConfig,
   toggleFavorite,
   validateImportData,
@@ -32,7 +26,6 @@ import {
   loadPanelSettings,
   normalizeStatePaths,
   parsePanelSettingsDocument,
-  PROVIDER_TEMPLATES,
   saveAppState,
   upsertModel,
   upsertProfile,
@@ -563,68 +556,6 @@ url = "https://mcp.context7.com/mcp"
     expect(() => cloneProfile(state, "default", "default", "Default")).toThrow(/already exists/);
   });
 
-  describe("PROVIDER_TEMPLATES", () => {
-    it("has at least one template", () => {
-      expect(PROVIDER_TEMPLATES.length).toBeGreaterThanOrEqual(1);
-    });
-
-    it("every template has required fields", () => {
-      for (const template of PROVIDER_TEMPLATES) {
-        expect(template.id).toBeTruthy();
-        expect(template.name).toBeTruthy();
-        expect(template.type).toBeTruthy();
-        expect(template.base_url).toBeTruthy();
-        expect(template.default_models.length).toBeGreaterThanOrEqual(1);
-      }
-    });
-
-    it("every template has unique id", () => {
-      const ids = PROVIDER_TEMPLATES.map((tpl) => tpl.id);
-      expect(new Set(ids).size).toBe(ids.length);
-    });
-
-    it("every default model has valid capabilities", () => {
-      for (const template of PROVIDER_TEMPLATES) {
-        for (const model of template.default_models) {
-          expect(model.model).toBeTruthy();
-          expect(model.max_context_size).toBeGreaterThan(0);
-          expect(model.capabilities.length).toBeGreaterThanOrEqual(1);
-        }
-      }
-    });
-  });
-
-  describe("applyTemplate", () => {
-    it("creates provider and all default models from template", () => {
-      const state = createState();
-      const template = PROVIDER_TEMPLATES.find((tpl) => tpl.id === "openai")!;
-      applyTemplate(state, "openai", "my-openai", "sk-test-key");
-      expect(state.mainConfig.providers["my-openai"]).toEqual({
-        type: template.type,
-        base_url: template.base_url,
-        api_key: "sk-test-key",
-      });
-      for (const modelDef of template.default_models) {
-        const modelKey = `my-openai/${modelDef.model}`;
-        expect(state.mainConfig.models[modelKey]).toBeDefined();
-        expect(state.mainConfig.models[modelKey].provider).toBe("my-openai");
-        expect(state.mainConfig.models[modelKey].model).toBe(modelDef.model);
-        expect(state.mainConfig.models[modelKey].max_context_size).toBe(modelDef.max_context_size);
-        expect(state.mainConfig.models[modelKey].capabilities).toEqual(modelDef.capabilities);
-      }
-    });
-
-    it("throws for unknown template id", () => {
-      const state = createState();
-      expect(() => applyTemplate(state, "nonexistent", "prov", "key")).toThrow(/Template not found/);
-    });
-
-    it("throws when provider name already exists", () => {
-      const state = createState();
-      expect(() => applyTemplate(state, "openai", "kimi_gateway", "key")).toThrow(/Provider already exists/);
-    });
-  });
-
   describe("compareProfiles", () => {
     it("reports identical profiles as all same", () => {
       const state = createState();
@@ -693,61 +624,6 @@ url = "https://mcp.context7.com/mcp"
     });
   });
 
-  describe("batchUpdateProviderApiKey", () => {
-    it("updates api_key for multiple providers", () => {
-      const state = createState();
-      upsertProvider(state, "second", { type: "openai", base_url: "https://second.test/v1", api_key: "old" });
-      batchUpdateProviderApiKey(state, ["kimi_gateway", "second"], "new-key");
-      expect(state.mainConfig.providers.kimi_gateway.api_key).toBe("new-key");
-      expect(state.mainConfig.providers.second.api_key).toBe("new-key");
-    });
-
-    it("is a no-op for empty names", () => {
-      const state = createState();
-      const before = state.mainConfig.providers.kimi_gateway.api_key;
-      batchUpdateProviderApiKey(state, [], "irrelevant");
-      expect(state.mainConfig.providers.kimi_gateway.api_key).toBe(before);
-    });
-
-    it("skips non-existent provider names without error", () => {
-      const state = createState();
-      batchUpdateProviderApiKey(state, ["missing"], "key");
-      expect(state.mainConfig.providers.kimi_gateway.api_key).toBe("sk-test");
-    });
-  });
-
-  describe("batchToggleMcpServers", () => {
-    it("disables multiple servers", () => {
-      const state = createState();
-      batchToggleMcpServers(state, ["context7", "chrome_devtools"], false);
-      expect(state.mcpConfig.mcpServers.context7.enabled).toBe(false);
-      expect(state.mcpConfig.mcpServers.chrome_devtools.enabled).toBe(false);
-    });
-
-    it("enables servers", () => {
-      const state = createState();
-      state.mcpConfig.mcpServers.context7.enabled = false;
-      batchToggleMcpServers(state, ["context7"], true);
-      expect(state.mcpConfig.mcpServers.context7.enabled).toBe(true);
-    });
-  });
-
-  describe("batchDeleteProviders", () => {
-    it("deletes providers and their dependent models", () => {
-      const state = createState();
-      upsertProvider(state, "extra", { type: "openai", base_url: "https://extra.test/v1", api_key: "sk-extra" });
-      upsertModel(state, "extra/gpt", { provider: "extra", model: "gpt", max_context_size: 128000, capabilities: [] });
-      batchDeleteProviders(state, ["extra"]);
-      expect(state.mainConfig.providers.extra).toBeUndefined();
-      expect(state.mainConfig.models["extra/gpt"]).toBeUndefined();
-    });
-
-    it("is a no-op for empty names", () => {
-      const state = createState();
-      batchDeleteProviders(state, []);
-      expect(state.mainConfig.providers.kimi_gateway).toBeDefined();
-    });
-  });
 });
 
 function createMemoryFs(initial: Record<string, string>) {
@@ -865,58 +741,6 @@ describe("importConfig", () => {
     const data = { version: 1, exportedAt: "", source: "t", providers: { extra: { type: "openai", base_url: "https://e", api_key: "k" } }, models: {}, profiles: {}, mcpServers: {} };
     importConfig(state, data, "skip");
     expect(Object.keys(state.mainConfig.providers).length).toBe(origCount);
-  });
-});
-
-describe("saveCustomTemplate", () => {
-  it("adds template to panelSettings.customTemplates", () => {
-    const state = createState();
-    const template = { id: "my-tpl", name: "My Template", description: "desc", type: "openai_legacy" as const, base_url: "http://localhost", default_models: [] };
-    saveCustomTemplate(state, template);
-    expect(state.panelSettings.customTemplates).toHaveLength(1);
-    expect(state.panelSettings.customTemplates![0].id).toBe("my-tpl");
-  });
-
-  it("overwrites template with same id", () => {
-    const state = createState();
-    const template1 = { id: "tpl-1", name: "V1", description: "", type: "openai_legacy" as const, base_url: "http://a", default_models: [] };
-    const template2 = { id: "tpl-1", name: "V2", description: "", type: "openai_legacy" as const, base_url: "http://b", default_models: [] };
-    saveCustomTemplate(state, template1);
-    saveCustomTemplate(state, template2);
-    expect(state.panelSettings.customTemplates).toHaveLength(1);
-    expect(state.panelSettings.customTemplates![0].name).toBe("V2");
-  });
-
-  it("initializes customTemplates if undefined", () => {
-    const state = createState();
-    state.panelSettings.customTemplates = undefined;
-    const template = { id: "x", name: "X", description: "", type: "gemini" as const, base_url: "", default_models: [] };
-    saveCustomTemplate(state, template);
-    expect(state.panelSettings.customTemplates).toHaveLength(1);
-  });
-});
-
-describe("deleteCustomTemplate", () => {
-  it("removes template by id", () => {
-    const state = createState();
-    const template = { id: "del-me", name: "Del", description: "", type: "openai_legacy" as const, base_url: "", default_models: [] };
-    saveCustomTemplate(state, template);
-    deleteCustomTemplate(state, "del-me");
-    expect(state.panelSettings.customTemplates).toHaveLength(0);
-  });
-
-  it("is no-op for non-existent id", () => {
-    const state = createState();
-    saveCustomTemplate(state, { id: "keep", name: "Keep", description: "", type: "openai_legacy" as const, base_url: "", default_models: [] });
-    deleteCustomTemplate(state, "no-such-id");
-    expect(state.panelSettings.customTemplates).toHaveLength(1);
-  });
-
-  it("is no-op when customTemplates is undefined", () => {
-    const state = createState();
-    state.panelSettings.customTemplates = undefined;
-    deleteCustomTemplate(state, "any");
-    expect(state.panelSettings.customTemplates).toBeUndefined();
   });
 });
 

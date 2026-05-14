@@ -15,11 +15,14 @@ const TAB_ACTIONS: Partial<Record<ShortcutAction, TabId>> = {
   "tab.settings": "settings",
 };
 
+const ALLOW_IN_EDITABLE: Set<ShortcutAction> = new Set(["app.globalSearch"]);
+
 export function useShortcuts(options: {
   shortcuts: Record<ShortcutAction, ShortcutBinding>;
   onSave: () => void;
   onReload: () => void;
   onNavigate: (tab: TabId) => void;
+  onGlobalSearch: () => void;
 }): void {
   useEffect(() => {
     const bindings = new Map<string, ShortcutAction>();
@@ -31,14 +34,14 @@ export function useShortcuts(options: {
     }
 
     function handleKeyDown(event: KeyboardEvent): void {
-      if (event.defaultPrevented || isEditableTarget(event.target)) {
-        return;
-      }
+      if (event.defaultPrevented) return;
 
       const action = eventToAcceleratorCandidates(event)
         .map((accelerator) => bindings.get(accelerator.toLowerCase()))
         .find(Boolean);
-      if (!action) {
+      if (!action) return;
+
+      if (isEditableTarget(event.target) && !ALLOW_IN_EDITABLE.has(action)) {
         return;
       }
 
@@ -88,6 +91,7 @@ function executeShortcutAction(
     onSave: () => void;
     onReload: () => void;
     onNavigate: (tab: TabId) => void;
+    onGlobalSearch: () => void;
   },
 ): void {
   if (action === "app.save") {
@@ -96,6 +100,10 @@ function executeShortcutAction(
   }
   if (action === "app.reloadConfig") {
     options.onReload();
+    return;
+  }
+  if (action === "app.globalSearch") {
+    options.onGlobalSearch();
     return;
   }
 

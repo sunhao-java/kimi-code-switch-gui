@@ -86,22 +86,19 @@ export function App(): JSX.Element {
     });
   }, [updateImmediateState]);
 
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false);
+
   useShortcuts({
     shortcuts,
     onSave: () => void onSave(),
     onReload: () => void loadState(),
     onNavigate: (tab) => runAfterUnsavedHandled(() => setActiveTab(tab)),
+    onGlobalSearch: () => setCommandPaletteOpen((v) => !v),
   });
-
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false);
 
   useEffect(() => {
     function handleGlobalKeyDown(event: globalThis.KeyboardEvent): void {
-      if ((event.metaKey || event.ctrlKey) && event.key === "k" && !event.shiftKey) {
-        event.preventDefault();
-        setCommandPaletteOpen((v) => !v);
-      }
       if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key === "p") {
         event.preventDefault();
         setQuickSwitcherOpen((v) => !v);

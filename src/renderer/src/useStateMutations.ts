@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
+import type { MutableRefObject } from "react";
 
 import { cloneState, normalizeStatePaths } from "@shared/configStore";
 import type { AppState, Locale } from "@shared/types";
@@ -9,6 +10,8 @@ import { applyAppearanceMode, applyAppearanceTheme, applyUiFontSize } from "./ta
 interface StateMutationsContext {
   state: AppState;
   savedState: AppState | null;
+  stateRef?: MutableRefObject<AppState>;
+  savedStateRef?: MutableRefObject<AppState | null>;
   locale: Locale;
   setState: Dispatch<SetStateAction<AppState>>;
   setError: Dispatch<SetStateAction<string>>;
@@ -23,6 +26,8 @@ export function useStateMutations(ctx: StateMutationsContext) {
   const {
     state,
     savedState,
+    stateRef,
+    savedStateRef,
     locale,
     setState,
     setError,
@@ -34,11 +39,12 @@ export function useStateMutations(ctx: StateMutationsContext) {
   } = ctx;
 
   const updateState = (updater: (draft: AppState) => void, options: { persist?: boolean } = {}): void => {
-    if (!state) {
+    const currentState = stateRef?.current ?? state;
+    if (!currentState) {
       return;
     }
 
-    const draft = cloneState(state);
+    const draft = cloneState(currentState);
     try {
       updater(draft);
       const normalized = normalizeStatePaths(draft);
@@ -61,12 +67,14 @@ export function useStateMutations(ctx: StateMutationsContext) {
   };
 
   const updateImmediateState = (updater: (draft: AppState) => void): void => {
-    if (!state) {
+    const currentState = stateRef?.current ?? state;
+    if (!currentState) {
       return;
     }
 
-    const visibleDraft = cloneState(state);
-    const persistedDraft = cloneState(savedState ?? state);
+    const currentSavedState = savedStateRef?.current ?? savedState;
+    const visibleDraft = cloneState(currentState);
+    const persistedDraft = cloneState(currentSavedState ?? currentState);
 
     try {
       updater(visibleDraft);

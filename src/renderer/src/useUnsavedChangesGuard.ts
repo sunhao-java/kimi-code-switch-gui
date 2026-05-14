@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 
+import { buildManagedDocuments } from "@shared/configSafety";
 import type { AppState, Locale } from "@shared/types";
 import type { ConfirmDialogState } from "./dialogs";
 import { collectDirtyKeys, isEqualValue } from "./appHelpers";
@@ -24,7 +25,7 @@ export function useUnsavedChangesGuard(ctx: UnsavedChangesGuardContext) {
     restoreSavedState,
   } = ctx;
   const unsavedResolutionRef = useRef(false);
-  const hasUnsavedChanges = Boolean(state && savedState) && !isEqualValue(state, savedState);
+  const hasUnsavedChanges = Boolean(state && savedState) && !areManagedDocumentsEqual(state, savedState);
   const dirtyProviders = state && savedState
     ? collectDirtyKeys(state.mainConfig.providers, savedState.mainConfig.providers)
     : new Set<string>();
@@ -99,4 +100,11 @@ export function useUnsavedChangesGuard(ctx: UnsavedChangesGuardContext) {
     resolveUnsavedChanges,
     runAfterUnsavedHandled,
   };
+}
+
+function areManagedDocumentsEqual(state: AppState, savedState: AppState | null): boolean {
+  if (!savedState) {
+    return false;
+  }
+  return isEqualValue(buildManagedDocuments(state), buildManagedDocuments(savedState));
 }

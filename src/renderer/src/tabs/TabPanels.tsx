@@ -1,8 +1,7 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bug, CheckSquare, Download, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Square, Star, Terminal, Trash2, Upload, X } from "lucide-react";
-import { applyProfile, applyTemplate, batchDeleteProviders, batchToggleMcpServers, batchUpdateProviderApiKey, cloneProfile, deleteModel, deleteProfile, deleteProvider, deleteCustomTemplate, exportConfig, getImportPreview, importConfig, PROVIDER_TEMPLATES, saveCustomTemplate, toggleFavorite, validateImportData, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
-import type { ProviderTemplate } from "@shared/configStore";
+import { Bug, Copy, Download, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Star, Terminal, Trash2, Upload, X } from "lucide-react";
+import { applyProfile, cloneProfile, deleteModel, deleteProfile, deleteProvider, exportConfig, getImportPreview, importConfig, toggleFavorite, validateImportData, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
 import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
 import {
   formatAcceleratorForPlatform,
@@ -230,9 +229,6 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
       actions: SHORTCUT_ACTIONS.filter((definition) => definition.scope === "window"),
     },
   ];
-  const [selectedProviders, setSelectedProviders] = useState<Set<string>>(new Set());
-  const [selectedMcpServers, setSelectedMcpServers] = useState<Set<string>>(new Set());
-  const [isTemplatePickerOpen, setIsTemplatePickerOpen] = useState(false);
   const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>("general");
   const [importDialog, setImportDialog] = useState<{ open: boolean; preview: ImportPreview | null; data: ExportBundle | null; strategy: ImportConflictStrategy }>({ open: false, preview: null, data: null, strategy: "skip" });
   const settingsSubTabs: Array<{ id: SettingsSubTab; label: string; description: string }> = [
@@ -287,8 +283,9 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             listItems={providerEntries.map(([name]) => name)}
             dirtyItems={dirtyProviders}
             dirtyLabel={t(locale, "editedBadge")}
-            selectedItem={selectedProvider}
-            onSelect={(item) => runAfterUnsavedHandled(() => setSelectedProvider(item))}
+            selectedItem={selectedProviderName}
+            itemClassName={() => "provider-list-row"}
+            onSelect={(item) => setSelectedProvider(item)}
             copyLabel={t(locale, "clone")}
             onCopy={(name) =>
               updateState((draft) => {
@@ -314,111 +311,24 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                 setSelectedProvider(name);
               }, { persist: false })
             }
-            headerActions={
-              <>
-              <button
-                className="action-button compact"
-                type="button"
-                aria-label={t(locale, "templateFromTemplate")}
-                title={t(locale, "templateFromTemplate")}
-                onClick={() => setIsTemplatePickerOpen(true)}
-              >
-                {t(locale, "templateFromTemplate")}
-              </button>
-              {selectedProviders.size > 0 ? (
-                <div className="batch-toolbar">
-                  <span className="batch-count">{formatMessage(t(locale, "batchSelected"), { count: String(selectedProviders.size) })}</span>
-                  <button
-                    className="action-button compact"
-                    type="button"
-                    title={t(locale, "batchUpdateApiKey")}
-                    onClick={() => {
-                      const newKey = window.prompt(t(locale, "batchUpdateApiKey"));
-                      if (newKey === null) return;
-                      updateState((draft) => {
-                        batchUpdateProviderApiKey(draft, [...selectedProviders], newKey);
-                      });
-                    }}
-                  >
-                    {t(locale, "batchUpdateApiKey")}
-                  </button>
-                  <button
-                    className="action-button compact"
-                    type="button"
-                    title={t(locale, "batchDelete")}
-                    onClick={() => {
-                      void (async () => {
-                        const message = formatMessage(t(locale, "batchConfirmDeleteProviders"), { count: String(selectedProviders.size) });
-                        if (!(await confirmDeleteResource(t(locale, "providers"), message))) return;
-                        updateState((draft) => {
-                          batchDeleteProviders(draft, [...selectedProviders]);
-                          setSelectedProviders(new Set());
-                          setSelectedProvider(Object.keys(draft.mainConfig.providers)[0] ?? "");
-                        });
-                      })();
-                    }}
-                  >
-                    <Trash2 size={15} />
-                    <span>{t(locale, "batchDelete")}</span>
-                  </button>
-                  <button
-                    className="action-button compact"
-                    type="button"
-                    title={selectedProviders.size === providerEntries.length ? t(locale, "batchSelectNone") : t(locale, "batchSelectAll")}
-                    onClick={() => {
-                      if (selectedProviders.size === providerEntries.length) {
-                        setSelectedProviders(new Set());
-                      } else {
-                        setSelectedProviders(new Set(providerEntries.map(([name]) => name)));
-                      }
-                    }}
-                  >
-                    {selectedProviders.size === providerEntries.length ? <Square size={15} /> : <CheckSquare size={15} />}
-                    <span>{selectedProviders.size === providerEntries.length ? t(locale, "batchSelectNone") : t(locale, "batchSelectAll")}</span>
-                  </button>
-                </div>
-              ) : null}
-              </>
-            }
             renderItemAction={(name) => (
-              <>
-              <button
-                className={state.panelSettings.favorites?.providers?.includes(name) ? "list-toggle-button active" : "list-toggle-button"}
-                type="button"
-                aria-label={state.panelSettings.favorites?.providers?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
-                title={state.panelSettings.favorites?.providers?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  updateImmediateState((draft) => { toggleFavorite(draft, "provider", name); });
-                }}
-              >
-                <Star size={14} fill={state.panelSettings.favorites?.providers?.includes(name) ? "currentColor" : "none"} />
-              </button>
-              <button
-                className={selectedProviders.has(name) ? "list-toggle-button" : "list-toggle-button disabled"}
-                type="button"
-                aria-label={selectedProviders.has(name) ? t(locale, "batchSelectNone") : t(locale, "batchSelectAll")}
-                title={selectedProviders.has(name) ? t(locale, "batchSelectNone") : t(locale, "batchSelectAll")}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setSelectedProviders((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(name)) {
-                      next.delete(name);
-                    } else {
-                      next.add(name);
-                    }
-                    return next;
-                  });
-                }}
-              >
-                {selectedProviders.has(name) ? <CheckSquare size={15} /> : <Square size={15} />}
-              </button>
-              </>
+              <span className="list-row-action-set providers-actions">
+                <button
+                  className={state.panelSettings.favorites?.providers?.includes(name) ? "list-toggle-button active" : "list-toggle-button"}
+                  type="button"
+                  aria-label={state.panelSettings.favorites?.providers?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
+                  title={state.panelSettings.favorites?.providers?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    updateImmediateState((draft) => { toggleFavorite(draft, "provider", name); });
+                  }}
+                >
+                  <Star size={14} fill={state.panelSettings.favorites?.providers?.includes(name) ? "currentColor" : "none"} />
+                </button>
+              </span>
             )}
           >
             {selectedProviderData ? (
-              <>
               <ProviderForm
                 locale={locale}
                 name={selectedProviderName}
@@ -451,52 +361,10 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                   })();
                 }}
               />
-              <button
-                className="action-button compact"
-                type="button"
-                style={{ marginTop: "0.5rem" }}
-                onClick={() => {
-                  const provider = state.mainConfig.providers[selectedProviderName];
-                  if (!provider) return;
-                  const template = {
-                    id: `custom-${selectedProviderName}-${Date.now()}`,
-                    name: selectedProviderName,
-                    description: `${provider.type} — ${provider.base_url}`,
-                    type: provider.type,
-                    base_url: provider.base_url,
-                    default_models: Object.entries(state.mainConfig.models)
-                      .filter(([, m]) => m.provider === selectedProviderName)
-                      .map(([name]) => name),
-                  };
-                  updateImmediateState((draft) => { saveCustomTemplate(draft, template as any); });
-                }}
-              >
-                <Download size={14} />
-                <span>{t(locale, "templateSaveAs")}</span>
-              </button>
-              </>
             ) : (
               <EmptyState locale={locale} />
             )}
           </SplitLayout>
-          {isTemplatePickerOpen ? (
-            <TemplatePickerDialog
-              locale={locale}
-              existingProviders={state.mainConfig.providers}
-              customTemplates={state.panelSettings.customTemplates ?? []}
-              onDeleteCustomTemplate={(templateId) => {
-                updateImmediateState((draft) => { deleteCustomTemplate(draft, templateId); });
-              }}
-              onCreate={(templateId, providerName, apiKey) => {
-                updateState((draft) => {
-                  applyTemplate(draft, templateId, providerName, apiKey);
-                  setSelectedProvider(providerName);
-                }, { persist: false });
-                setIsTemplatePickerOpen(false);
-              }}
-              onCancel={() => setIsTemplatePickerOpen(false)}
-            />
-          ) : null}
         </>) : null}
 
         {activeTab === "models" ? (
@@ -505,8 +373,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             listItems={modelEntries.map(([name]) => name)}
             dirtyItems={dirtyModels}
             dirtyLabel={t(locale, "editedBadge")}
-            selectedItem={selectedModel}
-            onSelect={(item) => runAfterUnsavedHandled(() => setSelectedModel(item))}
+            selectedItem={selectedModelName}
+            onSelect={(item) => setSelectedModel(item)}
             copyLabel={t(locale, "clone")}
             onCopy={(name) =>
               updateState((draft) => {
@@ -595,19 +463,10 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             listItems={profileEntries.map(([name]) => name)}
             dirtyItems={dirtyProfiles}
             dirtyLabel={t(locale, "editedBadge")}
-            selectedItem={selectedProfile}
+            selectedItem={selectedProfileName}
             highlightedItem={state.activeProfile}
-            onSelect={(item) => runAfterUnsavedHandled(() => setSelectedProfile(item))}
-            copyLabel={t(locale, "clone")}
-            onCopy={(name) =>
-              updateState((draft) => {
-                const profile = draft.profiles[name];
-                if (!profile) return;
-                const copyName = createLocalizedCopyName(name, draft.profiles, t(locale, "copySuffix"));
-                cloneProfile(draft, name, copyName, `${profile.label} ${t(locale, "copySuffix")}`);
-                setSelectedProfile(copyName);
-              }, { persist: false })
-            }
+            itemClassName={() => "profile-list-row"}
+            onSelect={(item) => setSelectedProfile(item)}
             addLabel={t(locale, "newProfile")}
             addButtonClassName="action-button compact icon-only"
             addButtonTitle={t(locale, "newProfile")}
@@ -636,52 +495,74 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             }
             renderItemAction={(name) =>
               (
-                <>
-                  <button
-                    className={state.panelSettings.favorites?.profiles?.includes(name) ? "list-toggle-button active" : "list-toggle-button"}
-                    type="button"
-                    aria-label={state.panelSettings.favorites?.profiles?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
-                    title={state.panelSettings.favorites?.profiles?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      updateImmediateState((draft) => { toggleFavorite(draft, "profile", name); });
-                    }}
-                  >
-                    <Star size={14} fill={state.panelSettings.favorites?.profiles?.includes(name) ? "currentColor" : "none"} />
-                  </button>
-                  <button
-                    className="list-terminal-button"
-                    type="button"
-                    aria-label={t(locale, "openInTerminal")}
+                <span className="list-row-action-set profile-actions">
+                  <span className="list-hover-actions">
+                    <button
+                      className={state.panelSettings.favorites?.profiles?.includes(name) ? "list-toggle-button active" : "list-toggle-button"}
+                      type="button"
+                      aria-label={state.panelSettings.favorites?.profiles?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
+                      title={state.panelSettings.favorites?.profiles?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        updateImmediateState((draft) => { toggleFavorite(draft, "profile", name); });
+                      }}
+                    >
+                      <Star size={14} fill={state.panelSettings.favorites?.profiles?.includes(name) ? "currentColor" : "none"} />
+                    </button>
+                    <button
+                      className="list-copy-button"
+                      type="button"
+                      aria-label={`${t(locale, "clone")} ${name}`}
+                      title={t(locale, "clone")}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        updateState((draft) => {
+                          const profile = draft.profiles[name];
+                          if (!profile) return;
+                          const copyName = createLocalizedCopyName(name, draft.profiles, t(locale, "copySuffix"));
+                          cloneProfile(draft, name, copyName, `${profile.label} ${t(locale, "copySuffix")}`);
+                          setSelectedProfile(copyName);
+                        }, { persist: false });
+                      }}
+                    >
+                      <Copy size={15} />
+                    </button>
+                    <button
+                      className="list-terminal-button"
+                      type="button"
+                      aria-label={t(locale, "openInTerminal")}
                       title={t(locale, "openInTerminal")}
                       onClick={(event) => {
                         event.stopPropagation();
                         void openKimiInTerminal(name);
                       }}
-                  >
-                    <Terminal size={15} />
-                  </button>
+                    >
+                      <Terminal size={15} />
+                    </button>
+                  </span>
                   {name === state.activeProfile ? (
                     <span className="list-current-badge" aria-label={t(locale, "summaryActive")} title={t(locale, "summaryActive")}>
                       {t(locale, "active")}
                     </span>
                   ) : (
-                    <button
-                      className="list-activate-button"
-                      type="button"
-                      aria-label={`${t(locale, "activate")} ${name}`}
-                      title={t(locale, "activate")}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        updateState((draft) => {
-                          applyProfile(draft, name);
-                        });
-                      }}
-                    >
-                      {t(locale, "activate")}
-                    </button>
+                    <span className="list-hover-actions">
+                      <button
+                        className="list-activate-button"
+                        type="button"
+                        aria-label={`${t(locale, "activate")} ${name}`}
+                        title={t(locale, "activate")}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          updateState((draft) => {
+                            applyProfile(draft, name);
+                          });
+                        }}
+                      >
+                        {t(locale, "activate")}
+                      </button>
+                    </span>
                   )}
-                </>
+                </span>
               )
             }
           >
@@ -776,8 +657,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             listItems={mcpEntries.map(([name]) => name)}
             dirtyItems={dirtyMcpServers}
             dirtyLabel={t(locale, "editedBadge")}
-            selectedItem={selectedMcpServer}
-            onSelect={(item) => runAfterUnsavedHandled(() => setSelectedMcpServer(item))}
+            selectedItem={selectedMcpServerName}
+            onSelect={(item) => setSelectedMcpServer(item)}
             addLabel={t(locale, "newMcpServer")}
             onAdd={() =>
               updateState((draft) => {
@@ -788,52 +669,6 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             }
             headerActions={
               <>
-                {selectedMcpServers.size > 0 ? (
-                  <div className="batch-toolbar">
-                    <span className="batch-count">{formatMessage(t(locale, "batchSelected"), { count: String(selectedMcpServers.size) })}</span>
-                    <button
-                      className="action-button compact"
-                      type="button"
-                      title={t(locale, "batchEnable")}
-                      onClick={() => {
-                        updateState((draft) => {
-                          batchToggleMcpServers(draft, [...selectedMcpServers], true);
-                        });
-                      }}
-                    >
-                      <Power size={15} />
-                      <span>{t(locale, "batchEnable")}</span>
-                    </button>
-                    <button
-                      className="action-button compact"
-                      type="button"
-                      title={t(locale, "batchDisable")}
-                      onClick={() => {
-                        updateState((draft) => {
-                          batchToggleMcpServers(draft, [...selectedMcpServers], false);
-                        });
-                      }}
-                    >
-                      <Power size={15} />
-                      <span>{t(locale, "batchDisable")}</span>
-                    </button>
-                    <button
-                      className="action-button compact"
-                      type="button"
-                      title={selectedMcpServers.size === mcpEntries.length ? t(locale, "batchSelectNone") : t(locale, "batchSelectAll")}
-                      onClick={() => {
-                        if (selectedMcpServers.size === mcpEntries.length) {
-                          setSelectedMcpServers(new Set());
-                        } else {
-                          setSelectedMcpServers(new Set(mcpEntries.map(([name]) => name)));
-                        }
-                      }}
-                    >
-                      {selectedMcpServers.size === mcpEntries.length ? <Square size={15} /> : <CheckSquare size={15} />}
-                      <span>{selectedMcpServers.size === mcpEntries.length ? t(locale, "batchSelectNone") : t(locale, "batchSelectAll")}</span>
-                    </button>
-                  </div>
-                ) : null}
                 <button
                   className="action-button compact icon-only"
                   type="button"
@@ -863,26 +698,6 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               }
               return (
                 <>
-                  <button
-                    className={selectedMcpServers.has(name) ? "list-toggle-button" : "list-toggle-button disabled"}
-                    type="button"
-                    aria-label={selectedMcpServers.has(name) ? t(locale, "batchSelectNone") : t(locale, "batchSelectAll")}
-                    title={selectedMcpServers.has(name) ? t(locale, "batchSelectNone") : t(locale, "batchSelectAll")}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setSelectedMcpServers((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(name)) {
-                          next.delete(name);
-                        } else {
-                          next.add(name);
-                        }
-                        return next;
-                      });
-                    }}
-                  >
-                    {selectedMcpServers.has(name) ? <CheckSquare size={15} /> : <Square size={15} />}
-                  </button>
                   <button
                     className={server.enabled ? "list-toggle-button" : "list-toggle-button disabled"}
                     type="button"
@@ -1238,50 +1053,6 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                     onChange={() => {}}
                   />
                 </SettingsGroup>
-
-                <SettingsGroup title={t(locale, "settingsGroupExportImport")} className="settings-group-export-import">
-                  <div className="button-row settings-action-row">
-                    <button
-                      className="action-button"
-                      type="button"
-                      onClick={async () => {
-                        const bundle = exportConfig(state);
-                        const json = JSON.stringify(bundle, null, 2);
-                        const api = getApi();
-                        if (!api) { setError(t(locale, "openInTerminalUnavailable")); return; }
-                        const result = await api.saveFile(json, { defaultPath: "kimi-config-export.json" });
-                        if (!result.canceled) { setNotice(t(locale, "exportSuccess")); }
-                      }}
-                    >
-                      <Download size={16} />
-                      <span>{t(locale, "exportConfig")}</span>
-                    </button>
-                    <button
-                      className="action-button"
-                      type="button"
-                      onClick={async () => {
-                        const api = getApi();
-                        if (!api) { setError(t(locale, "openInTerminalUnavailable")); return; }
-                        const fileResult = await api.pickFile({ filters: [{ name: "JSON", extensions: ["json"] }] });
-                        if (fileResult.canceled || !fileResult.filePath) return;
-                        try {
-                          const readResult = await api.readFile(fileResult.filePath);
-                          if (!readResult.ok || !readResult.content) { setError(readResult.error ?? t(locale, "importInvalidFile")); return; }
-                          const parsed = JSON.parse(readResult.content);
-                          const validation = validateImportData(parsed);
-                          if (!validation.valid) { setError(validation.errors.join(" ")); return; }
-                          const data = parsed as ExportBundle;
-                          const preview = getImportPreview(state, data);
-                          if (preview.conflicts.length === 0 && preview.newItems.length === 0) { setNotice(t(locale, "importNoItems")); return; }
-                          setImportDialog({ open: true, preview, data, strategy: "skip" });
-                        } catch { setError(t(locale, "importInvalidFile")); }
-                      }}
-                    >
-                      <Upload size={16} />
-                      <span>{t(locale, "importConfig")}</span>
-                    </button>
-                  </div>
-                </SettingsGroup>
               </div>
             ) : null}
             {activeSettingsSubTab === "shortcuts" ? (
@@ -1420,7 +1191,51 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               </SettingsGroup>
             ) : null}
             {activeSettingsSubTab === "backup" ? (
-              <SettingsGroup title={t(locale, "settingsGroupBackup")} className="settings-group-wide">
+              <>
+                <SettingsGroup title={t(locale, "settingsGroupExportImport")} className="settings-group-export-import">
+                  <div className="button-row settings-action-row">
+                    <button
+                      className="action-button"
+                      type="button"
+                      onClick={async () => {
+                        const bundle = exportConfig(state);
+                        const json = JSON.stringify(bundle, null, 2);
+                        const api = getApi();
+                        if (!api) { setError(t(locale, "openInTerminalUnavailable")); return; }
+                        const result = await api.saveFile(json, { defaultPath: "kimi-config-export.json" });
+                        if (!result.canceled) { setNotice(t(locale, "exportSuccess")); }
+                      }}
+                    >
+                      <Download size={16} />
+                      <span>{t(locale, "exportConfig")}</span>
+                    </button>
+                    <button
+                      className="action-button"
+                      type="button"
+                      onClick={async () => {
+                        const api = getApi();
+                        if (!api) { setError(t(locale, "openInTerminalUnavailable")); return; }
+                        const fileResult = await api.pickFile({ filters: [{ name: "JSON", extensions: ["json"] }] });
+                        if (fileResult.canceled || !fileResult.filePath) return;
+                        try {
+                          const readResult = await api.readFile(fileResult.filePath);
+                          if (!readResult.ok || !readResult.content) { setError(readResult.error ?? t(locale, "importInvalidFile")); return; }
+                          const parsed = JSON.parse(readResult.content);
+                          const validation = validateImportData(parsed);
+                          if (!validation.valid) { setError(validation.errors.join(" ")); return; }
+                          const data = parsed as ExportBundle;
+                          const preview = getImportPreview(state, data);
+                          if (preview.conflicts.length === 0 && preview.newItems.length === 0) { setNotice(t(locale, "importNoItems")); return; }
+                          setImportDialog({ open: true, preview, data, strategy: "skip" });
+                        } catch { setError(t(locale, "importInvalidFile")); }
+                      }}
+                    >
+                      <Upload size={16} />
+                      <span>{t(locale, "importConfig")}</span>
+                    </button>
+                  </div>
+                </SettingsGroup>
+                <SettingsGroup title={t(locale, "settingsGroupBackup")} className="settings-group-wide">
               <SelectField
                 label={t(locale, "backupStrategy")}
                 value={state.panelSettings.backup_strategy}
@@ -1565,7 +1380,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                   </button>
                 ) : null}
               </div>
-              </SettingsGroup>
+                </SettingsGroup>
+              </>
             ) : null}
             {activeSettingsSubTab === "history" ? (
               <SettingsGroup title={t(locale, "historyTitle")} className="settings-group-wide">
@@ -1729,83 +1545,6 @@ function ImportPreviewDialog(props: {
         </div>
       </div>
     </div>
-  );
-}
-
-function TemplatePickerDialog(props: {
-  locale: Locale;
-  existingProviders: Record<string, unknown>;
-  customTemplates: ProviderTemplate[];
-  onDeleteCustomTemplate: (templateId: string) => void;
-  onCreate: (templateId: string, providerName: string, apiKey: string) => void;
-  onCancel: () => void;
-}): JSX.Element {
-  const dialogRef = useRef<HTMLElement>(null);
-  const [activeTab, setActiveTab] = useState<"builtin" | "custom">("builtin");
-  const [selectedTemplateId, setSelectedTemplateId] = useState(PROVIDER_TEMPLATES[0]?.id ?? "");
-  const [providerName, setProviderName] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [error, setError] = useState("");
-
-  useDialogEscape(props.onCancel);
-  useFocusTrap(dialogRef);
-
-  const allTemplates = activeTab === "builtin" ? PROVIDER_TEMPLATES : props.customTemplates;
-  const selectedTemplate = [...PROVIDER_TEMPLATES, ...props.customTemplates].find((tpl) => tpl.id === selectedTemplateId);
-
-  const handleCreate = (): void => {
-    const name = providerName.trim() || (selectedTemplate?.name ?? "");
-    if (!name) return;
-    if (props.existingProviders[name]) {
-      setError(t(props.locale, "templateAlreadyExists"));
-      return;
-    }
-    props.onCreate(selectedTemplateId, name, apiKey);
-  };
-
-  return createPortal(
-    <div className="mcp-import-backdrop" role="presentation" onClick={(e) => { if (e.target === e.currentTarget) props.onCancel(); }}>
-      <section ref={dialogRef} className="glass-panel form-panel mcp-import-dialog" role="dialog" aria-modal="true" aria-labelledby="template-picker-title">
-        <div className="mcp-import-header">
-          <div><div className="section-title" id="template-picker-title">{t(props.locale, "templatePickTemplate")}</div></div>
-          <button className="action-button compact icon-only" type="button" aria-label={t(props.locale, "cancel")} onClick={props.onCancel}><X size={16} /></button>
-        </div>
-        <div className="template-tab-bar">
-          <button className={activeTab === "builtin" ? "template-tab active" : "template-tab"} type="button" onClick={() => setActiveTab("builtin")}>{t(props.locale, "templateBuiltIn")}</button>
-          <button className={activeTab === "custom" ? "template-tab active" : "template-tab"} type="button" onClick={() => setActiveTab("custom")}>{t(props.locale, "templateCustom")} ({props.customTemplates.length})</button>
-        </div>
-        <div className="template-picker-grid">
-          {allTemplates.length === 0 ? (
-            <div className="command-palette-empty">{t(props.locale, "templateNoCustom")}</div>
-          ) : allTemplates.map((template) => (
-            <button key={template.id} className={template.id === selectedTemplateId ? "template-card selected" : "template-card"} type="button" onClick={() => { setSelectedTemplateId(template.id); setError(""); }}>
-              <strong>{template.name}</strong>
-              <span>{template.description}</span>
-              <small>{formatMessage(t(props.locale, "templateModels"), { count: String(template.default_models.length) })}</small>
-              {activeTab === "custom" ? (
-                <span className="template-delete" onClick={(e) => { e.stopPropagation(); props.onDeleteCustomTemplate(template.id); }} role="button" aria-label={t(props.locale, "delete")}>
-                  <Trash2 size={12} />
-                </span>
-              ) : null}
-            </button>
-          ))}
-        </div>
-        <label className="field">
-          <span>{t(props.locale, "templateProviderName")}</span>
-          <input value={providerName} placeholder={selectedTemplate?.name ?? ""} onChange={(e) => { setProviderName(e.target.value); setError(""); }} />
-        </label>
-        <label className="field">
-          <span>{t(props.locale, "templateApiKey")}</span>
-          <input type="password" value={apiKey} placeholder="sk-..." onChange={(e) => setApiKey(e.target.value)} />
-        </label>
-        {error ? <p className="template-picker-error">{error}</p> : null}
-        <div className="button-row" style={{ marginTop: "0.75rem" }}>
-          <button className="action-button" type="button" onClick={props.onCancel}>{t(props.locale, "cancel")}</button>
-          <button className="action-button action-button-primary" type="button" onClick={handleCreate}>{t(props.locale, "templateCreate")}</button>
-        </div>
-      </section>
-    </div>,
-    document.body,
   );
 }
 

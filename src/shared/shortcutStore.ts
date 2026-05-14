@@ -86,6 +86,20 @@ export const SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
     },
   },
   {
+    action: "app.globalSearch",
+    scope: "window",
+    defaultAccelerator: "CommandOrControl+K",
+    defaultEnabled: true,
+    label: {
+      "zh-CN": "全局搜索",
+      "zh-TW": "全域搜尋",
+      "en-US": "Global Search",
+      "ja-JP": "グローバル検索",
+      "de-DE": "Globale Suche",
+      "es-ES": "Búsqueda global",
+    },
+  },
+  {
     action: "tab.overview",
     scope: "window",
     defaultAccelerator: "CommandOrControl+1",

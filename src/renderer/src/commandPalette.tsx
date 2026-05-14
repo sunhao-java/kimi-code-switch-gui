@@ -69,7 +69,7 @@ export function CommandPalette({ state, locale, onSelect, onClose }: CommandPale
     <div className="command-palette-backdrop" role="presentation" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="command-palette" role="dialog" aria-modal="true" aria-label={t(locale, "searchPlaceholder")} onKeyDown={handleKeyDown}>
         <div className="command-palette-input-row">
-          <Search size={16} className="command-palette-icon" />
+          <Search size={18} className="command-palette-icon" />
           <input
             ref={inputRef}
             type="text"
@@ -83,8 +83,8 @@ export function CommandPalette({ state, locale, onSelect, onClose }: CommandPale
             <X size={14} />
           </button>
         </div>
-        <div className="command-palette-results" ref={listRef} role="listbox">
-          {query && results.length === 0 ? (
+        <div className={query.trim() ? "command-palette-results" : "command-palette-results is-idle"} ref={listRef} role="listbox">
+          {query.trim() && results.length === 0 ? (
             <div className="command-palette-empty">{t(locale, "searchNoResults")}</div>
           ) : null}
           {results.map((result, index) => (
@@ -101,6 +101,11 @@ export function CommandPalette({ state, locale, onSelect, onClose }: CommandPale
               {result.subtitle ? <span className="command-palette-item-subtitle">{result.subtitle}</span> : null}
             </button>
           ))}
+        </div>
+        <div className="command-palette-hint">
+          <span><kbd>↑</kbd><kbd>↓</kbd> {t(locale, "navigate")}</span>
+          <span><kbd>Enter</kbd> {t(locale, "open")}</span>
+          <span><kbd>Esc</kbd> {t(locale, "close")}</span>
         </div>
       </div>
     </div>,

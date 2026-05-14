@@ -1,11 +1,3 @@
-export type ProviderType =
-  | "kimi"
-  | "openai_legacy"
-  | "openai_responses"
-  | "anthropic"
-  | "gemini"
-  | "vertexai";
-
 export type Locale = "zh-CN" | "zh-TW" | "en-US" | "ja-JP" | "de-DE" | "es-ES";
 export type LocalizedText = Partial<Record<Locale, string>> & Record<"en-US", string>;
 export type AppearanceMode = "auto" | "dark" | "light";
@@ -26,6 +18,7 @@ export type ShortcutAction =
   | "profile.previous"
   | "app.reloadConfig"
   | "app.save"
+  | "app.globalSearch"
   | "tab.overview"
   | "tab.profiles"
   | "tab.providers"
@@ -33,15 +26,6 @@ export type ShortcutAction =
   | "tab.mcp"
   | "tab.skills"
   | "tab.settings";
-
-export interface ProviderTemplate {
-  id: string;
-  name: string;
-  description: string;
-  type: ProviderType;
-  base_url: string;
-  default_models: Array<{ model: string; max_context_size: number; capabilities: string[] }>;
-}
 
 export interface ProviderConfig {
   type: string;
@@ -141,7 +125,6 @@ export interface PanelSettings {
     providerSortBy?: string;
     profileSortBy?: string;
   };
-  customTemplates?: ProviderTemplate[];
   favorites?: {
     providers?: string[];
     profiles?: string[];

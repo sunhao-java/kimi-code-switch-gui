@@ -19,8 +19,6 @@ import type {
   PreviewBundle,
   Profile,
   ProfileDiff,
-  ProviderTemplate,
-  ProviderType,
   ValidationResult,
 } from "./types";
 
@@ -35,62 +33,6 @@ export const DEFAULT_PANEL_DIRECTORY = "~/.kimi/.panel";
 export const DEFAULT_PANEL_SETTINGS_PATH = `${DEFAULT_PANEL_DIRECTORY}/${PANEL_SETTINGS_FILENAME}`;
 export const LEGACY_PANEL_SETTINGS_PATH = "~/.kimi/config.panel.toml";
 const SUPPORTED_LOCALES = new Set<PanelSettings["locale"]>(["zh-CN", "zh-TW", "en-US", "ja-JP", "de-DE", "es-ES"]);
-
-export interface ProviderTemplate {
-  id: string;
-  name: string;
-  description: string;
-  type: ProviderType;
-  base_url: string;
-  default_models: Array<{ model: string; max_context_size: number; capabilities: string[] }>;
-}
-
-export const PROVIDER_TEMPLATES: readonly ProviderTemplate[] = [
-  {
-    id: "openai",
-    name: "OpenAI",
-    description: "OpenAI GPT models via Responses API",
-    type: "openai_responses",
-    base_url: "https://api.openai.com/v1",
-    default_models: [
-      { model: "gpt-4o", max_context_size: 128000, capabilities: ["chat", "tools"] },
-      { model: "gpt-4o-mini", max_context_size: 128000, capabilities: ["chat", "tools"] },
-    ],
-  },
-  {
-    id: "anthropic",
-    name: "Anthropic",
-    description: "Anthropic Claude models",
-    type: "anthropic",
-    base_url: "https://api.anthropic.com",
-    default_models: [
-      { model: "claude-sonnet-4-20250514", max_context_size: 200000, capabilities: ["chat", "tools"] },
-      { model: "claude-haiku-4-5-20251001", max_context_size: 200000, capabilities: ["chat", "tools"] },
-    ],
-  },
-  {
-    id: "gemini",
-    name: "Gemini",
-    description: "Google Gemini models",
-    type: "gemini",
-    base_url: "https://generativelanguage.googleapis.com/v1beta",
-    default_models: [
-      { model: "gemini-2.5-pro", max_context_size: 1048576, capabilities: ["chat", "tools"] },
-      { model: "gemini-2.5-flash", max_context_size: 1048576, capabilities: ["chat", "tools"] },
-    ],
-  },
-  {
-    id: "ollama",
-    name: "Ollama",
-    description: "Local Ollama models via OpenAI-compatible API",
-    type: "openai_legacy",
-    base_url: "http://localhost:11434/v1",
-    default_models: [
-      { model: "llama3", max_context_size: 8192, capabilities: ["chat"] },
-      { model: "codellama", max_context_size: 16384, capabilities: ["chat"] },
-    ],
-  },
-];
 
 const PROFILE_KEYS: Array<keyof Profile> = [
   "default_model",
@@ -327,7 +269,6 @@ function panelSettingsFromUnknown(data: Record<string, unknown>, fallback: Panel
     mcp_servers: parsePanelMcpServers(data.mcp_servers),
     last_display_id: typeof data.last_display_id === "number" ? data.last_display_id : undefined,
     uiState: parseUiState(data.uiState),
-    customTemplates: parseCustomTemplates(data.customTemplates),
     favorites: parseFavorites(data.favorites),
   };
 }
@@ -432,65 +373,6 @@ export function upsertModel(
     throw new Error(`Provider not found: ${model.provider}`);
   }
   state.mainConfig.models[name] = model;
-}
-
-export function applyTemplate(
-  state: AppState,
-  templateId: string,
-  providerName: string,
-  apiKey: string,
-): void {
-  const template = PROVIDER_TEMPLATES.find((t) => t.id === templateId);
-  if (!template) {
-    throw new Error(`Template not found: ${templateId}`);
-  }
-  if (state.mainConfig.providers[providerName]) {
-    throw new Error(`Provider already exists: ${providerName}`);
-  }
-  upsertProvider(state, providerName, {
-    type: template.type,
-    base_url: template.base_url,
-    api_key: apiKey,
-  });
-  for (const modelDef of template.default_models) {
-    const modelKey = `${providerName}/${modelDef.model}`;
-    upsertModel(state, modelKey, {
-      provider: providerName,
-      model: modelDef.model,
-      max_context_size: modelDef.max_context_size,
-      capabilities: [...modelDef.capabilities],
-    });
-  }
-}
-
-export function batchUpdateProviderApiKey(state: AppState, names: string[], apiKey: string): void {
-  for (const name of names) {
-    const provider = state.mainConfig.providers[name];
-    if (provider) {
-      provider.api_key = apiKey;
-    }
-  }
-}
-
-export function batchToggleMcpServers(state: AppState, names: string[], enabled: boolean): void {
-  for (const name of names) {
-    const server = state.mcpConfig.mcpServers[name];
-    if (server) {
-      server.enabled = enabled;
-    }
-  }
-}
-
-export function batchDeleteProviders(state: AppState, names: string[]): void {
-  for (const name of names) {
-    const dependentModels = Object.entries(state.mainConfig.models)
-      .filter(([, model]) => model.provider === name)
-      .map(([modelName]) => modelName);
-    for (const modelName of dependentModels) {
-      delete state.mainConfig.models[modelName];
-    }
-    delete state.mainConfig.providers[name];
-  }
 }
 
 export function deleteModel(state: AppState, name: string): void {
@@ -1012,27 +894,6 @@ export function importConfig(
   return next;
 }
 
-export function saveCustomTemplate(state: AppState, template: ProviderTemplate): void {
-  if (!state.panelSettings.customTemplates) {
-    state.panelSettings.customTemplates = [];
-  }
-  const index = state.panelSettings.customTemplates.findIndex((t) => t.id === template.id);
-  if (index >= 0) {
-    state.panelSettings.customTemplates[index] = template;
-  } else {
-    state.panelSettings.customTemplates.push(template);
-  }
-}
-
-export function deleteCustomTemplate(state: AppState, templateId: string): void {
-  if (!state.panelSettings.customTemplates) {
-    return;
-  }
-  state.panelSettings.customTemplates = state.panelSettings.customTemplates.filter(
-    (t) => t.id !== templateId,
-  );
-}
-
 export function toggleFavorite(
   state: AppState,
   type: "provider" | "profile",
@@ -1172,34 +1033,6 @@ function parseUiState(value: unknown): PanelSettings["uiState"] {
     result.profileSortBy = value.profileSortBy;
   }
   return Object.keys(result).length > 0 ? result : undefined;
-}
-
-function parseCustomTemplates(value: unknown): ProviderTemplate[] | undefined {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  const templates: ProviderTemplate[] = [];
-  for (const item of value) {
-    if (!isRecord(item)) continue;
-    if (typeof item.id !== "string" || typeof item.name !== "string") continue;
-    templates.push({
-      id: item.id,
-      name: item.name,
-      description: typeof item.description === "string" ? item.description : "",
-      type: (typeof item.type === "string" ? item.type : "openai_legacy") as ProviderType,
-      base_url: typeof item.base_url === "string" ? item.base_url : "",
-      default_models: Array.isArray(item.default_models)
-        ? item.default_models.filter(
-            (m: unknown) => isRecord(m) && typeof m.model === "string",
-          ).map((m: Record<string, unknown>) => ({
-            model: m.model as string,
-            max_context_size: typeof m.max_context_size === "number" ? m.max_context_size : 0,
-            capabilities: Array.isArray(m.capabilities) ? m.capabilities.filter((c: unknown) => typeof c === "string") : [],
-          }))
-        : [],
-    });
-  }
-  return templates.length > 0 ? templates : undefined;
 }
 
 function parseFavorites(value: unknown): PanelSettings["favorites"] {

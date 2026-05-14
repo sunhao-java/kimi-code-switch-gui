@@ -72,25 +72,19 @@ export function getAppDerivedData(
     }
     return left.label.localeCompare(right.label);
   });
-  const selectedProviderName = selections.provider || providerEntries[0]?.[0] || "";
-  const selectedModelName = selections.model || modelEntries[0]?.[0] || "";
-  const selectedProfileName = selections.profile || profileEntries[0]?.[0] || "";
-  const selectedMcpServerName = selections.mcpServer || mcpEntries[0]?.[0] || "";
+  const selectedProviderName = pickEntryName(selections.provider, providerEntries);
+  const selectedModelName = pickEntryName(selections.model, modelEntries);
+  const selectedProfileName = pickEntryName(selections.profile, profileEntries);
+  const selectedMcpServerName = pickEntryName(selections.mcpServer, mcpEntries);
   const selectedSkillPathId =
     selections.skillPath || skillPathEntries.find((path) => path.selected)?.id || skillPathEntries[0]?.id || "";
   const visibleSkillEntries = skillEntries.filter((skill) => skill.sourcePathId === selectedSkillPathId);
   const selectedSkillId = selections.skill;
 
-  const selectedProviderData =
-    (selections.provider && state.mainConfig.providers[selections.provider]) ||
-    providerEntries[0]?.[1] ||
-    null;
-  const selectedModelData =
-    (selections.model && state.mainConfig.models[selections.model]) || modelEntries[0]?.[1] || null;
-  const selectedProfileData =
-    (selections.profile && state.profiles[selections.profile]) || profileEntries[0]?.[1] || null;
-  const selectedMcpServerData =
-    (selections.mcpServer && state.mcpConfig.mcpServers[selections.mcpServer]) || mcpEntries[0]?.[1] || null;
+  const selectedProviderData = selectedProviderName ? state.mainConfig.providers[selectedProviderName] ?? null : null;
+  const selectedModelData = selectedModelName ? state.mainConfig.models[selectedModelName] ?? null : null;
+  const selectedProfileData = selectedProfileName ? state.profiles[selectedProfileName] ?? null : null;
+  const selectedMcpServerData = selectedMcpServerName ? state.mcpConfig.mcpServers[selectedMcpServerName] ?? null : null;
   const selectedSkillPathData =
     (selectedSkillPathId && skillPathEntries.find((path) => path.id === selectedSkillPathId)) ||
     skillPathEntries[0] ||
@@ -126,4 +120,11 @@ export function getAppDerivedData(
     isProfileNameEditable,
     isMcpServerNameEditable,
   };
+}
+
+function pickEntryName<T>(selection: string, entries: Array<[string, T]>): string {
+  if (selection && entries.some(([name]) => name === selection)) {
+    return selection;
+  }
+  return entries[0]?.[0] ?? "";
 }

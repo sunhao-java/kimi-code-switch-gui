@@ -71,12 +71,12 @@ export function SplitLayout(props: {
               >
                 {props.renderItemLabel ? props.renderItemLabel(item) : props.itemLabel ? props.itemLabel(item) : item}
               </button>
-              {props.dirtyItems?.has(item) ? (
-                <span className="list-dirty-badge" title={props.dirtyLabel} aria-label={props.dirtyLabel}>
-                  <Star size={14} fill="currentColor" />
-                </span>
-              ) : null}
               <div className="list-row-actions">
+                {props.dirtyItems?.has(item) ? (
+                  <span className="list-dirty-badge" title={props.dirtyLabel} aria-label={props.dirtyLabel}>
+                    <Star size={14} fill="currentColor" />
+                  </span>
+                ) : null}
                 {props.copyLabel && props.onCopy ? (
                   <button
                     className="list-copy-button"
