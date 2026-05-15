@@ -913,14 +913,23 @@ async function rememberWindowDisplay(): Promise<void> {
   if (settings.last_display_id === currentDisplay.id) {
     return;
   }
+  const nextSettings: PanelSettings = {
+    ...settings,
+    last_display_id: currentDisplay.id,
+  };
+  markSelfWrite("panel");
   await fileAccess.ensureDir(dirname(DEFAULT_PANEL_SETTINGS_PATH));
   await fileAccess.writeText(
     DEFAULT_PANEL_SETTINGS_PATH,
-    buildPanelSettingsDocument({
-      ...settings,
-      last_display_id: currentDisplay.id,
-    }),
+    buildPanelSettingsDocument(nextSettings),
   );
+  if (latestAppState) {
+    latestAppState = cloneState({
+      ...latestAppState,
+      panelSettings: nextSettings,
+    });
+  }
+  await updateBaseline();
 }
 
 async function handleWindowCloseRequest(): Promise<void> {

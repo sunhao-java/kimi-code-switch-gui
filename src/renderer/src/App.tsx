@@ -123,8 +123,10 @@ export function App(): JSX.Element {
     setQuickSwitcherOpen(false);
     updateState((draft) => {
       applyProfile(draft, profileName);
+    }, {
+      historySummary: formatMessage(t(locale, "historyActivateProfile"), { name: profileName }),
     });
-  }, [updateState]);
+  }, [locale, updateState]);
 
   const tabListRef = useRef<HTMLDivElement>(null);
   const mainTabIds = TAB_ITEMS.map((item) => item.id);
@@ -549,7 +551,11 @@ export function App(): JSX.Element {
                   ...imported.mcpServers,
                 };
                 setSelectedMcpServer(importedNames[0] ?? "");
-              }, { persist: false });
+              }, {
+                persist: false,
+                recordHistory: true,
+                historySummary: t(locale, "mcpImportApply"),
+              });
 
               closeMcpImportDialog();
               setError("");

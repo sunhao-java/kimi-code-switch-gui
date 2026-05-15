@@ -77,8 +77,12 @@ export async function detectExternalChangeConflict(options: {
     }
 
     const diskDocument = actual.exists ? (await readTextIfExists(actual.path)) ?? "" : "";
+    const draftDocument = options.draftDocuments[id] ?? "";
+    if (diskDocument === draftDocument) {
+      continue;
+    }
     const redactedDisk = redactDocumentText(diskDocument).text;
-    const redactedDraft = redactDocumentText(options.draftDocuments[id] ?? "").text;
+    const redactedDraft = redactDocumentText(draftDocument).text;
     changedFiles.push({
       id,
       path: actual.path,

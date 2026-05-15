@@ -1,5 +1,6 @@
 import type { AppState } from "@shared/types";
 import type { DiagnosticsState } from "./overviewDashboard";
+import { clearHistory, getHistory } from "./historyManager";
 import { useStateMutations } from "./useStateMutations";
 
 vi.mock("./tabComponents", () => ({
@@ -7,6 +8,10 @@ vi.mock("./tabComponents", () => ({
   applyAppearanceTheme: vi.fn(),
   applyUiFontSize: vi.fn(),
 }));
+
+beforeEach(() => {
+  clearHistory();
+});
 
 function createState(): AppState {
   return {
@@ -189,6 +194,64 @@ describe("updateState", () => {
     expect(ctx.persistState).toHaveBeenCalledTimes(1);
   });
 
+  it("records persisted changes in history", () => {
+    const ctx = createMockContext();
+    const { updateState } = useStateMutations(ctx);
+
+    updateState((draft) => {
+      draft.mainConfig.default_thinking = false;
+    }, { historySummary: "toggle thinking" });
+
+    const [entry] = getHistory(ctx.setStateValues[0]);
+    expect(entry?.summary).toBe("toggle thinking");
+    expect(entry?.details.length).toBeGreaterThan(0);
+  });
+
+  it("does not record draft changes unless explicitly requested", () => {
+    const ctx = createMockContext();
+    const { updateState } = useStateMutations(ctx);
+
+    updateState(
+      (draft) => {
+        draft.mainConfig.default_thinking = false;
+      },
+      { persist: false },
+    );
+
+    expect(getHistory()).toHaveLength(0);
+  });
+
+  it("records explicit draft history for quick operations like clone", () => {
+    const ctx = createMockContext();
+    const { updateState } = useStateMutations(ctx);
+
+    updateState(
+      (draft) => {
+        draft.mainConfig.providers["provider-copy"] = {
+          ...draft.mainConfig.providers["provider-a"]!,
+        };
+      },
+      { persist: false, recordHistory: true, historySummary: "clone" },
+    );
+
+    expect(getHistory(ctx.setStateValues[0])[0]?.summary).toBe("clone");
+  });
+
+  it("can skip history for persisted restore operations", () => {
+    const ctx = createMockContext();
+    const { updateState } = useStateMutations(ctx);
+
+    updateState(
+      (draft) => {
+        draft.mainConfig.default_thinking = false;
+      },
+      { persist: true, recordHistory: false },
+    );
+
+    expect(ctx.persistState).toHaveBeenCalledTimes(1);
+    expect(getHistory()).toHaveLength(0);
+  });
+
   it("catches updater errors and sets error message", () => {
     const ctx = createMockContext({ locale: "en-US" });
     const { updateState } = useStateMutations(ctx);
@@ -263,6 +326,33 @@ describe("updateImmediateState", () => {
     const [visibleDraft, persistedDraft] = ctx.persistImmediateState.mock.calls[0];
     expect(visibleDraft.activeProfile).toBe("work");
     expect(persistedDraft.activeProfile).toBe("work");
+  });
+
+  it("does not record immediate changes unless explicitly requested", () => {
+    const ctx = createMockContext();
+    const { updateImmediateState } = useStateMutations(ctx);
+
+    updateImmediateState((draft) => {
+      draft.panelSettings.sidebar_collapsed = true;
+    });
+
+    expect(ctx.persistImmediateState).toHaveBeenCalledTimes(1);
+    expect(getHistory()).toHaveLength(0);
+  });
+
+  it("records explicitly requested immediate history", () => {
+    const ctx = createMockContext();
+    const { updateImmediateState } = useStateMutations(ctx);
+
+    updateImmediateState(
+      (draft) => {
+        draft.panelSettings.favorites = { providers: ["provider-a"] };
+      },
+      { recordHistory: true, historySummary: "favorite provider" },
+    );
+
+    const [entry] = getHistory(ctx.persistImmediateState.mock.calls[0][0]);
+    expect(entry?.summary).toBe("favorite provider");
   });
 
   it("uses latest state refs for immediate updates after a synchronous restore", () => {

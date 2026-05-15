@@ -95,8 +95,8 @@ export interface AppContext {
   confirmDialog: ConfirmDialogState | null;
   setConfirmDialog: Dispatch<SetStateAction<ConfirmDialogState | null>>;
   // Handlers
-  updateState: (updater: (draft: AppState) => void, options?: { persist?: boolean }) => void;
-  updateImmediateState: (updater: (draft: AppState) => void) => void;
+  updateState: (updater: (draft: AppState) => void, options?: { persist?: boolean; recordHistory?: boolean; historySummary?: string }) => void;
+  updateImmediateState: (updater: (draft: AppState) => void, options?: { recordHistory?: boolean; historySummary?: string }) => void;
   runAfterUnsavedHandled: (action: () => void | Promise<void>) => void;
   onSave: () => Promise<void>;
   persistState: (nextState: AppState) => Promise<void>;

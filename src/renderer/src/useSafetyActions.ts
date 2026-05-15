@@ -1,4 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
+import type { MutableRefObject } from "react";
 
 import { normalizeStatePaths } from "@shared/configStore";
 import type {
@@ -20,6 +21,7 @@ interface SafetyActionsContext {
   setError: Dispatch<SetStateAction<string>>;
   setNotice: Dispatch<SetStateAction<string>>;
   fileSnapshot: FileSnapshotBundle | null;
+  fileSnapshotRef?: MutableRefObject<FileSnapshotBundle | null>;
   setFileSnapshot: Dispatch<SetStateAction<FileSnapshotBundle | null>>;
   doctorReport: ConfigDoctorReport | null;
   setDoctorReport: Dispatch<SetStateAction<ConfigDoctorReport | null>>;
@@ -56,6 +58,7 @@ export function useSafetyActions(ctx: SafetyActionsContext) {
     setError,
     setNotice,
     fileSnapshot,
+    fileSnapshotRef,
     setFileSnapshot,
     doctorReport,
     setDoctorReport,
@@ -137,8 +140,9 @@ export function useSafetyActions(ctx: SafetyActionsContext) {
     }
 
     const normalizedState = normalizeStatePaths(state);
+    const expectedSnapshot = fileSnapshotRef?.current ?? fileSnapshot ?? undefined;
     const dryRun = await api.restoreBackupDryRun(normalizedState, backupName, {
-      expectedSnapshot: fileSnapshot ?? undefined,
+      expectedSnapshot,
     });
     if (isExternalChangeConflict(dryRun)) {
       const overwrite = await confirmExternalOverwrite(dryRun);
@@ -167,7 +171,7 @@ export function useSafetyActions(ctx: SafetyActionsContext) {
     }
 
     const restored = await api.restoreBackupSafe(normalizedState, backupName, {
-      expectedSnapshot: fileSnapshot ?? undefined,
+      expectedSnapshot,
       allowOverwrite: true,
     });
     if (isExternalChangeConflict(restored)) {

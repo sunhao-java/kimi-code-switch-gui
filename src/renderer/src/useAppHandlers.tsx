@@ -53,9 +53,11 @@ export function useAppHandlers() {
   const locale = state.panelSettings.locale;
   const stateRef = useRef(state);
   const savedStateRef = useRef(savedState);
+  const fileSnapshotRef = useRef<FileSnapshotBundle | null>(fileSnapshot);
 
   stateRef.current = state;
   savedStateRef.current = savedState;
+  fileSnapshotRef.current = fileSnapshot;
 
   const updateStateSnapshot = useCallback<Dispatch<SetStateAction<AppState>>>((nextState) => {
     const resolvedState = typeof nextState === "function"
@@ -71,6 +73,14 @@ export function useAppHandlers() {
       : nextSavedState;
     savedStateRef.current = resolvedSavedState;
     setSavedState(resolvedSavedState);
+  }, []);
+
+  const updateFileSnapshot = useCallback<Dispatch<SetStateAction<FileSnapshotBundle | null>>>((nextSnapshot) => {
+    const resolvedSnapshot = typeof nextSnapshot === "function"
+      ? nextSnapshot(fileSnapshotRef.current)
+      : nextSnapshot;
+    fileSnapshotRef.current = resolvedSnapshot;
+    setFileSnapshot(resolvedSnapshot);
   }, []);
   const {
     confirmDialog,
@@ -109,7 +119,7 @@ export function useAppHandlers() {
     setError,
     setNotice,
     fileSnapshot,
-    setFileSnapshot,
+    setFileSnapshot: updateFileSnapshot,
     doctorReport,
     setDoctorReport,
     currentSelections: {
@@ -142,7 +152,8 @@ export function useAppHandlers() {
     setNotice,
     setDiagnostics,
     fileSnapshot,
-    setFileSnapshot,
+    fileSnapshotRef,
+    setFileSnapshot: updateFileSnapshot,
     setDoctorReport,
     confirmExternalOverwrite,
     refreshPreview,
@@ -267,7 +278,7 @@ export function useAppHandlers() {
       void (async () => {
         try {
           const nextSnapshot = await api.captureSnapshot(state);
-          setFileSnapshot(nextSnapshot);
+          updateFileSnapshot(nextSnapshot);
         } catch { /* snapshot 更新失败不影响通知 */ }
       })();
       setExternalChange(payload);

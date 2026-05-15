@@ -30,7 +30,7 @@ import type {
 } from "@shared/types";
 
 import { AboutPage } from "../aboutPage";
-import { getHistory, undoLast } from "../historyManager";
+import { getHistory, restoreHistoryEntry } from "../historyManager";
 import { getApi, getMcpAction, getMcpActionNotice, getResourceLabel, createUniqueName, renameModelInState, renameProviderInState } from "../appHelpers";
 import {
   APPEARANCE_THEME_OPTIONS,
@@ -270,7 +270,10 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             onActivateProfile={(name) =>
               updateState((draft) => {
                 applyProfile(draft, name);
-              }, { persist: true })
+              }, {
+                persist: true,
+                historySummary: formatMessage(t(locale, "historyActivateProfile"), { name }),
+              })
             }
             onNavigate={(tab) => runAfterUnsavedHandled(() => setActiveTab(tab))}
           />
@@ -294,7 +297,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                 const copyName = createCopyName(name, draft.mainConfig.providers);
                 draft.mainConfig.providers[copyName] = { ...provider };
                 setSelectedProvider(copyName);
-              }, { persist: false })
+              }, {
+                persist: false,
+                recordHistory: true,
+                historySummary: formatMessage(t(locale, "historyCloneProvider"), { name }),
+              })
             }
             addLabel={t(locale, "newProvider")}
             addButtonClassName="action-button compact icon-only"
@@ -309,7 +316,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                   api_key: "",
                 });
                 setSelectedProvider(name);
-              }, { persist: false })
+              }, {
+                persist: false,
+                recordHistory: true,
+                historySummary: formatMessage(t(locale, "historyNewProvider"), { name }),
+              })
             }
             renderItemAction={(name) => (
               <span className="list-row-action-set providers-actions">
@@ -320,7 +331,14 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                   title={state.panelSettings.favorites?.providers?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
                   onClick={(event) => {
                     event.stopPropagation();
-                    updateImmediateState((draft) => { toggleFavorite(draft, "provider", name); });
+                    const isFavorite = state.panelSettings.favorites?.providers?.includes(name) ?? false;
+                    updateImmediateState((draft) => { toggleFavorite(draft, "provider", name); }, {
+                      recordHistory: true,
+                      historySummary: formatMessage(
+                        t(locale, isFavorite ? "historyUnfavoriteProvider" : "historyFavoriteProvider"),
+                        { name },
+                      ),
+                    });
                   }}
                 >
                   <Star size={14} fill={state.panelSettings.favorites?.providers?.includes(name) ? "currentColor" : "none"} />
@@ -357,6 +375,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                     updateState((draft) => {
                       deleteProvider(draft, selectedProviderName);
                       setSelectedProvider(Object.keys(draft.mainConfig.providers)[0] ?? "");
+                    }, {
+                      historySummary: formatMessage(t(locale, "historyDeleteProvider"), { name: selectedProviderName }),
                     });
                   })();
                 }}
@@ -390,7 +410,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                   capabilities: [...model.capabilities],
                 };
                 setSelectedModel(copyName);
-              }, { persist: false })
+              }, {
+                persist: false,
+                recordHistory: true,
+                historySummary: formatMessage(t(locale, "historyCloneModel"), { name }),
+              })
             }
             addLabel={t(locale, "newModel")}
             addButtonClassName="action-button compact icon-only"
@@ -416,7 +440,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                   capabilities: [],
                 });
                 setSelectedModel(name);
-              }, { persist: false })
+              }, {
+                persist: false,
+                recordHistory: true,
+                historySummary: formatMessage(t(locale, "historyNewModel"), { name }),
+              })
             }
           >
             {selectedModelData ? (
@@ -447,6 +475,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                     updateState((draft) => {
                       deleteModel(draft, selectedModelName);
                       setSelectedModel(Object.keys(draft.mainConfig.models)[0] ?? "");
+                    }, {
+                      historySummary: formatMessage(t(locale, "historyDeleteModel"), { name: selectedModelName }),
                     });
                   })();
                 }}
@@ -491,7 +521,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                   merge_all_available_skills: false,
                 });
                 setSelectedProfile(name);
-              }, { persist: false })
+              }, {
+                persist: false,
+                recordHistory: true,
+                historySummary: formatMessage(t(locale, "historyNewProfile"), { name }),
+              })
             }
             renderItemAction={(name) =>
               (
@@ -504,7 +538,14 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       title={state.panelSettings.favorites?.profiles?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
                       onClick={(event) => {
                         event.stopPropagation();
-                        updateImmediateState((draft) => { toggleFavorite(draft, "profile", name); });
+                        const isFavorite = state.panelSettings.favorites?.profiles?.includes(name) ?? false;
+                        updateImmediateState((draft) => { toggleFavorite(draft, "profile", name); }, {
+                          recordHistory: true,
+                          historySummary: formatMessage(
+                            t(locale, isFavorite ? "historyUnfavoriteProfile" : "historyFavoriteProfile"),
+                            { name },
+                          ),
+                        });
                       }}
                     >
                       <Star size={14} fill={state.panelSettings.favorites?.profiles?.includes(name) ? "currentColor" : "none"} />
@@ -522,7 +563,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                           const copyName = createLocalizedCopyName(name, draft.profiles, t(locale, "copySuffix"));
                           cloneProfile(draft, name, copyName, `${profile.label} ${t(locale, "copySuffix")}`);
                           setSelectedProfile(copyName);
-                        }, { persist: false });
+                        }, {
+                          persist: false,
+                          recordHistory: true,
+                          historySummary: formatMessage(t(locale, "historyCloneProfile"), { name }),
+                        });
                       }}
                     >
                       <Copy size={15} />
@@ -555,6 +600,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                           event.stopPropagation();
                           updateState((draft) => {
                             applyProfile(draft, name);
+                          }, {
+                            historySummary: formatMessage(t(locale, "historyActivateProfile"), { name }),
                           });
                         }}
                       >
@@ -626,6 +673,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                 onActivate={() =>
                   updateState((draft) => {
                     applyProfile(draft, selectedProfileName);
+                  }, {
+                    historySummary: formatMessage(t(locale, "historyActivateProfile"), { name: selectedProfileName }),
                   })
                 }
                 onClone={() =>
@@ -633,7 +682,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                     const source = selectedProfileName;
                     cloneProfile(draft, source, `${source}-copy`, `${selectedProfileData.label} ${t(locale, "copySuffix")}`);
                     setSelectedProfile(`${source}-copy`);
-                  }, { persist: false })
+                  }, {
+                    persist: false,
+                    recordHistory: true,
+                    historySummary: formatMessage(t(locale, "historyCloneProfile"), { name: selectedProfileName }),
+                  })
                 }
                 onDelete={() => {
                   void (async () => {
@@ -641,6 +694,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                     updateState((draft) => {
                       deleteProfile(draft, selectedProfileName);
                       setSelectedProfile(Object.keys(draft.profiles)[0] ?? "");
+                    }, {
+                      historySummary: formatMessage(t(locale, "historyDeleteProfile"), { name: selectedProfileName }),
                     });
                   })();
                 }}
@@ -665,7 +720,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                 const name = createUniqueName("mcp", Object.keys(draft.mcpConfig.mcpServers));
                 draft.mcpConfig.mcpServers[name] = createDefaultMcpServer();
                 setSelectedMcpServer(name);
-              }, { persist: false })
+              }, {
+                persist: false,
+                recordHistory: true,
+                historySummary: formatMessage(t(locale, "historyNewMcpServer"), { name }),
+              })
             }
             headerActions={
               <>
@@ -708,6 +767,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                         const target = draft.mcpConfig.mcpServers[name];
                         if (!target) return;
                         target.enabled = !target.enabled;
+                      }, {
+                        historySummary: formatMessage(
+                          t(locale, server.enabled ? "historyDisableMcpServer" : "historyEnableMcpServer"),
+                          { name },
+                        ),
                       })
                     }
                   >
@@ -726,6 +790,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                           if (selectedMcpServer === name) {
                             setSelectedMcpServer(Object.keys(draft.mcpConfig.mcpServers)[0] ?? "");
                           }
+                        }, {
+                          historySummary: formatMessage(t(locale, "historyDeleteMcpServer"), { name }),
                         });
                       })();
                     }}
@@ -799,6 +865,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       updateState((draft) => {
                         delete draft.mcpConfig.mcpServers[selectedMcpServerName];
                         setSelectedMcpServer(Object.keys(draft.mcpConfig.mcpServers)[0] ?? "");
+                      }, {
+                        historySummary: formatMessage(t(locale, "historyDeleteMcpServer"), { name: selectedMcpServerName }),
                       });
                     })();
                   }}
@@ -1385,7 +1453,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             ) : null}
             {activeSettingsSubTab === "history" ? (
               <SettingsGroup title={t(locale, "historyTitle")} className="settings-group-wide">
-                <HistoryPanel locale={locale} updateState={updateState} />
+                <HistoryPanel locale={locale} state={state} updateState={updateState} />
               </SettingsGroup>
             ) : null}
           </section>
@@ -1409,7 +1477,10 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                 draft.mainConfig.models = next.mainConfig.models;
                 draft.profiles = next.profiles;
                 draft.mcpConfig.mcpServers = next.mcpConfig.mcpServers;
-              }, { persist: true });
+              }, {
+                persist: true,
+                historySummary: t(locale, "historyImportConfig"),
+              });
               setImportDialog({ open: false, preview: null, data: null, strategy: "skip" });
               setNotice(t(locale, "importSuccess"));
             }}
@@ -1550,15 +1621,20 @@ function ImportPreviewDialog(props: {
 
 function HistoryPanel(props: {
   locale: Locale;
-  updateState: (updater: (draft: AppState) => void, options?: { persist?: boolean }) => void;
+  state: AppState;
+  updateState: (updater: (draft: AppState) => void, options?: { persist?: boolean; recordHistory?: boolean; historySummary?: string }) => void;
 }): JSX.Element {
   const [, forceUpdate] = useState(0);
-  const history = getHistory();
+  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
+  const history = getHistory(props.state);
 
-  const handleUndo = (): void => {
-    const previous = undoLast();
+  const handleUndo = (entryId: string): void => {
+    const previous = restoreHistoryEntry(entryId);
     if (previous) {
-      props.updateState(() => previous, { persist: true });
+      props.updateState((draft) => {
+        Object.assign(draft, previous);
+      }, { persist: true, recordHistory: false });
+      setExpandedEntryId(null);
       forceUpdate((n) => n + 1);
     }
   };
@@ -1569,20 +1645,72 @@ function HistoryPanel(props: {
 
   return (
     <div className="history-panel">
-      {history.map((entry, index) => (
-        <div key={entry.timestamp} className="history-entry">
-          <div className="history-entry-info">
-            <span className="history-entry-time">{new Date(entry.timestamp).toLocaleTimeString()}</span>
-            <span className="history-entry-summary">{entry.summary}</span>
-          </div>
-          {index === 0 ? (
-            <button type="button" className="action-button" onClick={handleUndo}>
+      {history.map((entry) => (
+        <div key={entry.id} className="history-entry">
+          <div className="history-entry-main">
+            <button
+              type="button"
+              className="history-entry-info"
+              onClick={() => setExpandedEntryId((current) => current === entry.id ? null : entry.id)}
+              aria-expanded={expandedEntryId === entry.id}
+            >
+              <span className="history-entry-time">{new Date(entry.timestamp).toLocaleTimeString()}</span>
+              <span className="history-entry-summary">{entry.summary}</span>
+              <span className="history-entry-count">
+                {formatMessage(t(props.locale, "historyChangesCount"), {
+                  count: entry.details.reduce((total, detail) => total + detail.changeCount, 0),
+                })}
+              </span>
+              <span className="history-entry-view">
+                {expandedEntryId === entry.id ? t(props.locale, "historyHideDetails") : t(props.locale, "historyViewDetails")}
+              </span>
+            </button>
+            <button type="button" className="action-button compact" onClick={() => handleUndo(entry.id)}>
               <RotateCcw size={14} />
               <span>{t(props.locale, "historyUndo")}</span>
             </button>
+          </div>
+          {expandedEntryId === entry.id ? (
+            <div className="history-entry-details">
+              {entry.details.length > 0 ? entry.details.map((detail) => (
+                <section className="history-detail" key={detail.id}>
+                  <div className="history-detail-title">
+                    <span>{detail.title}</span>
+                    <small>
+                      {formatMessage(t(props.locale, "historyChangesCount"), { count: detail.changeCount })}
+                    </small>
+                  </div>
+                  <div className="history-detail-diff" role="table" aria-label={detail.title}>
+                    {renderHistoryDiffLines(detail.diff)}
+                  </div>
+                </section>
+              )) : (
+                <div className="command-palette-empty">{t(props.locale, "historyNoDetails")}</div>
+              )}
+            </div>
           ) : null}
         </div>
       ))}
     </div>
   );
+}
+
+function renderHistoryDiffLines(diff: string): JSX.Element[] {
+  return (diff ? diff.split("\n") : []).map((line, index) => {
+    const kind = line.startsWith("+ ")
+      ? "added"
+      : line.startsWith("- ")
+        ? "removed"
+        : "context";
+    const marker = kind === "added" ? "+" : kind === "removed" ? "-" : "";
+    const content = line.startsWith("+ ") || line.startsWith("- ") || line.startsWith("  ")
+      ? line.slice(2)
+      : line;
+    return (
+      <div className={`history-diff-line ${kind}`} role="row" key={`${index}-${line}`}>
+        <span className="history-diff-gutter" role="cell">{marker}</span>
+        <code className="history-diff-code" role="cell">{content || " "}</code>
+      </div>
+    );
+  });
 }

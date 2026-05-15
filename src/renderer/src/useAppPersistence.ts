@@ -1,10 +1,10 @@
 import { useCallback } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import type { MutableRefObject } from "react";
 
 import { cloneState, normalizeStatePaths } from "@shared/configStore";
 import type { AppState, ConfigDoctorReport, FileSnapshotBundle, Locale, PreviewBundle, SaveStateConflictResult } from "@shared/types";
 import { getApi } from "./appHelpers";
-import { pushSnapshot } from "./historyManager";
 import { translateError } from "./i18n";
 import type { DiagnosticsState } from "./overviewDashboard";
 import { applyPrimarySelections, getDefaultPrimarySelections, getRetainedPrimarySelections } from "./primarySelections";
@@ -22,6 +22,7 @@ interface AppPersistenceContext {
   setNotice: Dispatch<SetStateAction<string>>;
   setDiagnostics: Dispatch<SetStateAction<DiagnosticsState>>;
   fileSnapshot: FileSnapshotBundle | null;
+  fileSnapshotRef?: MutableRefObject<FileSnapshotBundle | null>;
   setFileSnapshot: Dispatch<SetStateAction<FileSnapshotBundle | null>>;
   setDoctorReport: Dispatch<SetStateAction<ConfigDoctorReport | null>>;
   confirmExternalOverwrite: (conflict: SaveStateConflictResult) => Promise<boolean>;
@@ -51,6 +52,7 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     setNotice,
     setDiagnostics,
     fileSnapshot,
+    fileSnapshotRef,
     setFileSnapshot,
     setDoctorReport,
     confirmExternalOverwrite,
@@ -157,8 +159,9 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     }
     try {
       const normalized = normalizeStatePaths(nextState);
+      const expectedSnapshot = fileSnapshotRef?.current ?? fileSnapshot ?? undefined;
       const saveResult = api.saveStateSafe
-        ? await api.saveStateSafe(normalized, { expectedSnapshot: fileSnapshot ?? undefined })
+        ? await api.saveStateSafe(normalized, { expectedSnapshot })
         : await api.saveState(normalized);
       if (isExternalChangeConflict(saveResult)) {
         const overwrite = await confirmExternalOverwrite(saveResult);
@@ -168,7 +171,7 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
           return;
         }
         const overwriteResult = api.saveStateSafe
-          ? await api.saveStateSafe(normalized, { expectedSnapshot: fileSnapshot ?? undefined, allowOverwrite: true })
+          ? await api.saveStateSafe(normalized, { expectedSnapshot, allowOverwrite: true })
           : await api.saveState(normalized);
         if (isExternalChangeConflict(overwriteResult)) {
           setFileSnapshot(overwriteResult.snapshot);
@@ -202,6 +205,7 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
   }, [
     confirmExternalOverwrite,
     fileSnapshot,
+    fileSnapshotRef,
     locale,
     refreshSkills,
     savedState,
@@ -219,11 +223,8 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     if (!state) {
       return;
     }
-    if (savedState) {
-      pushSnapshot(savedState, "save");
-    }
     await persistState(state);
-  }, [persistState, state, savedState]);
+  }, [persistState, state]);
 
   const persistImmediateState = useCallback(async (
     nextVisibleState: AppState,
@@ -251,8 +252,9 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     setNotice("");
 
     try {
+      const expectedSnapshot = fileSnapshotRef?.current ?? fileSnapshot ?? undefined;
       const saveResult = api.saveStateSafe
-        ? await api.saveStateSafe(normalizedSavedState, { expectedSnapshot: fileSnapshot ?? undefined })
+        ? await api.saveStateSafe(normalizedSavedState, { expectedSnapshot })
         : await api.saveState(normalizedSavedState);
       if (isExternalChangeConflict(saveResult)) {
         const overwrite = await confirmExternalOverwrite(saveResult);
@@ -263,7 +265,7 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
           return;
         }
         const overwriteResult = api.saveStateSafe
-          ? await api.saveStateSafe(normalizedSavedState, { expectedSnapshot: fileSnapshot ?? undefined, allowOverwrite: true })
+          ? await api.saveStateSafe(normalizedSavedState, { expectedSnapshot, allowOverwrite: true })
           : await api.saveState(normalizedSavedState);
         if (isExternalChangeConflict(overwriteResult)) {
           setFileSnapshot(overwriteResult.snapshot);
@@ -302,6 +304,7 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
   }, [
     confirmExternalOverwrite,
     fileSnapshot,
+    fileSnapshotRef,
     locale,
     refreshPreview,
     refreshSkills,
