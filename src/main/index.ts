@@ -60,6 +60,11 @@ import type {
   SaveStateResult,
 } from "@shared/types";
 
+if (process.platform === "darwin") {
+  // Suppress noisy Chromium CoreVideo display-link errors caused by transient macOS display states.
+  app.commandLine.appendSwitch("log-level", "3");
+}
+
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let rememberDisplayTimer: NodeJS.Timeout | null = null;
