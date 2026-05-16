@@ -216,11 +216,11 @@ npm run dist:win
 
 仓库内置 [`.github/workflows/release.yml`](.github/workflows/release.yml)。
 
-推送形如 `v1.1.5` 的 tag 后，工作流会安装依赖、运行测试、构建 macOS / Windows 安装包、生成 SHA256 校验文件，并上传到 GitHub Release。
+推送形如 `v1.1.6` 的 tag 后，工作流会安装依赖、运行测试、构建 macOS / Windows 安装包、生成 SHA256 校验文件，并上传到 GitHub Release。
 
 ## 当前版本
 
-- 应用版本：`1.1.5`
+- 应用版本：`1.1.6`
 - 变更记录：[CHANGELOG.md](CHANGELOG.md)
 
 ## 参与开发

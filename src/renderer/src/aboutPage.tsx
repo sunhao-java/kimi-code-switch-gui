@@ -26,7 +26,7 @@ interface UpdateCheckResult {
 }
 
 export const ABOUT_INFO = {
-  version: "1.1.5",
+  version: "1.1.6",
   author: "Hulk Sun",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",
@@ -187,6 +187,14 @@ function aboutText(
       "ja-JP": "GitHub API のレート制限に達しました。Release ページを手動で確認してください。",
       "de-DE": "GitHub-API-Rate-Limit überschritten. Bitte prüfe die Release-Seite manuell.",
       "es-ES": "Se superó el límite de la API de GitHub. Revisa la página de releases manualmente.",
+    },
+    historyV116: {
+      "zh-CN": "新增更新检查、配置导入导出、Profile 对比、全局搜索、快捷切换和变更历史，并修复跨机器恢复 Profile、托盘图标开关立即生效及错误边界测试问题。",
+      "zh-TW": toTraditionalChinese("新增更新检查、配置导入导出、Profile 对比、全局搜索、快捷切换和变更历史，并修复跨机器恢复 Profile、托盘图标开关立即生效及错误边界测试问题。"),
+      "en-US": "Added update controls, config import/export, Profile comparison, global search, quick switch, and change history, with fixes for cross-machine Profile restore, immediate tray toggling, and ErrorBoundary tests.",
+      "ja-JP": "更新操作、設定のインポート/エクスポート、Profile 比較、グローバル検索、クイックスイッチ、変更履歴を追加し、別マシン復元時の Profile、トレイ切り替え、ErrorBoundary テストを修正しました。",
+      "de-DE": "Ergänzt Update-Steuerung, Konfigurationsimport/-export, Profilvergleich, globale Suche, Schnellwechsel und Änderungsverlauf sowie Fixes für Profilwiederherstellung, Tray-Umschaltung und ErrorBoundary-Tests.",
+      "es-ES": "Añade controles de actualización, importación/exportación, comparación de perfiles, búsqueda global, cambio rápido e historial, y corrige restauración de perfiles, bandeja y pruebas de ErrorBoundary.",
     },
     historyV115: {
       "zh-CN": "修复 Homebrew 打包后 iTerm2 打开 Kimi 依赖 System Events 发送按键导致权限失败的问题。",
@@ -821,6 +829,11 @@ export function AboutPage(props: {
   const historyText = (version: string): string =>
     historyTexts[version]?.[props.locale] ?? historyTexts[version]?.["en-US"] ?? "";
   const history = [
+    {
+      version: "v1.1.6",
+      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.6`,
+      text: aboutText(props.locale, "historyV116"),
+    },
     {
       version: "v1.1.5",
       url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.5`,
