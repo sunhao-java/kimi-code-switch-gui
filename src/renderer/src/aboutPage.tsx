@@ -26,7 +26,7 @@ interface UpdateCheckResult {
 }
 
 export const ABOUT_INFO = {
-  version: "1.1.6",
+  version: "1.1.7",
   author: "Hulk Sun",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",
@@ -187,6 +187,14 @@ function aboutText(
       "ja-JP": "GitHub API のレート制限に達しました。Release ページを手動で確認してください。",
       "de-DE": "GitHub-API-Rate-Limit überschritten. Bitte prüfe die Release-Seite manuell.",
       "es-ES": "Se superó el límite de la API de GitHub. Revisa la página de releases manualmente.",
+    },
+    historyV117: {
+      "zh-CN": "恢复发布流水线依赖的 Homebrew cask 渲染脚本，修复 tag 发布后 tap 更新阶段失败的问题。",
+      "zh-TW": toTraditionalChinese("恢复发布流水线依赖的 Homebrew cask 渲染脚本，修复 tag 发布后 tap 更新阶段失败的问题。"),
+      "en-US": "Restored the Homebrew cask rendering script required by the release workflow, fixing tap update failures after tag releases.",
+      "ja-JP": "リリースワークフローに必要な Homebrew cask 生成スクリプトを復元し、タグ公開後の tap 更新失敗を修正しました。",
+      "de-DE": "Stellt das für den Release-Workflow benötigte Homebrew-Cask-Rendering-Skript wieder her und behebt Tap-Update-Fehler nach Tag-Releases.",
+      "es-ES": "Restaura el script de renderizado del cask de Homebrew requerido por el flujo de release y corrige fallos al actualizar el tap tras publicar tags.",
     },
     historyV116: {
       "zh-CN": "新增更新检查、配置导入导出、Profile 对比、全局搜索、快捷切换和变更历史，并修复跨机器恢复 Profile、托盘图标开关立即生效及错误边界测试问题。",
@@ -829,6 +837,11 @@ export function AboutPage(props: {
   const historyText = (version: string): string =>
     historyTexts[version]?.[props.locale] ?? historyTexts[version]?.["en-US"] ?? "";
   const history = [
+    {
+      version: "v1.1.7",
+      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.7`,
+      text: aboutText(props.locale, "historyV117"),
+    },
     {
       version: "v1.1.6",
       url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.6`,

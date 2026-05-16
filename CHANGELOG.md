@@ -4,6 +4,12 @@
 
 格式参考 Keep a Changelog，当前项目采用 `major.minor.patch` 版本号方案。
 
+## [1.1.7] - 2026-05-16
+
+### 修复
+
+- 恢复发布流水线依赖的 `scripts/render_homebrew_cask.py`，修复 Homebrew tap 更新阶段无法渲染 cask 的问题。
+
 ## [1.1.6] - 2026-05-16
 
 ### 新增
