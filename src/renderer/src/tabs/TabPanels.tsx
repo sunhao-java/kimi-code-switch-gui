@@ -1054,6 +1054,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                           draft.panelSettings.tray_icon = enabled;
                           draft.panelSettings.close_behavior = enabled ? "keep-in-tray" : "quit";
                         });
+                        void getApi()?.setTray?.(enabled).catch((trayError: unknown) => {
+                          const message = trayError instanceof Error ? trayError.message : String(trayError);
+                          setNotice("");
+                          setError(translateError(locale, message));
+                        });
                       }}
                     />
                   </label>

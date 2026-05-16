@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { ErrorBoundary } from "./ErrorBoundary";
 
 function ThrowingComponent({ shouldThrow }: { shouldThrow: boolean }) {
@@ -56,7 +55,6 @@ describe("ErrorBoundary", () => {
 
   it("retry button clears error state", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const user = userEvent.setup();
 
     const { rerender } = render(
       <ErrorBoundary locale="en-US">
@@ -66,14 +64,14 @@ describe("ErrorBoundary", () => {
 
     expect(screen.getByText("Test error")).toBeDefined();
 
-    const retryButton = screen.getByText("Try again");
-    await user.click(retryButton);
-
     rerender(
       <ErrorBoundary locale="en-US">
         <ThrowingComponent shouldThrow={false} />
       </ErrorBoundary>,
     );
+
+    const retryButton = screen.getByText("Try Again");
+    fireEvent.click(retryButton);
 
     expect(screen.getByText("Child rendered")).toBeDefined();
     consoleSpy.mockRestore();
