@@ -1,6 +1,5 @@
 .DS_Store
 .claude
-.workflow
 node_modules
 dist
 dist-electron
@@ -9,6 +8,3 @@ release
 coverage
 *.log
 .deepseek
-.sisyphus
-kimi-launch.sh
-.summaries
