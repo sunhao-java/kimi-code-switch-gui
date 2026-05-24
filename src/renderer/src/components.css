@@ -1274,6 +1274,7 @@ textarea:focus-visible {
 }
 
 .summary-card {
+  position: relative;
   display: block;
   width: 100%;
   text-align: left;
@@ -1288,11 +1289,52 @@ textarea:focus-visible {
     0 10px 26px rgba(2, 8, 18, 0.1),
     inset 0 1px 0 rgba(255, 255, 255, 0.035);
   color: var(--text);
+  overflow: hidden;
   transition:
     border-color 0.2s,
     box-shadow 0.2s,
     transform 0.2s,
     background-color 0.2s;
+}
+
+.summary-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 20px 20px 0 0;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.summary-grid > .summary-card:nth-child(1)::before {
+  background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+}
+
+.summary-grid > .summary-card:nth-child(2)::before {
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+}
+
+.summary-grid > .summary-card:nth-child(3)::before {
+  background: linear-gradient(90deg, #10b981, #34d399);
+}
+
+.summary-grid > .summary-card:nth-child(4)::before {
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+
+.summary-grid > .summary-card:nth-child(5)::before {
+  background: linear-gradient(90deg, #06b6d4, #22d3ee);
+}
+
+.summary-grid > .summary-card:nth-child(6)::before {
+  background: linear-gradient(90deg, rgba(var(--primary-rgb), 1), rgba(var(--primary-2-rgb), 1));
+}
+
+.summary-card-clickable:hover::before {
+  opacity: 1;
 }
 
 :root[data-theme="light"] .summary-card {
@@ -1310,10 +1352,11 @@ textarea:focus-visible {
 }
 
 .summary-card-clickable:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
   border-color: rgba(var(--primary-rgb), 0.36);
   box-shadow:
     0 14px 32px rgba(2, 8, 18, 0.15),
+    0 8px 24px rgba(0, 0, 0, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 

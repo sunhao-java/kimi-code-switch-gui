@@ -51,7 +51,9 @@
 .tab-panel-shell > .overview-grid,
 .tab-panel-shell > .split-layout,
 .tab-panel-shell > .settings-grid,
-.tab-panel-shell > .about-page {
+.tab-panel-shell > .about-page,
+.tab-panel-shell > .insights-dashboard,
+.tab-panel-shell > .insights-dashboard-empty {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
