@@ -15,6 +15,7 @@
     "preview": "vite preview",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
+    "postinstall": "electron-builder install-app-deps",
     "dist": "npm run build && electron-builder --publish never",
     "dist:mac": "npm run build && electron-builder --publish never --mac dmg zip",
     "dist:win": "npm run build && electron-builder --publish never --win nsis portable"
@@ -23,7 +24,6 @@
     "@iarna/toml": "^2.2.5",
     "better-sqlite3": "^12.10.0",
     "lucide-react": "^0.511.0",
-    "mockttp": "^4.4.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^2.15.4"
@@ -58,6 +58,10 @@
     "files": [
       "out/**/*",
       "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**",
+      "**/*.node"
     ],
     "extraResources": [
       {

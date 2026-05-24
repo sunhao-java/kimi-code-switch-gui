@@ -36,7 +36,27 @@ import type {
 type BreakdownOrder = "tokens" | "calls" | "errors" | "avg_latency_ms" | "cache_hit_rate";
 
 type InitialRendererTheme = "dark" | "light";
-type InitialAppearanceTheme = "aurora" | "ocean" | "violet" | "sunset";
+type InitialAppearanceTheme =
+  | "aurora"
+  | "ocean"
+  | "violet"
+  | "sunset"
+  | "forest"
+  | "sakura"
+  | "mint"
+  | "cosmos"
+  | "amber";
+const APPEARANCE_THEMES: readonly InitialAppearanceTheme[] = [
+  "aurora",
+  "ocean",
+  "violet",
+  "sunset",
+  "forest",
+  "sakura",
+  "mint",
+  "cosmos",
+  "amber",
+];
 type PreloadDocument = {
   documentElement: {
     dataset: {
@@ -55,7 +75,9 @@ function readInitialRendererTheme(): InitialRendererTheme {
 function readInitialAppearanceTheme(): InitialAppearanceTheme {
   const prefix = "--kimi-appearance-theme=";
   const value = process.argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length);
-  return value === "ocean" || value === "violet" || value === "sunset" ? value : "aurora";
+  return APPEARANCE_THEMES.includes(value as InitialAppearanceTheme)
+    ? (value as InitialAppearanceTheme)
+    : "aurora";
 }
 
 function applyInitialRendererTheme(): void {
