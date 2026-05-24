@@ -952,7 +952,14 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
         ) : null}
 
         {activeTab === "insights" ? (
-          <InsightsDashboard locale={locale} onStateChange={() => void loadState()} />
+          <InsightsDashboard
+            locale={locale}
+            onStateChange={() => void loadState()}
+            onOpenSettings={() => runAfterUnsavedHandled(() => {
+              setActiveSettingsSubTab("insights");
+              setActiveTab("settings");
+            })}
+          />
         ) : null}
 
         {activeTab === "settings" ? (

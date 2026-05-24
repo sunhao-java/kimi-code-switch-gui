@@ -1,7 +1,7 @@
 export type Locale = "zh-CN" | "zh-TW" | "en-US" | "ja-JP" | "de-DE" | "es-ES";
 export type LocalizedText = Partial<Record<Locale, string>> & Record<"en-US", string>;
 export type AppearanceMode = "auto" | "dark" | "light";
-export type AppearanceTheme = "aurora" | "ocean" | "violet" | "sunset";
+export type AppearanceTheme = "aurora" | "ocean" | "violet" | "sunset" | "forest" | "sakura" | "mint" | "cosmos" | "amber";
 export type UiFontSize = "mini" | "compact" | "small" | "standard" | "large" | "extra-large";
 export type DisplayOpenMode = "random" | "remember-last" | "active-display";
 export type CloseBehavior = "quit" | "keep-in-tray";

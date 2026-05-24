@@ -697,12 +697,24 @@ function parseLocale(value: unknown, fallback: PanelSettings["locale"]): PanelSe
     : fallback;
 }
 
+const APPEARANCE_THEMES: ReadonlySet<PanelSettings["appearance_theme"]> = new Set([
+  "aurora",
+  "ocean",
+  "violet",
+  "sunset",
+  "forest",
+  "sakura",
+  "mint",
+  "cosmos",
+  "amber",
+]);
+
 function parseAppearanceTheme(
   value: unknown,
   fallback: PanelSettings["appearance_theme"],
 ): PanelSettings["appearance_theme"] {
-  return value === "aurora" || value === "ocean" || value === "violet" || value === "sunset"
-    ? value
+  return typeof value === "string" && APPEARANCE_THEMES.has(value as PanelSettings["appearance_theme"])
+    ? (value as PanelSettings["appearance_theme"])
     : fallback;
 }
 

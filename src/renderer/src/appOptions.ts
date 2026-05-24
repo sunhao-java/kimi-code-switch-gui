@@ -14,8 +14,8 @@ import type {
   UiFontSize,
 } from "@shared/types";
 import {
-  Boxes, Droplets, FileText, Flame, Globe, Info, Layers3, MonitorCog, MoonStar,
-  Palette, Settings2, Sparkles, SunMedium, TrendingUp, Zap,
+  Boxes, Cherry, Droplets, FileText, Flame, Globe, Info, Layers3, Leaf, MonitorCog, MoonStar,
+  Palette, Settings2, Snowflake, Sparkles, Star, SunMedium, TreePine, TrendingUp, Zap,
 } from "lucide-react";
 
 export type TabId = "overview" | "profiles" | "providers" | "models" | "mcp" | "skills" | "insights" | "settings" | "about";
@@ -112,6 +112,31 @@ export const APPEARANCE_THEME_OPTIONS: Array<{
     value: "sunset",
     icon: Flame,
     label: { "zh-CN": "日落", "zh-TW": "日落", "en-US": "Sunset", "ja-JP": "夕焼け", "de-DE": "Sonnenuntergang", "es-ES": "Atardecer" },
+  },
+  {
+    value: "forest",
+    icon: TreePine,
+    label: { "zh-CN": "森林", "zh-TW": "森林", "en-US": "Forest", "ja-JP": "フォレスト", "de-DE": "Wald", "es-ES": "Bosque" },
+  },
+  {
+    value: "sakura",
+    icon: Cherry,
+    label: { "zh-CN": "樱花", "zh-TW": "櫻花", "en-US": "Sakura", "ja-JP": "桜", "de-DE": "Kirschblüte", "es-ES": "Sakura" },
+  },
+  {
+    value: "mint",
+    icon: Leaf,
+    label: { "zh-CN": "薄荷", "zh-TW": "薄荷", "en-US": "Mint", "ja-JP": "ミント", "de-DE": "Minze", "es-ES": "Menta" },
+  },
+  {
+    value: "cosmos",
+    icon: Star,
+    label: { "zh-CN": "星空", "zh-TW": "星空", "en-US": "Cosmos", "ja-JP": "コスモス", "de-DE": "Kosmos", "es-ES": "Cosmos" },
+  },
+  {
+    value: "amber",
+    icon: Snowflake,
+    label: { "zh-CN": "琥珀", "zh-TW": "琥珀", "en-US": "Amber", "ja-JP": "アンバー", "de-DE": "Bernstein", "es-ES": "Ámbar" },
   },
 ];
 

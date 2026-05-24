@@ -345,9 +345,10 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
 interface InsightsDashboardProps {
   locale: Locale;
   onStateChange?: () => void;
+  onOpenSettings?: () => void;
 }
 
-export function InsightsDashboard({ locale, onStateChange }: InsightsDashboardProps): JSX.Element {
+export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: InsightsDashboardProps): JSX.Element {
   const [activeTab, setActiveTab] = useState<"overview" | "trend" | "breakdown" | "sessions">("overview");
   const [settings, setSettings] = useState<InsightsSettings | null>(null);
   const [overview, setOverview] = useState<{
@@ -427,6 +428,11 @@ export function InsightsDashboard({ locale, onStateChange }: InsightsDashboardPr
           洞察功能通过解析 kimi-cli 日志自动统计 Token 用量、调用趋势和会话分析。
           <br />请前往「设置 → 用量洞察」开启洞察采集。
         </p>
+        {onOpenSettings ? (
+          <button onClick={onOpenSettings} className="insights-button-primary" style={{ marginTop: "16px" }}>
+            前往设置开启
+          </button>
+        ) : null}
       </div>
     );
   }
