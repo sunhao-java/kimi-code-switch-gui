@@ -13,7 +13,7 @@ import {
 const DEBOUNCE_MS = 1500;
 const POLL_INTERVAL_MS = 3000;
 const WATCHER_RECHECK_MS = 10000;
-const SELF_WRITE_GRACE_MS = POLL_INTERVAL_MS + DEBOUNCE_MS;
+const SELF_WRITE_GRACE_MS = 8000; // 增加到 8 秒以确保覆盖所有自写场景
 
 interface FileWatchState {
   watcher: FSWatcher | null;

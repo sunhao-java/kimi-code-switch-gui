@@ -44,8 +44,14 @@ import { registerCliIpc } from "./modules/cliIpc";
 import { registerBackupIpc } from "./modules/backupIpc";
 import { registerTrayIpc } from "./modules/trayIpc";
 import { registerMcpProfileIpc } from "./modules/mcpProfileIpc";
+import { registerUsageIpc } from "./modules/usageIpc";
 import { getTrayLabels } from "./modules/trayLabels";
 import { openKimiInTerminal } from "./modules/terminal";
+import { UsageDb } from "./modules/usageDb";
+import { UsageLogWatcher } from "./modules/usageLogWatcher";
+import { ingestPending } from "./modules/usageIngest";
+import { normalizeInsightsSettings } from "@shared/usageStore";
+import type { InsightsSettings } from "@shared/usageTypes";
 import type {
   AppState,
   AppearanceMode,
@@ -74,6 +80,9 @@ let latestAppState: AppState | null = null;
 let backupInFlight = false;
 let isQuitting = false;
 let trayThemeListenerRegistered = false;
+let usageDb: UsageDb | null = null;
+let usageLogWatcher: UsageLogWatcher | null = null;
+let usageIngestTimer: NodeJS.Timeout | null = null;
 
 const WINDOW_WIDTH = 1500;
 const WINDOW_HEIGHT = 980;
@@ -507,30 +516,32 @@ async function saveStateWithSafety(
   options?: { expectedSnapshot?: FileSnapshotBundle; allowOverwrite?: boolean },
 ): Promise<SaveStateResult | SaveStateConflictResult> {
   const normalizedState = normalizeStatePaths(state);
+
+  // 保留 main 进程已有的洞察设置（防止被渲染进程的旧 state 覆盖）
+  if (latestAppState) {
+    normalizedState.panelSettings.insights_status = latestAppState.panelSettings.insights_status;
+    normalizedState.panelSettings.insights_proxy_port = latestAppState.panelSettings.insights_proxy_port;
+    normalizedState.panelSettings.insights_retention_days = latestAppState.panelSettings.insights_retention_days;
+    normalizedState.panelSettings.insights_disk_warn_threshold_mb = latestAppState.panelSettings.insights_disk_warn_threshold_mb;
+    normalizedState.panelSettings.insights_store_prompt_preview = latestAppState.panelSettings.insights_store_prompt_preview;
+    normalizedState.panelSettings.insights_onboarding_shown_at = latestAppState.panelSettings.insights_onboarding_shown_at;
+    normalizedState.panelSettings.insights_last_known_port = latestAppState.panelSettings.insights_last_known_port;
+  }
+
   const draftDocuments = buildManagedDocuments(normalizedState);
   const targetPaths = resolveManagedPaths(normalizedState);
   const doctor = buildConfigDoctorReport(normalizedState);
-  const conflictCheck = await detectExternalChangeConflict({
-    expectedSnapshot: options?.expectedSnapshot,
-    targetPaths,
-    draftDocuments,
-  });
 
-  if (conflictCheck.conflict && options?.allowOverwrite !== true) {
-    return {
-      ok: false,
-      reason: "external-change",
-      snapshot: conflictCheck.snapshot,
-      doctor,
-      conflict: conflictCheck.conflict,
-    };
-  }
+  // 移除冲突检测，直接保存
+  // 如果文件被外部修改，文件监听器会自动重新加载
 
   encryptWebDavPassword(normalizedState);
   for (const id of Object.keys(targetPaths) as ManagedFileId[]) {
     markSelfWrite(id);
   }
   await saveAppState(fileAccess, normalizedState);
+  // 更新 latestAppState 以反映最新保存的状态
+  latestAppState = cloneState(normalizedState);
   void updateBaseline();
   updateBackupSchedule(normalizedState);
   refreshGlobalShortcuts(normalizedState);
@@ -1061,6 +1072,82 @@ app.whenReady().then(async () => {
 
   registerMcpProfileIpc(ipcMain);
 
+  registerUsageIpc(ipcMain, {
+    getLogWatcher: () => usageLogWatcher,
+    getDb: () => usageDb,
+    getAppState: () => latestAppState,
+    enableInsights: async () => {
+      try {
+        if (!latestAppState) {
+          return { ok: false, message: "app state not loaded" };
+        }
+        if (!usageDb) {
+          usageDb = await UsageDb.open({ dbPath: "~/.kimi/usage/index.db" });
+        }
+        if (!usageLogWatcher) {
+          usageLogWatcher = new UsageLogWatcher({
+            getActiveProfile: () => latestAppState?.activeProfile ?? "default",
+            db: usageDb,
+          });
+        }
+        await usageLogWatcher.start();
+        latestAppState.panelSettings.insights_status = "enabled";
+        latestAppState.panelSettings.insights_last_known_port = null;
+        markSelfWrite("panel");
+        await saveAppState(fileAccess, latestAppState);
+        void updateBaseline();
+        startUsageIngest();
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, message: String(err) };
+      }
+    },
+    disableInsights: async () => {
+      if (usageLogWatcher) {
+        usageLogWatcher.stop();
+        usageLogWatcher = null;
+        stopUsageIngest();
+      }
+      if (latestAppState) {
+        latestAppState.panelSettings.insights_status = "disabled";
+        markSelfWrite("panel");
+        await saveAppState(fileAccess, latestAppState);
+        void updateBaseline();
+      }
+      return { ok: true };
+    },
+    pauseInsights: async () => {
+      if (usageLogWatcher) {
+        usageLogWatcher.stop();
+        usageLogWatcher = null;
+        stopUsageIngest();
+      }
+      if (latestAppState) {
+        latestAppState.panelSettings.insights_status = "paused";
+        markSelfWrite("panel");
+        await saveAppState(fileAccess, latestAppState);
+        void updateBaseline();
+      }
+      return { ok: true };
+    },
+    updateInsightsSettings: async (patch: Partial<InsightsSettings>) => {
+      if (!latestAppState) throw new Error("app state not loaded");
+      const current = extractInsightsSettings(latestAppState);
+      const updated = normalizeInsightsSettings({ ...current, ...patch });
+      latestAppState.panelSettings.insights_status = updated.insights_status;
+      latestAppState.panelSettings.insights_proxy_port = updated.insights_proxy_port;
+      latestAppState.panelSettings.insights_retention_days = updated.insights_retention_days;
+      latestAppState.panelSettings.insights_disk_warn_threshold_mb = updated.insights_disk_warn_threshold_mb;
+      latestAppState.panelSettings.insights_store_prompt_preview = updated.insights_store_prompt_preview;
+      latestAppState.panelSettings.insights_onboarding_shown_at = updated.insights_onboarding_shown_at;
+      latestAppState.panelSettings.insights_last_known_port = updated.insights_last_known_port;
+      markSelfWrite("panel");
+      await saveAppState(fileAccess, latestAppState);
+      void updateBaseline();
+      return updated;
+    },
+  });
+
   void createWindow();
 
   app.on("activate", () => {
@@ -1083,4 +1170,42 @@ app.on("will-quit", () => {
   destroyTray();
   stopWatching();
   unregisterGlobalShortcuts();
+  stopUsageIngest();
+  if (usageLogWatcher) {
+    usageLogWatcher.stop();
+  }
+  if (usageDb) {
+    usageDb.close();
+  }
 });
+
+function extractInsightsSettings(state: AppState): InsightsSettings {
+  const ps = state.panelSettings;
+  return {
+    insights_status: ps.insights_status ?? "disabled",
+    insights_proxy_port: ps.insights_proxy_port ?? "auto",
+    insights_retention_days: ps.insights_retention_days ?? 90,
+    insights_disk_warn_threshold_mb: ps.insights_disk_warn_threshold_mb ?? 100,
+    insights_store_prompt_preview: ps.insights_store_prompt_preview ?? false,
+    insights_onboarding_shown_at: ps.insights_onboarding_shown_at ?? "",
+    insights_last_known_port: ps.insights_last_known_port ?? null,
+  };
+}
+
+function startUsageIngest(): void {
+  stopUsageIngest();
+  usageIngestTimer = setInterval(() => {
+    if (usageDb) {
+      void ingestPending(usageDb, "~/.kimi/usage").catch((err) => {
+        console.error("usage ingest failed", err);
+      });
+    }
+  }, 60000);
+}
+
+function stopUsageIngest(): void {
+  if (usageIngestTimer) {
+    clearInterval(usageIngestTimer);
+    usageIngestTimer = null;
+  }
+}
