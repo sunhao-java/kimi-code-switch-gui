@@ -100,6 +100,20 @@ export const SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
     },
   },
   {
+    action: "app.refresh",
+    scope: "window",
+    defaultAccelerator: "CommandOrControl+Shift+R",
+    defaultEnabled: true,
+    label: {
+      "zh-CN": "刷新当前页面",
+      "zh-TW": "重新整理目前頁面",
+      "en-US": "Refresh Current Page",
+      "ja-JP": "現在のページを更新",
+      "de-DE": "Aktuelle Seite aktualisieren",
+      "es-ES": "Actualizar página actual",
+    },
+  },
+  {
     action: "tab.overview",
     scope: "window",
     defaultAccelerator: "CommandOrControl+1",
@@ -184,9 +198,23 @@ export const SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
     },
   },
   {
-    action: "tab.settings",
+    action: "tab.insights",
     scope: "window",
     defaultAccelerator: "CommandOrControl+7",
+    defaultEnabled: true,
+    label: {
+      "zh-CN": "切换到洞察",
+      "zh-TW": "切換到洞察",
+      "en-US": "Switch to Insights",
+      "ja-JP": "インサイトへ切り替え",
+      "de-DE": "Zu Insights wechseln",
+      "es-ES": "Cambiar a Insights",
+    },
+  },
+  {
+    action: "tab.settings",
+    scope: "window",
+    defaultAccelerator: "CommandOrControl+8",
     defaultEnabled: true,
     label: {
       "zh-CN": "切换到设置",

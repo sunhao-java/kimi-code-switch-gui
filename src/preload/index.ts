@@ -19,6 +19,21 @@ import type {
   SaveStateResult,
   TrayCommand,
 } from "@shared/types";
+import type {
+  BreakdownRow,
+  Bucket,
+  EventFilter,
+  EventsPage,
+  GroupBy,
+  InsightsSettings,
+  OverviewSlice,
+  SeriesPoint,
+  SessionRow,
+  StorageInfo,
+  TimeRange,
+} from "@shared/usageTypes";
+
+type BreakdownOrder = "tokens" | "calls" | "errors" | "avg_latency_ms" | "cache_hit_rate";
 
 type InitialRendererTheme = "dark" | "light";
 type InitialAppearanceTheme = "aurora" | "ocean" | "violet" | "sunset";
@@ -143,6 +158,46 @@ const api = {
     ipcRenderer.on("file:external-change", listener);
     return () => { ipcRenderer.removeListener("file:external-change", listener); };
   },
+  usageGetStatus: (): Promise<{ ok: true; settings: InsightsSettings; proxy: { status: string; sessionsTracked?: number; eventsIngested?: number } } | { ok: false; error: string }> =>
+    ipcRenderer.invoke("usage:get-status"),
+  usageEnable: (): Promise<{ ok: boolean; message?: string }> => ipcRenderer.invoke("usage:enable"),
+  usageDisable: (): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke("usage:disable"),
+  usagePause: (): Promise<{ ok: true } | { ok: false; error: string }> => ipcRenderer.invoke("usage:pause"),
+  usageSetConfig: (
+    patch: Partial<InsightsSettings>,
+  ): Promise<{ ok: true; settings: InsightsSettings } | { ok: false; error: string }> =>
+    ipcRenderer.invoke("usage:set-config", patch),
+  usageQueryOverview: (
+    range: TimeRange,
+  ): Promise<{ ok: true; slice: OverviewSlice } | { ok: false; error: string }> =>
+    ipcRenderer.invoke("usage:query-overview", { range }),
+  usageQueryTrend: (
+    args: { range: TimeRange; bucket: Bucket; groupBy: GroupBy | null },
+  ): Promise<{ ok: true; series: SeriesPoint[] } | { ok: false; error: string }> =>
+    ipcRenderer.invoke("usage:query-trend", args),
+  usageQueryBreakdown: (
+    args: { dim: "profile" | "model"; range: TimeRange; limit: number; orderBy: BreakdownOrder },
+  ): Promise<{ ok: true; rows: BreakdownRow[] } | { ok: false; error: string }> =>
+    ipcRenderer.invoke("usage:query-breakdown", args),
+  usageQuerySessions: (
+    args: { range: TimeRange; limit: number },
+  ): Promise<{ ok: true; rows: SessionRow[] } | { ok: false; error: string }> =>
+    ipcRenderer.invoke("usage:query-sessions", args),
+  usageQueryEvents: (
+    args: { filter: EventFilter; cursor: string | null; pageSize: number },
+  ): Promise<{ ok: true; page: EventsPage } | { ok: false; error: string }> =>
+    ipcRenderer.invoke("usage:query-events", args),
+  usageGetStorageInfo: (): Promise<{ ok: true; info: StorageInfo } | { ok: false; error: string }> =>
+    ipcRenderer.invoke("usage:get-storage-info"),
+  usageCleanup: (
+    retentionDays: number,
+  ): Promise<{ ok: true; eventsDeleted: number; jsonlFilesDeleted: number } | { ok: false; error: string }> =>
+    ipcRenderer.invoke("usage:cleanup", { retentionDays }),
+  usageResetAllData: (): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke("usage:reset-all-data"),
+  usageOpenSessionTerminal: (sessionId: string): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke("usage:open-session-terminal", sessionId),
 };
 
 contextBridge.exposeInMainWorld("kimiSwitch", api);

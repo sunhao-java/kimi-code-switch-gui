@@ -12,6 +12,7 @@ const TAB_ACTIONS: Partial<Record<ShortcutAction, TabId>> = {
   "tab.models": "models",
   "tab.mcp": "mcp",
   "tab.skills": "skills",
+  "tab.insights": "insights",
   "tab.settings": "settings",
 };
 
@@ -21,6 +22,7 @@ export function useShortcuts(options: {
   shortcuts: Record<ShortcutAction, ShortcutBinding>;
   onSave: () => void;
   onReload: () => void;
+  onRefresh: () => void;
   onNavigate: (tab: TabId) => void;
   onGlobalSearch: () => void;
 }): void {
@@ -90,6 +92,7 @@ function executeShortcutAction(
   options: {
     onSave: () => void;
     onReload: () => void;
+    onRefresh: () => void;
     onNavigate: (tab: TabId) => void;
     onGlobalSearch: () => void;
   },
@@ -104,6 +107,10 @@ function executeShortcutAction(
   }
   if (action === "app.globalSearch") {
     options.onGlobalSearch();
+    return;
+  }
+  if (action === "app.refresh") {
+    options.onRefresh();
     return;
   }
 

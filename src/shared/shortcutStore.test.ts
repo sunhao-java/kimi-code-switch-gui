@@ -16,7 +16,7 @@ describe("shortcutStore", () => {
     expect(shortcuts["window.toggle"].accelerator).toBe("CommandOrControl+Shift+K");
     expect(shortcuts["window.toggle"].scope).toBe("global");
     expect(shortcuts["app.save"].accelerator).toBe("CommandOrControl+S");
-    expect(shortcuts["tab.settings"].accelerator).toBe("CommandOrControl+7");
+    expect(shortcuts["tab.settings"].accelerator).toBe("CommandOrControl+8");
   });
 
   it("normalizes missing and partial shortcut settings", () => {
