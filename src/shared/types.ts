@@ -19,12 +19,14 @@ export type ShortcutAction =
   | "app.reloadConfig"
   | "app.save"
   | "app.globalSearch"
+  | "app.refresh"
   | "tab.overview"
   | "tab.profiles"
   | "tab.providers"
   | "tab.models"
   | "tab.mcp"
   | "tab.skills"
+  | "tab.insights"
   | "tab.settings";
 
 export interface ProviderConfig {
@@ -129,6 +131,13 @@ export interface PanelSettings {
     providers?: string[];
     profiles?: string[];
   };
+  insights_status?: import("./usageTypes").InsightsStatus;
+  insights_proxy_port?: number | "auto";
+  insights_retention_days?: number;
+  insights_disk_warn_threshold_mb?: number;
+  insights_store_prompt_preview?: boolean;
+  insights_onboarding_shown_at?: string;
+  insights_last_known_port?: number | null;
 }
 
 export interface AppState {

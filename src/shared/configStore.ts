@@ -91,6 +91,13 @@ export function createDefaultPanelSettings(
     backup_webdav_path: "",
     shortcuts: createDefaultShortcuts(),
     mcp_servers: {},
+    insights_status: "disabled",
+    insights_proxy_port: "auto",
+    insights_retention_days: 90,
+    insights_disk_warn_threshold_mb: 100,
+    insights_store_prompt_preview: false,
+    insights_onboarding_shown_at: "",
+    insights_last_known_port: null,
   };
 }
 
@@ -270,6 +277,34 @@ function panelSettingsFromUnknown(data: Record<string, unknown>, fallback: Panel
     last_display_id: typeof data.last_display_id === "number" ? data.last_display_id : undefined,
     uiState: parseUiState(data.uiState),
     favorites: parseFavorites(data.favorites),
+    insights_status:
+      data.insights_status === "enabled" || data.insights_status === "paused" || data.insights_status === "disabled"
+        ? data.insights_status
+        : fallback.insights_status,
+    insights_proxy_port:
+      data.insights_proxy_port === "auto" || typeof data.insights_proxy_port === "number"
+        ? data.insights_proxy_port
+        : fallback.insights_proxy_port,
+    insights_retention_days:
+      typeof data.insights_retention_days === "number"
+        ? data.insights_retention_days
+        : fallback.insights_retention_days,
+    insights_disk_warn_threshold_mb:
+      typeof data.insights_disk_warn_threshold_mb === "number"
+        ? data.insights_disk_warn_threshold_mb
+        : fallback.insights_disk_warn_threshold_mb,
+    insights_store_prompt_preview:
+      typeof data.insights_store_prompt_preview === "boolean"
+        ? data.insights_store_prompt_preview
+        : fallback.insights_store_prompt_preview,
+    insights_onboarding_shown_at:
+      typeof data.insights_onboarding_shown_at === "string"
+        ? data.insights_onboarding_shown_at
+        : fallback.insights_onboarding_shown_at,
+    insights_last_known_port:
+      typeof data.insights_last_known_port === "number"
+        ? data.insights_last_known_port
+        : fallback.insights_last_known_port ?? null,
   };
 }
 
@@ -309,7 +344,14 @@ export function buildProfilesDocument(state: AppState): string {
 }
 
 export function buildPanelSettingsDocument(settings: PanelSettings): string {
-  return normalizePanelTomlIndentation(stringify(settings as unknown as Record<string, unknown>));
+  // 过滤掉 null/undefined 值，因为 TOML 不支持 null
+  const cleaned: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(settings)) {
+    if (value !== null && value !== undefined) {
+      cleaned[key] = value;
+    }
+  }
+  return normalizePanelTomlIndentation(stringify(cleaned));
 }
 
 export function bootstrapProfiles(mainConfig: MainConfig): Record<string, Profile> {
