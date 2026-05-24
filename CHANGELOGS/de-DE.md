@@ -2,6 +2,24 @@
 
 Diese Datei dokumentiert die wesentlichen Änderungen des Projekts. Das Format folgt Keep a Changelog; verwendet wird das `major.minor.patch`-Versionsschema.
 
+## [1.1.9] - 2026-05-25
+
+### Hinzugefügt
+
+- Die About-Seite zeigt jetzt einen Abschnitt „Versionshinweise", der den Eintrag der aktuellen Version aus `CHANGELOGS/{locale}.md` passend zur UI-Sprache rendert; rechts in der Überschrift führt „Alle Versionen anzeigen" direkt zu GitHub Releases.
+- Der Update-Dialog lädt und rendert jetzt die Versionshinweise der neuen Version (aus dem GitHub-Release-Body), sodass vor dem Upgrade klar ist, was kommt.
+
+### Geändert
+
+- CHANGELOG wird pro Sprache in `CHANGELOGS/{zh-CN,zh-TW,en-US,ja-JP,de-DE,es-ES}.md` aufgeteilt; das `CHANGELOG.md` im Stamm ist jetzt ein Index, und der GitHub-Release-Body wird von CI zweisprachig (zh-CN + en-US) zusammengesetzt.
+- Strategie für das In-App-Laden des Changelogs: Beim ersten Start nach Installation/Update werden alle 6 Sprachdateien einmalig von `raw.githubusercontent.com` geladen und unter `~/.kimi/.panel/changelog-cache/` zwischengespeichert; bei Fehlern wird auf die mitgelieferten Dateien zurückgegriffen. Der Cache wird über die aktuelle `app.getVersion()` markiert.
+- Der Hauptprozess der Update-Prüfung führt `~/.kimi/.panel/release-cache.json` mit `If-None-Match`-ETag + Fallback auf veraltete Body-Daten ein, um das nicht authentifizierte GitHub-API-Rate-Limit (60 req/h) abzufedern.
+- Hardcodierter Block „Versionsverlauf" und seine neun i18n-Strings auf der About-Seite entfernt; die vollständige Historie ist jetzt über den Button „Alle Versionen anzeigen" auf GitHub erreichbar.
+
+### Behoben
+
+- Behoben, dass im „Neuerungen"-Block des Update-Dialogs `MarkdownView` die Versionsnummer doppelt anzeigte: Der innere Panel-Header ist jetzt ausgeblendet, nur der äußere Titel bleibt.
+
 ## [1.1.8] - 2026-05-25
 
 ### Hinzugefügt

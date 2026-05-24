@@ -2,6 +2,24 @@
 
 Este archivo recoge los cambios relevantes del proyecto. El formato sigue Keep a Changelog y el proyecto adopta el esquema de versiones `major.minor.patch`.
 
+## [1.1.9] - 2026-05-25
+
+### Añadido
+
+- La página About muestra ahora una sección «Notas de la versión» que renderiza la entrada de la versión actual desde `CHANGELOGS/{locale}.md` según el idioma de la UI; a la derecha del título, el botón «Ver todas las versiones» lleva directamente a GitHub Releases.
+- El diálogo de comprobación de actualizaciones obtiene y renderiza las notas de la nueva versión (desde el cuerpo del GitHub Release), permitiendo ver de un vistazo qué se va a actualizar.
+
+### Cambiado
+
+- El CHANGELOG se divide por idioma en `CHANGELOGS/{zh-CN,zh-TW,en-US,ja-JP,de-DE,es-ES}.md`; el `CHANGELOG.md` raíz pasa a ser un índice y el cuerpo del GitHub Release lo compone CI de forma bilingüe (zh-CN + en-US).
+- Estrategia de carga del changelog en la app: en el primer arranque tras instalar/actualizar, la app descarga de una sola vez las 6 traducciones desde `raw.githubusercontent.com` y las cachea en `~/.kimi/.panel/changelog-cache/`; si falla, recae en los archivos empaquetados. La caché se marca con la `app.getVersion()` actual.
+- El proceso principal de comprobación de actualizaciones introduce `~/.kimi/.panel/release-cache.json` con `If-None-Match` ETag + fallback al body cacheado en caso de fallo, mitigando el límite de 60 req/h de la API de GitHub sin autenticación.
+- Eliminado el bloque «Historial de versiones» fijo de la página About junto con sus nueve cadenas i18n; el historial completo se consulta ahora desde el botón «Ver todas las versiones» en GitHub.
+
+### Corregido
+
+- Corregido que el bloque «Novedades» del diálogo de actualización mostrara la versión dos veces a través de `MarkdownView`: ahora se oculta la cabecera interna del panel y solo queda el título exterior.
+
 ## [1.1.8] - 2026-05-25
 
 ### Añadido

@@ -2,6 +2,24 @@
 
 This file records the project's notable changes. Format follows Keep a Changelog; the project uses `major.minor.patch` versioning.
 
+## [1.1.9] - 2026-05-25
+
+### Added
+
+- About page now shows a "Release Notes" section that renders the current version's entry from `CHANGELOGS/{locale}.md`, with a "View all releases" link on the right that jumps directly to GitHub Releases.
+- The update-check dialog now fetches and renders the new release's notes (from the GitHub Release body), so users can see what's coming before upgrading.
+
+### Changed
+
+- CHANGELOG is split per language into `CHANGELOGS/{zh-CN,zh-TW,en-US,ja-JP,de-DE,es-ES}.md`; the top-level `CHANGELOG.md` is now an index, and the GitHub Release body is composed bilingually (zh-CN + en-US) by CI.
+- In-app changelog loading strategy: on the first launch after install/upgrade, the app fetches all 6 locale files from `raw.githubusercontent.com` once and caches them under `~/.kimi/.panel/changelog-cache/`, falling back to bundled files on failure; the cache is keyed by the current `app.getVersion()`.
+- Update-check main process introduces `~/.kimi/.panel/release-cache.json` with `If-None-Match` ETag + a stale-body fallback, alleviating the unauthenticated GitHub API 60 req/h rate limit.
+- Removed the hard-coded "Version History" block on the About page along with its nine i18n strings; the full history is now reached via the "View all releases" button.
+
+### Fixed
+
+- Fixed the update-check dialog "What's New" block where `MarkdownView` rendered the version twice: the inner panel header is now hidden and only the outer title remains.
+
 ## [1.1.8] - 2026-05-25
 
 ### Added

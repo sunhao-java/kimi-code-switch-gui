@@ -2,6 +2,24 @@
 
 本文件记录项目的重要变更。格式参考 Keep a Changelog，当前项目采用 `major.minor.patch` 版本号方案。
 
+## [1.1.9] - 2026-05-25
+
+### 新增
+
+- 关于页加入「当前版本变更」区块，按界面语言渲染 `CHANGELOGS/{locale}.md` 当前版本段落，标题栏右侧提供「查看全部版本」入口直跳 GitHub Releases。
+- 「检查更新」对话框拉取并渲染新版本的 release notes（来自 GitHub Release body），可一眼看清要升级到哪些内容。
+
+### 变更
+
+- CHANGELOG 按语言拆分为 `CHANGELOGS/{zh-CN,zh-TW,en-US,ja-JP,de-DE,es-ES}.md` 六文件，顶层 `CHANGELOG.md` 改为索引；GitHub Release body 由 CI 合成中英文双语版本。
+- 应用内 changelog 加载策略：首次启动从 `raw.githubusercontent.com` 一次性拉取 6 份文件缓存到 `~/.kimi/.panel/changelog-cache/`，失败时回退到打包内文件；缓存按当前 `app.getVersion()` 标记。
+- 更新检查主进程引入 `~/.kimi/.panel/release-cache.json`，带 ETag 304 + 失败兜底，缓解未鉴权 GitHub API 60 req/h 限流。
+- 关于页移除写死的「版本历史」区块及其 9 条 i18n 翻译；版本历史完整列表统一由「查看全部版本」按钮跳转 GitHub。
+
+### 修复
+
+- 修复检查更新对话框「新版本变更」区域内 `MarkdownView` 重复展示版本号的问题：去除内部 panel header，仅保留外层标题。
+
 ## [1.1.8] - 2026-05-25
 
 ### 新增

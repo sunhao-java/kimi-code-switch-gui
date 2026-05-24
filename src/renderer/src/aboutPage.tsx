@@ -29,7 +29,7 @@ interface UpdateCheckResult {
 }
 
 export const ABOUT_INFO = {
-  version: "1.1.8",
+  version: "1.1.9",
   author: "Hulk Sun",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",
@@ -699,11 +699,7 @@ function UpdateDialog(props: {
                 <div className="update-dialog-release-notes-title">
                   {aboutText(props.locale, "newReleaseNotes")} · {props.result.releaseName}
                 </div>
-                <MarkdownView
-                  title={props.result.releaseName}
-                  content={props.result.releaseBody}
-                  locale={props.locale}
-                />
+                <MarkdownView content={props.result.releaseBody} locale={props.locale} />
               </div>
             ) : null}
           </div>
