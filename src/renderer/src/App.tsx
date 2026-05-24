@@ -24,11 +24,14 @@ import { t } from "./i18n";
 import { McpImportDialog, formatMessage } from "./tabComponents";
 import { SummaryCard } from "./overviewDashboard";
 import { TopbarControls } from "./topbarControls";
+import { ToastContainer } from "./Toast";
+import { useToast } from "./useToast";
 import logoLight from "./assets/logo-light.png";
 import logoDark from "./assets/logo-dark.png";
 
 export function App(): JSX.Element {
   const app = useAppHandlers();
+  const { toasts, showToast, removeToast } = useToast();
   const {
     state,
     activeTab, setActiveTab,
@@ -93,9 +96,27 @@ export function App(): JSX.Element {
     shortcuts,
     onSave: () => void onSave(),
     onReload: () => void loadState(),
+    onRefresh: () => {
+      window.dispatchEvent(new CustomEvent("kimi-refresh"));
+    },
     onNavigate: (tab) => runAfterUnsavedHandled(() => setActiveTab(tab)),
     onGlobalSearch: () => setCommandPaletteOpen((v) => !v),
   });
+
+  // 将 error 和 notice 转换为 Toast
+  useEffect(() => {
+    if (error) {
+      showToast(error, "error");
+      setError("");
+    }
+  }, [error, showToast, setError]);
+
+  useEffect(() => {
+    if (notice) {
+      showToast(notice, "success");
+      setNotice("");
+    }
+  }, [notice, showToast, setNotice]);
 
   useEffect(() => {
     function handleGlobalKeyDown(event: globalThis.KeyboardEvent): void {
@@ -129,7 +150,8 @@ export function App(): JSX.Element {
   }, [locale, updateState]);
 
   const tabListRef = useRef<HTMLDivElement>(null);
-  const mainTabIds = TAB_ITEMS.map((item) => item.id);
+  const visibleTabItems = TAB_ITEMS;
+  const mainTabIds = visibleTabItems.map((item) => item.id);
 
   const focusTab = useCallback((tabId: string): void => {
     const button = document.getElementById(`tab-${tabId}`);
@@ -198,22 +220,7 @@ export function App(): JSX.Element {
       <div className="window-titlebar drag-region" aria-hidden="true">
         <div className="window-titlebar-safe" />
       </div>
-      {error ? (
-        <div className="app-tip-layer" role="status" aria-live="polite">
-          <div className="app-tip app-tip-error">
-            <span className="app-tip-message">{error}</span>
-            <button
-              type="button"
-              className="app-tip-close"
-              aria-label={t(locale, "close")}
-              onClick={() => setError("")}
-            >
-              <X size={14} />
-            </button>
-          </div>
-        </div>
-      ) : null}
-      {!error && externalChange ? (
+      {externalChange ? (
         <div className="app-tip-layer" role="status" aria-live="polite">
           <div className="app-tip app-tip-warning">
             <AlertTriangle size={18} className="app-tip-icon" />
@@ -242,21 +249,6 @@ export function App(): JSX.Element {
           </div>
         </div>
       ) : null}
-      {!error && !externalChange && notice ? (
-        <div className="app-tip-layer" role="status" aria-live="polite">
-          <div className="app-tip app-tip-success">
-            <span className="app-tip-message">{notice}</span>
-            <button
-              type="button"
-              className="app-tip-close"
-              aria-label={t(locale, "close")}
-              onClick={() => setNotice("")}
-            >
-              <X size={14} />
-            </button>
-          </div>
-        </div>
-      ) : null}
       <div className="background-grid" />
       <aside className="sidebar glass-panel">
         <div className="brand drag-region">
@@ -279,7 +271,7 @@ export function App(): JSX.Element {
           </button>
         </div>
         <nav className="nav" role="tablist" ref={tabListRef} onKeyDown={handleMainTabKeyDown}>
-          {TAB_ITEMS.map(({ id, icon: Icon, labelKey }) => (
+          {visibleTabItems.map(({ id, icon: Icon, labelKey }) => (
             <button
               key={id}
               id={`tab-${id}`}
@@ -503,6 +495,7 @@ export function App(): JSX.Element {
             setActiveTab={setActiveTab}
             setError={setError}
             setNotice={setNotice}
+            loadState={loadState}
           />
         </div>
       </main>
@@ -584,6 +577,7 @@ export function App(): JSX.Element {
           onClose={() => setQuickSwitcherOpen(false)}
         />
       ) : null}
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   );
 }
@@ -610,5 +604,6 @@ const TAB_SHORTCUT_ACTIONS: Record<string, string> = {
   "tab.models": "models",
   "tab.mcp": "mcp",
   "tab.skills": "skills",
+  "tab.insights": "insights",
   "tab.settings": "settings",
 };

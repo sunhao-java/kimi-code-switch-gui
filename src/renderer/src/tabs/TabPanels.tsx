@@ -41,6 +41,7 @@ import { useDialogEscape, useFocusTrap } from "../dialogs";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { Field, FontSizeSliderField, SelectField, SettingsGroup, ShortcutRecorderField } from "../formControls";
 import { t, translateError } from "../i18n";
+import { InsightsSettingsPanel, InsightsDashboard } from "../insightsComponents";
 import { EmptyState, SplitLayout } from "../layoutComponents";
 import { OverviewDashboard } from "../overviewDashboard";
 import { SkillsWorkspace } from "../skillsWorkspace";
@@ -126,11 +127,12 @@ type TabPanelsProps = Pick<
   | "setError"
   | "setNotice"
   | "openKimiInTerminal"
+  | "loadState"
 > & {
   shortcuts: Record<ShortcutAction, ShortcutBinding>;
 };
 
-type SettingsSubTab = "general" | "shortcuts" | "backup" | "doctor" | "history";
+type SettingsSubTab = "general" | "shortcuts" | "backup" | "doctor" | "insights" | "history";
 
 export function TabPanels(props: TabPanelsProps): JSX.Element {
   const {
@@ -207,6 +209,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     setError,
     setNotice,
     openKimiInTerminal,
+    loadState,
     shortcuts,
   } = props;
   const shortcutConflicts = getShortcutConflicts(shortcuts);
@@ -251,6 +254,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
       id: "doctor",
       label: t(locale, "settingsTabDoctor"),
       description: t(locale, "settingsTabDoctorDescription"),
+    },
+    {
+      id: "insights",
+      label: t(locale, "settingsTabInsights"),
+      description: t(locale, "settingsTabInsightsDescription"),
     },
     {
       id: "history",
@@ -943,6 +951,10 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
           </SplitLayout>
         ) : null}
 
+        {activeTab === "insights" ? (
+          <InsightsDashboard locale={locale} onStateChange={() => void loadState()} />
+        ) : null}
+
         {activeTab === "settings" ? (
           <SplitLayout
             listTitle={t(locale, "settings")}
@@ -1460,6 +1472,9 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               <SettingsGroup title={t(locale, "historyTitle")} className="settings-group-wide">
                 <HistoryPanel locale={locale} state={state} updateState={updateState} />
               </SettingsGroup>
+            ) : null}
+            {activeSettingsSubTab === "insights" ? (
+              <InsightsSettingsPanel locale={locale} onStateChange={() => void loadState()} />
             ) : null}
           </section>
           </SplitLayout>

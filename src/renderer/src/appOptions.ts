@@ -15,10 +15,10 @@ import type {
 } from "@shared/types";
 import {
   Boxes, Droplets, FileText, Flame, Globe, Info, Layers3, MonitorCog, MoonStar,
-  Palette, Settings2, Sparkles, SunMedium, Zap,
+  Palette, Settings2, Sparkles, SunMedium, TrendingUp, Zap,
 } from "lucide-react";
 
-export type TabId = "overview" | "profiles" | "providers" | "models" | "mcp" | "skills" | "settings" | "about";
+export type TabId = "overview" | "profiles" | "providers" | "models" | "mcp" | "skills" | "insights" | "settings" | "about";
 export type PreviewFileId = "config" | "profiles" | "panel" | "mcp";
 
 export const TAB_ITEMS: Array<{ id: TabId; icon: typeof Layers3; labelKey: string }> = [
@@ -28,6 +28,7 @@ export const TAB_ITEMS: Array<{ id: TabId; icon: typeof Layers3; labelKey: strin
   { id: "models", icon: Boxes, labelKey: "models" },
   { id: "mcp", icon: Zap, labelKey: "mcp" },
   { id: "skills", icon: FileText, labelKey: "skillsNav" },
+  { id: "insights", icon: TrendingUp, labelKey: "insights" },
   { id: "settings", icon: Settings2, labelKey: "settings" },
 ];
 
