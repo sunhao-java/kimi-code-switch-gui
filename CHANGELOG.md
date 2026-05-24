@@ -2,9 +2,11 @@
 
 本文件记录项目的重要变更。
 
-格式参考 Keep a Changelog，当前项目采用 `major.minor.patch` 版本号方案。
+格式参考 Keep a Changelog，当前项目采用 `major.minor.patch` 版本号方案。每个版本头下方第一行用 `> EN: ...` 提供英文一句话摘要，方便非中文读者扫读。
 
 ## [1.1.8] - 2026-05-25
+
+> EN: 5 new appearance themes (forest/sakura/mint/cosmos/amber), SKILL.md rendered as markdown with source-view toggle, Insights data moved to `~/.kimi/.panel/usage/` with auto-migration, dropped unused `mockttp` and tightened packaging (`asarUnpack` + `postinstall`).
 
 ### 新增
 
@@ -24,11 +26,15 @@
 
 ## [1.1.7] - 2026-05-16
 
+> EN: Restored the Homebrew cask rendering script that the release pipeline depends on, fixing the tap update failure after tag pushes.
+
 ### 修复
 
 - 恢复发布流水线依赖的 `scripts/render_homebrew_cask.py`，修复 Homebrew tap 更新阶段无法渲染 cask 的问题。
 
 ## [1.1.6] - 2026-05-16
+
+> EN: Added Kimi CLI update check + upgrade entry, provider template picker, favorites, custom templates, global search, quick switch, config import/export, profile diff and change history; split main-process IPC and renderer styles; fixed cross-machine profile restore, tray toggle propagation, and CoreVideo log noise.
 
 ### 新增
 
@@ -46,17 +52,23 @@
 
 ## [1.1.5] - 2026-05-10
 
+> EN: Fixed iTerm2 launch failures in Homebrew builds by replacing `System Events` keystrokes with native AppleScript writes.
+
 ### 修复
 
 - 修复 Homebrew 打包后 iTerm2 打开 Kimi 依赖 `System Events` 发送按键导致 macOS 权限失败的问题，改用 iTerm2 原生 AppleScript 写入命令。
 
 ## [1.1.4] - 2026-05-10
 
+> EN: Sidebar expanded/collapsed state is now persisted across sessions.
+
 ### 新增
 
 - 面板设置新增侧边栏展开/收缩状态持久化，下次打开面板时会恢复上一次的侧边栏状态。
 
 ## [1.1.3] - 2026-05-09
+
+> EN: Fixed a packaged-build preload crash caused by a missing `documentElement` during initial theme setup, which surfaced as `Electron preload API is unavailable` on startup.
 
 ### 修复
 
@@ -65,9 +77,11 @@
 
 ## [1.1.2] - 2026-05-09
 
+> EN: Added "Open Kimi in Terminal" entries (active profile + per-row hover), new terminal app setting (system Terminal / iTerm2), unified `kimi --config-file` launching with per-profile temp configs, and screenshot-rich README.
+
 ### 新增
 
-- Profiles 顶部当前激活区域新增“在终端打开 Kimi”入口，可直接用当前激活 Profile 启动 CLI。
+- Profiles 顶部当前激活区域新增"在终端打开 Kimi"入口，可直接用当前激活 Profile 启动 CLI。
 - Profiles 列表行新增悬浮终端入口，可用被点击的 Profile 生成临时配置并启动 Kimi，不改变当前激活状态。
 - 设置页新增终端应用配置，支持系统终端和 iTerm2。
 - README 新增多页面截图和图文功能介绍。
@@ -78,6 +92,8 @@
 - Terminal.app 与 iTerm2 启动时改为新标签页打开，并通过粘贴加回车提升命令执行稳定性。
 
 ## [1.1.1] - 2026-05-07
+
+> EN: Added shortcut management (global + window, with recording, conflict detection, and inclusion in `shortcuts.json` backups), continued splitting `App.tsx` and main-process modules, and refined the update-check dialog flow.
 
 ### 新增
 
@@ -98,6 +114,8 @@
 
 ## [1.1.0] - 2026-04-26
 
+> EN: Added the About-page update-check flow with install-source-aware guidance (Homebrew / manual / dev), Homebrew command copy, GitHub Release jump, and rate-limit fallback; split renderer into multiple modules; hardened external-link safety and nullable-state boundaries.
+
 ### 新增
 
 - 关于页新增 GitHub Release 更新检查能力，可根据 Homebrew、手动安装或开发构建给出不同更新提示。
@@ -117,6 +135,8 @@
 
 ## [1.0.4] - 2026-04-24
 
+> EN: Tray menu now supports quick language and theme switching; added backup restore from local directories or WebDAV remotes; refined Skills workspace presentation and frontmatter parsing.
+
 ### 新增
 
 - 状态栏托盘菜单新增语言和主题快捷切换，可直接在托盘中切换中文/English 与自动、明亮、暗色主题。
@@ -128,6 +148,8 @@
 - 增强 Skills frontmatter 解析，对多行描述和 block scalar 的兼容性更完整。
 
 ## [1.0.3] - 2026-04-23
+
+> EN: Skills page redesigned as a focused two-column workspace (grid/list toggle, detail dialog, adaptive height); added UI font-size setting; unified Skills auto-discovery; fixed missing-icon crashes and a workspace height issue.
 
 ### 变更
 
@@ -141,6 +163,8 @@
 - 修复 Skills 页面主内容区未撑满剩余可视区域的问题。
 
 ## [1.0.2] - 2026-04-22
+
+> EN: Added backup-record viewing and deletion (local + WebDAV); fixed MCP config corruption (`extra.extra` recursion, header indentation drift, false-dirty on Esc); refreshed README.
 
 ### 新增
 
@@ -159,6 +183,8 @@
 
 ## [1.0.1] - 2026-04-21
 
+> EN: Polished settings, overview, dropdowns, and MCP management (JSON import, enable/disable persistence, panel filters); refreshed brand logos and macOS `icon.icns`; Homebrew cask now warns about macOS quarantine.
+
 ### 变更
 
 - 优化设置页分组、顶部统计卡片、首页总览列表和自定义下拉展示样式。
@@ -167,6 +193,8 @@
 - Homebrew cask 生成脚本新增 macOS 隔离属性导致的启动异常提示。
 
 ## [1.0.0] - 2026-04-20
+
+> EN: Initial Electron desktop release for managing `kimi-code-cli` — Provider/Model/Profile editing, config previews and diffs, zh/en UI, tray integration, multi-display window strategy, and macOS/Windows installers via Electron Builder + tag-driven CI.
 
 ### 修复
 

@@ -892,6 +892,75 @@ textarea:focus-visible {
   padding: 2px 0 0;
 }
 
+.update-dialog-release-notes {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.update-dialog-release-notes-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.update-dialog-release-notes .markdown-view {
+  max-height: 280px;
+}
+
+.about-release-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.about-release-notes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.about-release-notes-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.about-release-notes-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.about-release-notes-link:hover,
+.about-release-notes-link:focus-visible {
+  color: var(--primary);
+  border-color: var(--line-strong);
+  background: rgba(87, 177, 255, 0.08);
+}
+
+.about-release-notes-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
 .update-dialog-copy p {
   margin: 0;
   max-width: 58ch;

@@ -1,12 +1,14 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bug, Check, ExternalLink, Github, History, LoaderCircle, Mail, RefreshCw } from "lucide-react";
+import { Bug, Check, ExternalLink, FileText, Github, LoaderCircle, Mail, RefreshCw } from "lucide-react";
 
 import { compareReleaseVersions, normalizeReleaseVersion } from "@shared/versionUtils";
 import type { Locale } from "@shared/types";
 
 import { t } from "./i18n";
 import { toTraditionalChinese } from "./localeText";
+import { MarkdownView } from "./markdownView";
+import { extractReleaseNotes } from "./releaseNotes";
 import logoLight from "./assets/logo-light.png";
 import logoDark from "./assets/logo-dark.png";
 
@@ -19,6 +21,7 @@ interface UpdateCheckResult {
   hasUpdate: boolean;
   releaseUrl: string;
   releaseName: string;
+  releaseBody: string;
   publishedAt: string;
   homebrewCommand: string;
   installSource?: InstallSource;
@@ -140,6 +143,38 @@ function aboutText(
       "de-DE": "Projektlinks",
       "es-ES": "Enlaces del proyecto",
     },
+    currentReleaseNotes: {
+      "zh-CN": "当前版本变更",
+      "zh-TW": toTraditionalChinese("当前版本变更"),
+      "en-US": "Release Notes",
+      "ja-JP": "リリースノート",
+      "de-DE": "Versionshinweise",
+      "es-ES": "Notas de la versión",
+    },
+    viewAllVersions: {
+      "zh-CN": "查看全部版本",
+      "zh-TW": toTraditionalChinese("查看全部版本"),
+      "en-US": "All releases",
+      "ja-JP": "すべてのリリース",
+      "de-DE": "Alle Versionen",
+      "es-ES": "Todas las versiones",
+    },
+    currentReleaseNotesEmpty: {
+      "zh-CN": "未在 CHANGELOG 中找到当前版本的变更说明。",
+      "zh-TW": toTraditionalChinese("未在 CHANGELOG 中找到当前版本的变更说明。"),
+      "en-US": "No CHANGELOG entry found for the current version.",
+      "ja-JP": "現在のバージョンの CHANGELOG が見つかりません。",
+      "de-DE": "Kein CHANGELOG-Eintrag für die aktuelle Version gefunden.",
+      "es-ES": "No se encontraron notas en CHANGELOG para la versión actual.",
+    },
+    newReleaseNotes: {
+      "zh-CN": "新版本变更",
+      "zh-TW": toTraditionalChinese("新版本变更"),
+      "en-US": "What's New",
+      "ja-JP": "新着情報",
+      "de-DE": "Neuerungen",
+      "es-ES": "Novedades",
+    },
     githubLink: {
       "zh-CN": "GitHub 地址",
       "zh-TW": toTraditionalChinese("GitHub 地址"),
@@ -172,14 +207,6 @@ function aboutText(
       "de-DE": "Kontakt-E-Mail",
       "es-ES": "Correo de contacto",
     },
-    versionHistory: {
-      "zh-CN": "版本历史",
-      "zh-TW": toTraditionalChinese("版本历史"),
-      "en-US": "Version History",
-      "ja-JP": "バージョン履歴",
-      "de-DE": "Versionsverlauf",
-      "es-ES": "Historial de versiones",
-    },
     previewRateLimitError: {
       "zh-CN": "GitHub 请求已被限流，已切换到手动查看模式。",
       "zh-TW": toTraditionalChinese("GitHub 请求已被限流，已切换到手动查看模式。"),
@@ -187,46 +214,6 @@ function aboutText(
       "ja-JP": "GitHub API のレート制限に達しました。Release ページを手動で確認してください。",
       "de-DE": "GitHub-API-Rate-Limit überschritten. Bitte prüfe die Release-Seite manuell.",
       "es-ES": "Se superó el límite de la API de GitHub. Revisa la página de releases manualmente.",
-    },
-    historyV117: {
-      "zh-CN": "恢复发布流水线依赖的 Homebrew cask 渲染脚本，修复 tag 发布后 tap 更新阶段失败的问题。",
-      "zh-TW": toTraditionalChinese("恢复发布流水线依赖的 Homebrew cask 渲染脚本，修复 tag 发布后 tap 更新阶段失败的问题。"),
-      "en-US": "Restored the Homebrew cask rendering script required by the release workflow, fixing tap update failures after tag releases.",
-      "ja-JP": "リリースワークフローに必要な Homebrew cask 生成スクリプトを復元し、タグ公開後の tap 更新失敗を修正しました。",
-      "de-DE": "Stellt das für den Release-Workflow benötigte Homebrew-Cask-Rendering-Skript wieder her und behebt Tap-Update-Fehler nach Tag-Releases.",
-      "es-ES": "Restaura el script de renderizado del cask de Homebrew requerido por el flujo de release y corrige fallos al actualizar el tap tras publicar tags.",
-    },
-    historyV116: {
-      "zh-CN": "新增更新检查、配置导入导出、Profile 对比、全局搜索、快捷切换和变更历史，并修复跨机器恢复 Profile、托盘图标开关立即生效及错误边界测试问题。",
-      "zh-TW": toTraditionalChinese("新增更新检查、配置导入导出、Profile 对比、全局搜索、快捷切换和变更历史，并修复跨机器恢复 Profile、托盘图标开关立即生效及错误边界测试问题。"),
-      "en-US": "Added update controls, config import/export, Profile comparison, global search, quick switch, and change history, with fixes for cross-machine Profile restore, immediate tray toggling, and ErrorBoundary tests.",
-      "ja-JP": "更新操作、設定のインポート/エクスポート、Profile 比較、グローバル検索、クイックスイッチ、変更履歴を追加し、別マシン復元時の Profile、トレイ切り替え、ErrorBoundary テストを修正しました。",
-      "de-DE": "Ergänzt Update-Steuerung, Konfigurationsimport/-export, Profilvergleich, globale Suche, Schnellwechsel und Änderungsverlauf sowie Fixes für Profilwiederherstellung, Tray-Umschaltung und ErrorBoundary-Tests.",
-      "es-ES": "Añade controles de actualización, importación/exportación, comparación de perfiles, búsqueda global, cambio rápido e historial, y corrige restauración de perfiles, bandeja y pruebas de ErrorBoundary.",
-    },
-    historyV115: {
-      "zh-CN": "修复 Homebrew 打包后 iTerm2 打开 Kimi 依赖 System Events 发送按键导致权限失败的问题。",
-      "zh-TW": toTraditionalChinese("修复 Homebrew 打包后 iTerm2 打开 Kimi 依赖 System Events 发送按键导致权限失败的问题。"),
-      "en-US": "Fixed iTerm2 launch failures in Homebrew builds by avoiding System Events simulated keystrokes.",
-      "ja-JP": "Homebrew ビルドで iTerm2 起動時に System Events の疑似キー入力へ依存して権限エラーになる問題を修正しました。",
-      "de-DE": "Behebt iTerm2-Startfehler in Homebrew-Builds, indem simulierte System-Events-Tastatureingaben vermieden werden.",
-      "es-ES": "Corrige fallos al abrir iTerm2 en builds de Homebrew evitando pulsaciones simuladas con System Events.",
-    },
-    historyV114: {
-      "zh-CN": "新增侧边栏展开/收缩状态持久化，面板会在下次启动时恢复上一次的侧边栏状态。",
-      "zh-TW": toTraditionalChinese("新增侧边栏展开/收缩状态持久化，面板会在下次启动时恢复上一次的侧边栏状态。"),
-      "en-US": "Persisted the sidebar expanded/collapsed state so the panel restores the previous sidebar state on next launch.",
-      "ja-JP": "サイドバーの展開/折りたたみ状態を保存し、次回起動時に復元するようにしました。",
-      "de-DE": "Speichert den ausgeklappten/eingeklappten Zustand der Seitenleiste und stellt ihn beim nächsten Start wieder her.",
-      "es-ES": "Persiste el estado expandido/contraído de la barra lateral para restaurarlo al iniciar de nuevo.",
-    },
-    historyV113: {
-      "zh-CN": "修复正式打包环境下 preload 初始化主题时 documentElement 为空导致 API 注入失败的问题，解决启动后提示 Electron preload API 不可用的严重回归。",
-      "zh-TW": toTraditionalChinese("修复正式打包环境下 preload 初始化主题时 documentElement 为空导致 API 注入失败的问题，解决启动后提示 Electron preload API 不可用的严重回归。"),
-      "en-US": "Fixed a packaged preload crash caused by a missing documentElement during initial theme setup, resolving the Electron preload API unavailable startup regression.",
-      "ja-JP": "パッケージ版で初期テーマ設定時に documentElement がなく preload がクラッシュし、Electron preload API が利用不可になる問題を修正しました。",
-      "de-DE": "Behebt einen Preload-Absturz im Paketbuild durch fehlendes documentElement beim Theme-Setup und damit die Regression mit nicht verfügbarer Electron-preload-API.",
-      "es-ES": "Corrige un fallo de preload en la versión empaquetada por documentElement ausente durante el tema inicial, resolviendo la regresión de API preload no disponible.",
     },
     updateFailedTitle: {
       "zh-CN": "检查更新失败",
@@ -553,6 +540,7 @@ function createPreviewUpdateResult(locale: Locale, kind: UpdateDialogPreviewKind
     hasUpdate: true,
     releaseUrl: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.2.0`,
     releaseName: "v1.2.0",
+    releaseBody: "### 新增\n\n- 示例：演示用 release notes 渲染。\n\n### 修复\n\n- 示例：演示项。",
     publishedAt: "",
     homebrewCommand: "brew upgrade --cask kimi-code-switch-gui",
     installSource: "manual",
@@ -565,6 +553,7 @@ function createPreviewUpdateResult(locale: Locale, kind: UpdateDialogPreviewKind
       hasUpdate: false,
       releaseUrl: `${ABOUT_INFO.repositoryUrl}/releases/tag/v${ABOUT_INFO.version}`,
       releaseName: `v${ABOUT_INFO.version}`,
+      releaseBody: "",
     };
   }
 
@@ -582,6 +571,7 @@ function createPreviewUpdateResult(locale: Locale, kind: UpdateDialogPreviewKind
       hasUpdate: false,
       releaseUrl: `${ABOUT_INFO.repositoryUrl}/releases`,
       releaseName: "",
+      releaseBody: "",
       errorMessage: aboutText(locale, "previewRateLimitError"),
     };
   }
@@ -704,6 +694,18 @@ function UpdateDialog(props: {
                 {aboutText(props.locale, "manualReleaseTip")}
               </div>
             ) : null}
+            {hasUpdate && props.result.releaseBody ? (
+              <div className="update-dialog-release-notes">
+                <div className="update-dialog-release-notes-title">
+                  {aboutText(props.locale, "newReleaseNotes")} · {props.result.releaseName}
+                </div>
+                <MarkdownView
+                  title={props.result.releaseName}
+                  content={props.result.releaseBody}
+                  locale={props.locale}
+                />
+              </div>
+            ) : null}
           </div>
         </div>
         <div className="confirm-dialog-actions update-dialog-actions">
@@ -745,6 +747,7 @@ export function AboutPage(props: {
   const [copiedReleaseUrl, setCopiedReleaseUrl] = useState(false);
   const [installSource, setInstallSource] = useState<InstallSource | "unknown">("unknown");
   const [pendingUpdateVersion, setPendingUpdateVersion] = useState(() => loadPendingUpdateVersion());
+  const currentReleaseNotes = useMemo(() => extractReleaseNotes(ABOUT_INFO.version), []);
   const links = [
     {
       icon: Github,
@@ -768,142 +771,6 @@ export function AboutPage(props: {
       displayValue: ABOUT_INFO.contactEmail,
     },
   ];
-  const historyTexts: Record<string, Record<Locale, string>> = {
-    "v1.1.2": {
-      "zh-CN": "新增在终端打开 Kimi 能力，支持当前激活 Profile 与列表行 Profile 分别启动；优化 Terminal.app 和 iTerm2 新标签页执行方式，并补充图文 README。",
-      "zh-TW": toTraditionalChinese("新增在终端打开 Kimi 能力，支持当前激活 Profile 与列表行 Profile 分别启动；优化 Terminal.app 和 iTerm2 新标签页执行方式，并补充图文 README。"),
-      "en-US": "Added Open Kimi in Terminal support for both the active profile and row-specific profiles; improved Terminal.app and iTerm2 new-tab execution, and refreshed the README with screenshots.",
-      "ja-JP": "有効な Profile と行単位の Profile の両方で Kimi をターミナルから起動できるようにし、Terminal.app / iTerm2 の新規タブ実行とスクリーンショット付き README を改善しました。",
-      "de-DE": "Fügte das Öffnen von Kimi im Terminal für aktive und zeilenspezifische Profile hinzu, verbesserte neue Tabs in Terminal.app und iTerm2 und aktualisierte die README mit Screenshots.",
-      "es-ES": "Añadió abrir Kimi en terminal para el perfil activo y perfiles de fila, mejoró la ejecución en nuevas pestañas de Terminal.app/iTerm2 y actualizó el README con capturas.",
-    },
-    "v1.1.1": {
-      "zh-CN": "新增快捷键管理与快捷键备份，继续拆分主进程和渲染层模块，并优化更新检查弹框状态、GitHub Release 兜底检查与 README 功能说明。",
-      "zh-TW": toTraditionalChinese("新增快捷键管理与快捷键备份，继续拆分主进程和渲染层模块，并优化更新检查弹框状态、GitHub Release 兜底检查与 README 功能说明。"),
-      "en-US": "Added shortcut management and shortcut backups, continued splitting main and renderer modules, and refined update dialog states, GitHub Release fallback checks, and README feature coverage.",
-      "ja-JP": "ショートカット管理とバックアップを追加し、main / renderer モジュール分割を継続。更新ダイアログ、GitHub Release フォールバック、README 説明を改善しました。",
-      "de-DE": "Ergänzte Shortcut-Verwaltung und -Backups, setzte die Aufteilung von Main- und Renderer-Modulen fort und verbesserte Update-Dialoge, GitHub-Release-Fallback und README.",
-      "es-ES": "Añadió gestión y copias de atajos, continuó separando módulos main/renderer y refinó diálogos de actualización, fallback de GitHub Release y README.",
-    },
-    "v1.1.0": {
-      "zh-CN": "新增发布更新闭环，支持按安装来源提示更新方式；同时拆分渲染层大文件，提升 App.tsx 可维护性，并修复外链与空值类型边界问题。",
-      "zh-TW": toTraditionalChinese("新增发布更新闭环，支持按安装来源提示更新方式；同时拆分渲染层大文件，提升 App.tsx 可维护性，并修复外链与空值类型边界问题。"),
-      "en-US": "Added the release update loop with install-source-aware guidance; split renderer modules for a more maintainable App.tsx, and fixed external-link and nullable-state boundaries.",
-      "ja-JP": "インストール元に応じた更新案内を含むリリース更新フローを追加。renderer の大きなファイルを分割し、外部リンクと null 状態の境界を修正しました。",
-      "de-DE": "Fügte den Release-Update-Loop mit installationsquellenabhängigen Hinweisen hinzu, teilte Renderer-Module für wartbareres App.tsx auf und korrigierte Link- und Null-Grenzfälle.",
-      "es-ES": "Añadió el flujo cerrado de publicación/actualización con guía según origen, dividió módulos renderer para mantener App.tsx y corrigió enlaces externos y estados nulos.",
-    },
-    "v1.0.4": {
-      "zh-CN": "新增托盘语言与主题快捷切换，补齐备份恢复能力，并继续优化 Skills 工作区浏览、详情展示和 frontmatter 解析兼容性。",
-      "zh-TW": toTraditionalChinese("新增托盘语言与主题快捷切换，补齐备份恢复能力，并继续优化 Skills 工作区浏览、详情展示和 frontmatter 解析兼容性。"),
-      "en-US": "Added tray shortcuts for language and theme switching, introduced backup restore support, and further refined the Skills workspace, detail presentation, and frontmatter parsing compatibility.",
-      "ja-JP": "トレイから言語とテーマを素早く切り替えられるようにし、バックアップ復元を追加。Skills ワークスペースと frontmatter 互換性も改善しました。",
-      "de-DE": "Fügte Tray-Schnellwechsel für Sprache und Design sowie Backup-Wiederherstellung hinzu und verbesserte Skills-Arbeitsbereich, Details und frontmatter-Kompatibilität.",
-      "es-ES": "Añadió cambios rápidos de idioma/tema desde la bandeja, soporte de restauración de copias y mejoras en Skills, detalles y compatibilidad de frontmatter.",
-    },
-    "v1.0.3": {
-      "zh-CN": "重构 Skills 工作区与详情查看体验，新增界面字体大小设置，统一 Skills 自动发现流程，并修复多个页面无法打开与内容区高度未撑满的问题。",
-      "zh-TW": toTraditionalChinese("重构 Skills 工作区与详情查看体验，新增界面字体大小设置，统一 Skills 自动发现流程，并修复多个页面无法打开与内容区高度未撑满的问题。"),
-      "en-US": "Refined the Skills workspace and detail viewer, added interface font size settings, unified Skills auto discovery, and fixed multi-page navigation crashes plus the workspace height fill issue.",
-      "ja-JP": "Skills ワークスペースと詳細表示を改善し、UI フォントサイズ設定と自動検出を統一。ページ遷移クラッシュと高さ不足を修正しました。",
-      "de-DE": "Verbesserte Skills-Arbeitsbereich und Detailansicht, ergänzte UI-Schriftgrößen, vereinheitlichte Auto-Erkennung und behob Navigationsabstürze sowie Höhenprobleme.",
-      "es-ES": "Mejoró el espacio de Skills y sus detalles, añadió tamaño de fuente, unificó autodetección y corrigió fallos de navegación y altura del área de trabajo.",
-    },
-    "v1.0.2": {
-      "zh-CN": "补齐备份记录查看与删除流程，修复 MCP 面板配置反复写入导致的结构与缩进异常，并更新项目文档介绍。",
-      "zh-TW": toTraditionalChinese("补齐备份记录查看与删除流程，修复 MCP 面板配置反复写入导致的结构与缩进异常，并更新项目文档介绍。"),
-      "en-US": "Added backup record viewing and deletion, fixed repeated MCP panel writes causing structure and indentation issues, and refreshed the project documentation overview.",
-      "ja-JP": "バックアップ履歴の表示/削除を追加し、MCP パネルの繰り返し書き込みによる構造とインデント異常を修正。ドキュメントも更新しました。",
-      "de-DE": "Ergänzte Anzeige und Löschen von Backup-Einträgen, korrigierte Struktur-/Einrückungsfehler durch wiederholte MCP-Schreibvorgänge und aktualisierte die Dokumentation.",
-      "es-ES": "Añadió vista y eliminación de copias, corrigió estructura/indentación por escrituras repetidas del panel MCP y actualizó la documentación.",
-    },
-    "v1.0.1": {
-      "zh-CN": "集中优化设置页、首页总览和 MCP 管理交互，并更新整套透明品牌 Logo 与 macOS 图标资源。",
-      "zh-TW": toTraditionalChinese("集中优化设置页、首页总览和 MCP 管理交互，并更新整套透明品牌 Logo 与 macOS 图标资源。"),
-      "en-US": "Polished settings, overview, and MCP management flows, and refreshed the transparent brand logo and macOS icon assets.",
-      "ja-JP": "設定、概要、MCP 管理の操作を改善し、透明ブランドロゴと macOS アイコン素材を更新しました。",
-      "de-DE": "Verbesserte Einstellungen, Übersicht und MCP-Verwaltung und aktualisierte transparentes Markenlogo sowie macOS-Icon-Ressourcen.",
-      "es-ES": "Pulió ajustes, resumen y gestión MCP, y actualizó el logo transparente y recursos de icono de macOS.",
-    },
-    "v1.0.0": {
-      "zh-CN": "首个桌面版本，包含 Provider、Model、Profile 管理、配置预览与 Diff、状态栏菜单，以及修复后的 GitHub Release 发布流程。",
-      "zh-TW": toTraditionalChinese("首个桌面版本，包含 Provider、Model、Profile 管理、配置预览与 Diff、状态栏菜单，以及修复后的 GitHub Release 发布流程。"),
-      "en-US": "Initial desktop release with Provider, Model, Profile management, config preview, diff, tray menu, and the fixed GitHub Release pipeline.",
-      "ja-JP": "初回デスクトップ版。Provider、Model、Profile 管理、設定プレビュー、Diff、トレイメニュー、修正済み GitHub Release フローを含みます。",
-      "de-DE": "Erstes Desktop-Release mit Provider-, Modell- und Profilverwaltung, Konfigurationsvorschau, Diff, Tray-Menü und korrigierter GitHub-Release-Pipeline.",
-      "es-ES": "Primer lanzamiento de escritorio con gestión de Provider, Model y Profile, vista previa, diff, menú de bandeja y pipeline de GitHub Release corregido.",
-    },
-  };
-  const historyText = (version: string): string =>
-    historyTexts[version]?.[props.locale] ?? historyTexts[version]?.["en-US"] ?? "";
-  const history = [
-    {
-      version: "v1.1.7",
-      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.7`,
-      text: aboutText(props.locale, "historyV117"),
-    },
-    {
-      version: "v1.1.6",
-      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.6`,
-      text: aboutText(props.locale, "historyV116"),
-    },
-    {
-      version: "v1.1.5",
-      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.5`,
-      text: aboutText(props.locale, "historyV115"),
-    },
-    {
-      version: "v1.1.4",
-      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.4`,
-      text: aboutText(props.locale, "historyV114"),
-    },
-    {
-      version: "v1.1.3",
-      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.3`,
-      text: aboutText(props.locale, "historyV113"),
-    },
-    {
-      version: "v1.1.2",
-      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.2`,
-      text: historyText("v1.1.2"),
-    },
-    {
-      version: "v1.1.1",
-      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.1`,
-      text: historyText("v1.1.1"),
-    },
-    {
-      version: "v1.1.0",
-      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.1.0`,
-      text: historyText("v1.1.0"),
-    },
-    {
-      version: "v1.0.4",
-      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.0.4`,
-      text: historyText("v1.0.4"),
-    },
-    {
-      version: "v1.0.3",
-      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.0.3`,
-      text: historyText("v1.0.3"),
-    },
-    {
-      version: "v1.0.2",
-      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.0.2`,
-      text: historyText("v1.0.2"),
-    },
-    {
-      version: "v1.0.1",
-      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.0.1`,
-      text: historyText("v1.0.1"),
-    },
-    {
-      version: "v1.0.0",
-      url: `${ABOUT_INFO.repositoryUrl}/releases/tag/v1.0.0`,
-      text: historyText("v1.0.0"),
-    },
-  ];
-  const visibleHistory = history.slice(0, 3);
   const hasPendingUpdate =
     pendingUpdateVersion.length > 0 && compareReleaseVersions(pendingUpdateVersion, ABOUT_INFO.version) > 0;
   const isCheckOnCooldown = cooldownRemainingSeconds > 0;
@@ -1091,53 +958,49 @@ export function AboutPage(props: {
         </section>
       ) : null}
 
-      <div className="about-grid">
-        <section className="about-section about-section-wide">
-          <div className="section-title about-section-title">
-            <ExternalLink size={16} />
-            <span>{aboutText(props.locale, "projectLinks")}</span>
-          </div>
-          <div className="about-link-list">
-            {links.map(({ icon: Icon, label, value, displayValue }) => (
-              <button
-                key={label}
-                className="about-link-item"
-                type="button"
-                onClick={() => openRelease(value)}
-              >
-                <span className="about-link-icon"><Icon size={16} /></span>
-                <span>{label}</span>
-                <code>{displayValue ?? value}</code>
-              </button>
-            ))}
-          </div>
-        </section>
+      <section className="about-section about-section-wide">
+        <div className="section-title about-section-title">
+          <ExternalLink size={16} />
+          <span>{aboutText(props.locale, "projectLinks")}</span>
+        </div>
+        <div className="about-link-list">
+          {links.map(({ icon: Icon, label, value, displayValue }) => (
+            <button
+              key={label}
+              className="about-link-item"
+              type="button"
+              onClick={() => openRelease(value)}
+            >
+              <span className="about-link-icon"><Icon size={16} /></span>
+              <span>{label}</span>
+              <code>{displayValue ?? value}</code>
+            </button>
+          ))}
+        </div>
+      </section>
 
-        <section className="about-section about-section-wide">
-          <div className="section-title about-section-title">
-            <History size={16} />
-            <span>{aboutText(props.locale, "versionHistory")}</span>
+      <section className="about-section about-release-notes">
+        <div className="section-title about-section-title about-release-notes-header">
+          <div className="about-release-notes-heading">
+            <FileText size={16} />
+            <span>{aboutText(props.locale, "currentReleaseNotes")} · v{ABOUT_INFO.version}</span>
           </div>
-          <div className="about-history">
-            {visibleHistory.map((item) => (
-              <div key={item.version} className="about-history-item">
-                <span className="about-history-version">
-                  <strong>{item.version}</strong>
-                  <button
-                    className="about-history-link"
-                    type="button"
-                    aria-label={`${item.version} release`}
-                    onClick={() => openRelease(item.url)}
-                  >
-                    <ExternalLink size={13} />
-                  </button>
-                </span>
-                <span>{item.text}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      </div>
+          <button
+            className="about-release-notes-link"
+            type="button"
+            onClick={() => openRelease(`${ABOUT_INFO.repositoryUrl}/releases`)}
+          >
+            <span>{aboutText(props.locale, "viewAllVersions")}</span>
+            <ExternalLink size={13} />
+          </button>
+        </div>
+        {currentReleaseNotes ? (
+          <MarkdownView content={currentReleaseNotes} locale={props.locale} />
+        ) : (
+          <p className="about-release-notes-empty">{aboutText(props.locale, "currentReleaseNotesEmpty")}</p>
+        )}
+      </section>
+
       {updateDialog ? (
         <UpdateDialog
           locale={props.locale}

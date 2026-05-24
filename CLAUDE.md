@@ -69,13 +69,22 @@ Execute end-to-end, no confirmation needed:
    - If user provided a version, use it (still enforcing `vX.Y.Z` format)
    - If not provided: `git fetch --tags` → `git tag -l "v*" --sort=-v:refname | head -1` → increment patch by 1
 2. **Update version-bearing files**
-   - `CHANGELOG.md` — add a section for the new version, summarized from the diff since the previous tag
+   - `CHANGELOG.md` — add a section for the new version, summarized from the diff since the previous tag. **Right under the `## [X.Y.Z] - YYYY-MM-DD` header, add a single `> EN: ...` line** giving a one-sentence English summary of the release (方案 D bilingual convention). The Chinese body follows below as usual.
    - `README.md` — update any "current version" references
    - `package.json` — bump `version` field
-   - In-app version references in code (grep the previous version string; notably `src/renderer/src/App.tsx` `ABOUT_INFO.version`)
+   - In-app version references in code (grep the previous version string; notably `src/renderer/src/aboutPage.tsx` `ABOUT_INFO.version`)
 3. **Commit + push** — apply the commit SOP above (commit message describes the release bump, e.g. `chore: release v1.0.2`)
-4. **Tag** — `git tag vX.Y.Z` (lowercase `v` prefix + three numeric segments, strictly monotonic increasing; reject any deviation like `X.Y.Z` / `version-X.Y.Z` / `release-X.Y.Z`)
-5. **Push tag** — `git push origin vX.Y.Z` so the `v*` CI workflow can pick it up
+4. **Tag with release notes** — extract the new version's CHANGELOG section and use it as both the annotated tag message and the GitHub Release body:
+   ```bash
+   awk -v ver="X.Y.Z" '
+     $0 ~ "^## \\[" ver "\\]" { capture = 1; next }
+     capture && /^## \[/ { exit }
+     capture { print }
+   ' CHANGELOG.md > /tmp/release-notes.md
+   git tag -a vX.Y.Z -F /tmp/release-notes.md
+   ```
+   Tag format requirement still applies: lowercase `v` prefix + three numeric segments, strictly monotonic increasing; reject any deviation like `X.Y.Z` / `version-X.Y.Z` / `release-X.Y.Z`
+5. **Push tag** — `git push origin vX.Y.Z` so the `v*` CI workflow can pick it up. The CI in `.github/workflows/release.yml` re-extracts the same CHANGELOG section and overwrites the GitHub Release body with `gh release edit --notes-file`, keeping CHANGELOG.md as the single source of truth.
 
 ### Safety rails
 

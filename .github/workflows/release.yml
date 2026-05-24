@@ -33,13 +33,47 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        env:
+          VERSION: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          VERSION_NO_V="${VERSION#v}"
+          NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
+          awk -v ver="${VERSION_NO_V}" '
+            $0 ~ "^## \\[" ver "\\]" { capture = 1; next }
+            capture && /^## \[/ { exit }
+            capture { print }
+          ' CHANGELOG.md | awk 'NF { found = 1 } found { print }' > "${NOTES_FILE}"
+          if [ ! -s "${NOTES_FILE}" ]; then
+            echo "CHANGELOG entry for ${VERSION_NO_V} is empty; falling back to auto-generated notes." >&2
+            echo "has_notes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_notes=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "notes_file=${NOTES_FILE}" >> "$GITHUB_OUTPUT"
+
       - name: Ensure release exists
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ github.ref_name }}
+          HAS_NOTES: ${{ steps.notes.outputs.has_notes }}
+          NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
+        shell: bash
         run: |
-          gh release view "${VERSION}" >/dev/null 2>&1 || gh release create "${VERSION}" --generate-notes
+          if [ "${HAS_NOTES}" = "true" ]; then
+            gh release view "${VERSION}" >/dev/null 2>&1 \
+              && gh release edit "${VERSION}" --notes-file "${NOTES_FILE}" \
+              || gh release create "${VERSION}" --notes-file "${NOTES_FILE}"
+          else
+            gh release view "${VERSION}" >/dev/null 2>&1 \
+              || gh release create "${VERSION}" --generate-notes
+          fi
 
   build:
     name: Build ${{ matrix.os-name }}

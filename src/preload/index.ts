@@ -158,6 +158,7 @@ const api = {
     hasUpdate: boolean;
     releaseUrl: string;
     releaseName: string;
+    releaseBody: string;
     publishedAt: string;
     homebrewCommand: string;
     installSource: "homebrew" | "manual" | "development";
