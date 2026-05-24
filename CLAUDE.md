@@ -69,22 +69,22 @@ Execute end-to-end, no confirmation needed:
    - If user provided a version, use it (still enforcing `vX.Y.Z` format)
    - If not provided: `git fetch --tags` → `git tag -l "v*" --sort=-v:refname | head -1` → increment patch by 1
 2. **Update version-bearing files**
-   - `CHANGELOG.md` — add a section for the new version, summarized from the diff since the previous tag. **Right under the `## [X.Y.Z] - YYYY-MM-DD` header, add a single `> EN: ...` line** giving a one-sentence English summary of the release (方案 D bilingual convention). The Chinese body follows below as usual.
+   - `CHANGELOGS/{locale}.md` — add a new `## [X.Y.Z] - YYYY-MM-DD` section to **all 6 files** (`zh-CN`, `zh-TW`, `en-US`, `ja-JP`, `de-DE`, `es-ES`), each with body translated for that language. Section structure (新增/变更/修复 → Added/Changed/Fixed → 追加/変更/修正 → Hinzugefügt/Geändert/Behoben → Añadido/Cambiado/Corregido) should mirror across files. **CHANGELOG.md** at the repo root is just an index pointing to the 6 files — do not write release content there.
    - `README.md` — update any "current version" references
    - `package.json` — bump `version` field
    - In-app version references in code (grep the previous version string; notably `src/renderer/src/aboutPage.tsx` `ABOUT_INFO.version`)
 3. **Commit + push** — apply the commit SOP above (commit message describes the release bump, e.g. `chore: release v1.0.2`)
-4. **Tag with release notes** — extract the new version's CHANGELOG section and use it as both the annotated tag message and the GitHub Release body:
+4. **Tag with release notes** — extract the new version's CHANGELOG section from the zh-CN file and use it as the annotated tag message. The GitHub Release body will be bilingual (zh-CN + en-US, joined by `---`) and is assembled by CI; the tag message just needs the human-author intent (zh-CN by convention):
    ```bash
    awk -v ver="X.Y.Z" '
      $0 ~ "^## \\[" ver "\\]" { capture = 1; next }
      capture && /^## \[/ { exit }
      capture { print }
-   ' CHANGELOG.md > /tmp/release-notes.md
+   ' CHANGELOGS/zh-CN.md > /tmp/release-notes.md
    git tag -a vX.Y.Z -F /tmp/release-notes.md
    ```
    Tag format requirement still applies: lowercase `v` prefix + three numeric segments, strictly monotonic increasing; reject any deviation like `X.Y.Z` / `version-X.Y.Z` / `release-X.Y.Z`
-5. **Push tag** — `git push origin vX.Y.Z` so the `v*` CI workflow can pick it up. The CI in `.github/workflows/release.yml` re-extracts the same CHANGELOG section and overwrites the GitHub Release body with `gh release edit --notes-file`, keeping CHANGELOG.md as the single source of truth.
+5. **Push tag** — `git push origin vX.Y.Z` so the `v*` CI workflow can pick it up. The CI in `.github/workflows/release.yml` re-extracts the matching sections from `CHANGELOGS/zh-CN.md` + `CHANGELOGS/en-US.md`, combines them with a `---` divider, and overwrites the GitHub Release body via `gh release edit --notes-file`. Keep CHANGELOGS/ as the single source of truth.
 
 ### Safety rails
 

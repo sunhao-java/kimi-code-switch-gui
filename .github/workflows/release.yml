@@ -36,7 +36,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Extract release notes from CHANGELOG
+      - name: Build bilingual release notes from CHANGELOGS
         id: notes
         env:
           VERSION: ${{ github.ref_name }}
@@ -44,16 +44,40 @@ jobs:
         run: |
           VERSION_NO_V="${VERSION#v}"
           NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
-          awk -v ver="${VERSION_NO_V}" '
-            $0 ~ "^## \\[" ver "\\]" { capture = 1; next }
-            capture && /^## \[/ { exit }
-            capture { print }
-          ' CHANGELOG.md | awk 'NF { found = 1 } found { print }' > "${NOTES_FILE}"
-          if [ ! -s "${NOTES_FILE}" ]; then
-            echo "CHANGELOG entry for ${VERSION_NO_V} is empty; falling back to auto-generated notes." >&2
-            echo "has_notes=false" >> "$GITHUB_OUTPUT"
-          else
+          ZH="${RUNNER_TEMP}/zh.md"
+          EN="${RUNNER_TEMP}/en.md"
+          extract() {
+            local src="$1" out="$2"
+            awk -v ver="${VERSION_NO_V}" '
+              $0 ~ "^## \\[" ver "\\]" { capture = 1; next }
+              capture && /^## \[/ { exit }
+              capture { print }
+            ' "$src" | awk 'NF { found = 1 } found { print }' > "$out"
+          }
+          extract CHANGELOGS/zh-CN.md "$ZH"
+          extract CHANGELOGS/en-US.md "$EN"
+          {
+            if [ -s "$ZH" ]; then
+              echo "## 中文 (zh-CN)"
+              echo
+              cat "$ZH"
+            fi
+            if [ -s "$ZH" ] && [ -s "$EN" ]; then
+              echo
+              echo "---"
+              echo
+            fi
+            if [ -s "$EN" ]; then
+              echo "## English (en-US)"
+              echo
+              cat "$EN"
+            fi
+          } > "$NOTES_FILE"
+          if [ -s "$NOTES_FILE" ]; then
             echo "has_notes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "CHANGELOGS missing entry for ${VERSION_NO_V}; will fall back to auto-generated notes." >&2
+            echo "has_notes=false" >> "$GITHUB_OUTPUT"
           fi
           echo "notes_file=${NOTES_FILE}" >> "$GITHUB_OUTPUT"
 

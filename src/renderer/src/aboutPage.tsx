@@ -8,7 +8,7 @@ import type { Locale } from "@shared/types";
 import { t } from "./i18n";
 import { toTraditionalChinese } from "./localeText";
 import { MarkdownView } from "./markdownView";
-import { extractReleaseNotes } from "./releaseNotes";
+import { extractReleaseNotes, getBundledChangelog } from "./releaseNotes";
 import logoLight from "./assets/logo-light.png";
 import logoDark from "./assets/logo-dark.png";
 
@@ -735,6 +735,33 @@ function UpdateDialog(props: {
   );
 }
 
+function useChangelogForCurrentVersion(locale: Locale): string {
+  const bundledNotes = useMemo(
+    () => extractReleaseNotes(getBundledChangelog(locale), ABOUT_INFO.version),
+    [locale],
+  );
+  const [notes, setNotes] = useState<string>(bundledNotes);
+
+  useEffect(() => {
+    setNotes(bundledNotes);
+    let cancelled = false;
+    void window.kimiSwitch?.readChangelog?.(locale).then((cached) => {
+      if (cancelled || !cached) {
+        return;
+      }
+      const extracted = extractReleaseNotes(cached, ABOUT_INFO.version);
+      if (extracted) {
+        setNotes(extracted);
+      }
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [locale, bundledNotes]);
+
+  return notes;
+}
+
 export function AboutPage(props: {
   locale: Locale;
 }): JSX.Element {
@@ -747,7 +774,7 @@ export function AboutPage(props: {
   const [copiedReleaseUrl, setCopiedReleaseUrl] = useState(false);
   const [installSource, setInstallSource] = useState<InstallSource | "unknown">("unknown");
   const [pendingUpdateVersion, setPendingUpdateVersion] = useState(() => loadPendingUpdateVersion());
-  const currentReleaseNotes = useMemo(() => extractReleaseNotes(ABOUT_INFO.version), []);
+  const currentReleaseNotes = useChangelogForCurrentVersion(props.locale);
   const links = [
     {
       icon: Github,

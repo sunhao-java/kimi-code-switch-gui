@@ -44,6 +44,7 @@ import {
 import { registerStateIpc } from "./modules/stateIpc";
 import { registerDialogIpc } from "./modules/dialogIpc";
 import { registerCliIpc } from "./modules/cliIpc";
+import { maybeRefreshChangelogCache, readCachedChangelog } from "./modules/changelogCache";
 import { registerBackupIpc } from "./modules/backupIpc";
 import { registerTrayIpc } from "./modules/trayIpc";
 import { registerMcpProfileIpc } from "./modules/mcpProfileIpc";
@@ -1059,6 +1060,16 @@ app.whenReady().then(async () => {
   electronApp.setAppUserModelId("cn.crazycoder.kimi-code-switch-gui");
   await migrateLegacyPanelSettingsFile();
   await migrateLegacyUsageDirectory();
+  void maybeRefreshChangelogCache().catch((err) => {
+    console.error("changelog cache refresh failed", err);
+  });
+
+  ipcMain.handle("app:read-changelog", async (_event, locale: string): Promise<string | null> => {
+    if (typeof locale !== "string" || !locale) {
+      return null;
+    }
+    return readCachedChangelog(locale);
+  });
 
   registerStateIpc(ipcMain, {
     fileAccess,

@@ -163,6 +163,8 @@ const api = {
     homebrewCommand: string;
     installSource: "homebrew" | "manual" | "development";
   }> => ipcRenderer.invoke("app:check-for-updates"),
+  readChangelog: (locale: string): Promise<string | null> =>
+    ipcRenderer.invoke("app:read-changelog", locale),
   testMcpServer: (name: string): Promise<{ ok: true; stdout: string; stderr: string }> =>
     ipcRenderer.invoke("mcp:test-server", name),
   authMcpServer: (name: string): Promise<{ ok: true; stdout: string; stderr: string }> =>
