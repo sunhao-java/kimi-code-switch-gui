@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { LayoutGrid, List, X } from "lucide-react";
+import { Code2, Eye, LayoutGrid, List, X } from "lucide-react";
 
 import type { SkillEntry, SkillsScanReport } from "@shared/skillsStore";
 import type { Locale } from "@shared/types";
 
 import { CodePanel } from "./codePanel";
+import { MarkdownView } from "./markdownView";
 import { t } from "./i18n";
 
 export type SkillsViewMode = "grid" | "list";
@@ -320,6 +321,7 @@ function SkillsDetailDialog(props: {
   onClose: () => void;
 }): JSX.Element {
   useDialogEscape(props.onClose);
+  const [viewSource, setViewSource] = useState(false);
   const detailItems = [
     { label: t(props.locale, "skillsSource"), value: props.skill.sourceLabel },
     { label: t(props.locale, "skillsDirectory"), value: props.skill.directoryPath },
@@ -387,13 +389,39 @@ function SkillsDetailDialog(props: {
           ))}
         </div>
 
-        <CodePanel
-          title={props.skill.skillFilePath}
-          content={props.skill.content}
-          locale={props.locale}
-          onCopy={props.onCopy}
-          copied={props.copied}
-        />
+        {(() => {
+          const toggleLabel = t(props.locale, viewSource ? "viewRendered" : "viewSource");
+          const toggleButton = (
+            <button
+              className="code-head-copy"
+              type="button"
+              aria-label={toggleLabel}
+              title={toggleLabel}
+              onClick={() => setViewSource((prev) => !prev)}
+            >
+              {viewSource ? <Eye size={15} /> : <Code2 size={15} />}
+            </button>
+          );
+          return viewSource ? (
+            <CodePanel
+              title={props.skill.skillFilePath}
+              content={props.skill.content}
+              locale={props.locale}
+              onCopy={props.onCopy}
+              copied={props.copied}
+              headerExtra={toggleButton}
+            />
+          ) : (
+            <MarkdownView
+              title={props.skill.skillFilePath}
+              content={props.skill.content}
+              locale={props.locale}
+              onCopy={props.onCopy}
+              copied={props.copied}
+              headerExtra={toggleButton}
+            />
+          );
+        })()}
       </section>
     </div>,
     document.body,
