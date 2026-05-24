@@ -1,0 +1,31 @@
+{
+  "version": "2.0",
+  "project_name": "kimi-code-switch-gui",
+  "status": "idle",
+  "current_milestone": null,
+  "current_task_id": null,
+  "milestones": [],
+  "artifacts": [],
+  "last_updated": "2026-05-24T04:00:00.000Z",
+  "accumulated_context": {
+    "key_decisions": [
+      "使用日志解析替代 MITM 代理采集用量数据",
+      "洞察菜单始终显示，未启用时展示引导页",
+      "全局 Toast 系统替代 alert",
+      "Tab 快捷键: insights=Cmd+7, settings=Cmd+8",
+      "CSS 变量系统 + glass-panel 风格，不用 Tailwind",
+      "configStore 纯函数 + FileAccess 抽象",
+      "IPC 模式: registerXxxIpc(ipcMain, ctx)",
+      "i18n 简单 key-value 查找，支持 6 种语言"
+    ],
+    "blockers": [],
+    "deferred": [
+      "趋势图使用 recharts 替代纯 CSS 柱状图",
+      "成本估算功能（需要各 provider 定价数据）",
+      "多用户/团队维度统计",
+      "Tray 菜单中的洞察快捷入口"
+    ]
+  },
+  "transition_history": [],
+  "milestone_history": []
+}
