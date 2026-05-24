@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, Menu, nativeImage, nativeTheme, safeStorag
 import type { NativeImage } from "electron";
 import { basename, dirname, join, resolve } from "node:path";
 import { hostname } from "node:os";
-import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
 
@@ -16,6 +16,9 @@ import {
   DEFAULT_PANEL_DIRECTORY,
   DEFAULT_PANEL_SETTINGS_PATH,
   LEGACY_PANEL_SETTINGS_PATH,
+  LEGACY_USAGE_DIRECTORY,
+  PANEL_USAGE_DIRECTORY,
+  PANEL_USAGE_DB_PATH,
   normalizeStatePaths,
   loadAppState,
   loadPanelSettings,
@@ -872,6 +875,33 @@ async function migrateLegacyPanelSettingsFile(): Promise<void> {
   await fileAccess.writeText(DEFAULT_PANEL_SETTINGS_PATH, legacyPanelSettings);
 }
 
+async function migrateLegacyUsageDirectory(): Promise<void> {
+  const legacyPath = resolveHome(LEGACY_USAGE_DIRECTORY);
+  const targetPath = resolveHome(PANEL_USAGE_DIRECTORY);
+  const legacyStat = await safeStat(legacyPath);
+  if (!legacyStat?.isDirectory()) {
+    return;
+  }
+  const targetStat = await safeStat(targetPath);
+  if (targetStat?.isDirectory()) {
+    return;
+  }
+  await mkdir(dirname(targetPath), { recursive: true });
+  try {
+    await rename(legacyPath, targetPath);
+  } catch (error) {
+    console.error("usage directory migration failed", error);
+  }
+}
+
+async function safeStat(path: string): Promise<Awaited<ReturnType<typeof stat>> | null> {
+  try {
+    return await stat(path);
+  } catch {
+    return null;
+  }
+}
+
 function resolveRendererTheme(theme: AppearanceMode): "dark" | "light" {
   if (theme === "auto") {
     return nativeTheme.shouldUseDarkColors ? "dark" : "light";
@@ -1028,6 +1058,7 @@ async function createWindow(): Promise<void> {
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId("cn.crazycoder.kimi-code-switch-gui");
   await migrateLegacyPanelSettingsFile();
+  await migrateLegacyUsageDirectory();
 
   registerStateIpc(ipcMain, {
     fileAccess,
@@ -1082,7 +1113,7 @@ app.whenReady().then(async () => {
           return { ok: false, message: "app state not loaded" };
         }
         if (!usageDb) {
-          usageDb = await UsageDb.open({ dbPath: "~/.kimi/usage/index.db" });
+          usageDb = await UsageDb.open({ dbPath: PANEL_USAGE_DB_PATH });
         }
         if (!usageLogWatcher) {
           usageLogWatcher = new UsageLogWatcher({
@@ -1196,7 +1227,7 @@ function startUsageIngest(): void {
   stopUsageIngest();
   usageIngestTimer = setInterval(() => {
     if (usageDb) {
-      void ingestPending(usageDb, "~/.kimi/usage").catch((err) => {
+      void ingestPending(usageDb, PANEL_USAGE_DIRECTORY).catch((err) => {
         console.error("usage ingest failed", err);
       });
     }

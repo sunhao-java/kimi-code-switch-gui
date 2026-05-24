@@ -32,6 +32,9 @@ export const DEFAULT_CONFIG_PATH = "~/.kimi/config.toml";
 export const DEFAULT_PANEL_DIRECTORY = "~/.kimi/.panel";
 export const DEFAULT_PANEL_SETTINGS_PATH = `${DEFAULT_PANEL_DIRECTORY}/${PANEL_SETTINGS_FILENAME}`;
 export const LEGACY_PANEL_SETTINGS_PATH = "~/.kimi/config.panel.toml";
+export const PANEL_USAGE_DIRECTORY = `${DEFAULT_PANEL_DIRECTORY}/usage`;
+export const PANEL_USAGE_DB_PATH = `${PANEL_USAGE_DIRECTORY}/index.db`;
+export const LEGACY_USAGE_DIRECTORY = "~/.kimi/usage";
 const SUPPORTED_LOCALES = new Set<PanelSettings["locale"]>(["zh-CN", "zh-TW", "en-US", "ja-JP", "de-DE", "es-ES"]);
 
 const PROFILE_KEYS: Array<keyof Profile> = [

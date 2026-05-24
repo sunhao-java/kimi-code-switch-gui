@@ -17,6 +17,7 @@ import type {
   SessionRow,
 } from "@shared/usageTypes";
 import type { AppState } from "@shared/types";
+import { PANEL_USAGE_DIRECTORY, PANEL_USAGE_DB_PATH } from "@shared/configStore";
 import { resolveHome } from "./fileAccess";
 import type { UsageDb, BreakdownOrder } from "./usageDb";
 import type { UsageLogWatcher } from "./usageLogWatcher";
@@ -31,8 +32,8 @@ export interface UsageIpcContext {
   updateInsightsSettings: (patch: Partial<InsightsSettings>) => Promise<InsightsSettings>;
 }
 
-const JSONL_DIR = "~/.kimi/usage";
-const SQLITE_PATH = "~/.kimi/usage/index.db";
+const JSONL_DIR = PANEL_USAGE_DIRECTORY;
+const SQLITE_PATH = PANEL_USAGE_DB_PATH;
 
 export function registerUsageIpc(ipcMain: IpcMain, ctx: UsageIpcContext): void {
   ipcMain.handle("usage:get-status", async () => {
