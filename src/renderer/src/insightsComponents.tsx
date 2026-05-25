@@ -1,12 +1,61 @@
 import { useEffect, useState } from "react";
-import { Activity, AlertCircle, CheckCircle2, Database, HardDrive, Power, Terminal, TrendingUp, Zap } from "lucide-react";
+import { Activity, AlertCircle, BarChart3, CheckCircle2, Database, HardDrive, LineChart, Power, Terminal, TrendingUp, Zap } from "lucide-react";
 import type { Locale } from "@shared/types";
 import type { InsightsSettings } from "@shared/usageTypes";
 import { t } from "./i18n";
 import { SettingsGroup } from "./formControls";
 import { ToastContainer } from "./Toast";
 import { useToast } from "./useToast";
+import { TrendChart, type TrendChartType } from "./insightsChart";
 import "./insights.css";
+
+const UI_PREFS_KEY = "kimi-insights-ui-prefs-v1";
+
+type InsightsTab = "overview" | "trend" | "breakdown" | "sessions";
+type TrendMetric = "tokens" | "calls";
+type BreakdownDim = "model" | "profile";
+type TimeRangeMode = "preset" | "custom";
+
+interface InsightsUiPrefs {
+  activeTab: InsightsTab;
+  timeRangeKey: string;
+  timeRangeMode: TimeRangeMode;
+  customFrom: string;
+  customTo: string;
+  trendMetric: TrendMetric;
+  trendChartType: TrendChartType;
+  breakdownDim: BreakdownDim;
+}
+
+const DEFAULT_UI_PREFS: InsightsUiPrefs = {
+  activeTab: "overview",
+  timeRangeKey: "7d",
+  timeRangeMode: "preset",
+  customFrom: "",
+  customTo: "",
+  trendMetric: "tokens",
+  trendChartType: "bar",
+  breakdownDim: "model",
+};
+
+function loadUiPrefs(): InsightsUiPrefs {
+  try {
+    const raw = window.localStorage.getItem(UI_PREFS_KEY);
+    if (!raw) return DEFAULT_UI_PREFS;
+    const parsed = JSON.parse(raw) as Partial<InsightsUiPrefs>;
+    return { ...DEFAULT_UI_PREFS, ...parsed };
+  } catch {
+    return DEFAULT_UI_PREFS;
+  }
+}
+
+function saveUiPrefs(prefs: InsightsUiPrefs): void {
+  try {
+    window.localStorage.setItem(UI_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    /* localStorage quota or disabled */
+  }
+}
 
 interface FirstRunDialogProps {
   locale: Locale;
@@ -349,7 +398,8 @@ interface InsightsDashboardProps {
 }
 
 export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: InsightsDashboardProps): JSX.Element {
-  const [activeTab, setActiveTab] = useState<"overview" | "trend" | "breakdown" | "sessions">("overview");
+  const initialPrefs = loadUiPrefs();
+  const [activeTab, setActiveTab] = useState<InsightsTab>(initialPrefs.activeTab);
   const [settings, setSettings] = useState<InsightsSettings | null>(null);
   const [overview, setOverview] = useState<{
     totalCalls: number; totalTokens: number; cacheHitRate: number;
@@ -358,14 +408,19 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
   const [trendData, setTrendData] = useState<Array<{ date: string; tokens: number; calls: number }>>([]);
   const [breakdownData, setBreakdownData] = useState<Array<{ name: string; calls: number; tokens: number; avgLatency: number }>>([]);
   const [sessionsData, setSessionsData] = useState<Array<{ sessionId: string; calls: number; tokens: number; duration: string; model: string }>>([]);
-  const [timeRangeKey, setTimeRangeKey] = useState<string>("7d");
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
-  const [timeRangeMode, setTimeRangeMode] = useState<"preset" | "custom">("preset");
+  const [timeRangeKey, setTimeRangeKey] = useState<string>(initialPrefs.timeRangeKey);
+  const [customFrom, setCustomFrom] = useState(initialPrefs.customFrom);
+  const [customTo, setCustomTo] = useState(initialPrefs.customTo);
+  const [timeRangeMode, setTimeRangeMode] = useState<TimeRangeMode>(initialPrefs.timeRangeMode);
   const [loading, setLoading] = useState(false);
-  const [trendMetric, setTrendMetric] = useState<"tokens" | "calls">("tokens");
-  const [breakdownDim, setBreakdownDim] = useState<"model" | "profile">("model");
+  const [trendMetric, setTrendMetric] = useState<TrendMetric>(initialPrefs.trendMetric);
+  const [trendChartType, setTrendChartType] = useState<TrendChartType>(initialPrefs.trendChartType);
+  const [breakdownDim, setBreakdownDim] = useState<BreakdownDim>(initialPrefs.breakdownDim);
   const { toasts, showToast, removeToast } = useToast();
+
+  useEffect(() => {
+    saveUiPrefs({ activeTab, timeRangeKey, timeRangeMode, customFrom, customTo, trendMetric, trendChartType, breakdownDim });
+  }, [activeTab, timeRangeKey, timeRangeMode, customFrom, customTo, trendMetric, trendChartType, breakdownDim]);
 
   const getTimeRange = (): unknown => {
     if (timeRangeMode === "custom" && customFrom && customTo) {
@@ -498,32 +553,40 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
         {activeTab === "trend" && (
           <div className="insights-trend-panel">
             <p className="insights-tab-desc">按日展示 Token 消耗或调用次数的变化趋势，帮助发现用量高峰和异常波动。</p>
-            <div style={{ marginBottom: "12px", display: "flex", gap: "8px", alignItems: "center" }}>
-              <select value={trendMetric} onChange={(e) => setTrendMetric(e.target.value as "tokens" | "calls")} className="insights-select">
+            <div className="insights-trend-controls">
+              <select value={trendMetric} onChange={(e) => setTrendMetric(e.target.value as TrendMetric)} className="insights-select">
                 <option value="tokens">Token 消耗</option>
                 <option value="calls">调用次数</option>
               </select>
+              <div className="insights-chart-type-toggle" role="tablist" aria-label="图表类型">
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={trendChartType === "bar"}
+                  className={`insights-chart-type-btn ${trendChartType === "bar" ? "active" : ""}`}
+                  onClick={() => setTrendChartType("bar")}
+                  title="柱状图"
+                >
+                  <BarChart3 size={14} />
+                  <span>柱状图</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={trendChartType === "line"}
+                  className={`insights-chart-type-btn ${trendChartType === "line" ? "active" : ""}`}
+                  onClick={() => setTrendChartType("line")}
+                  title="折线图"
+                >
+                  <LineChart size={14} />
+                  <span>折线图</span>
+                </button>
+              </div>
             </div>
             {trendData.length === 0 ? (
               <div className="insights-coming-soon"><TrendingUp size={48} /><h3>暂无趋势数据</h3><p>使用 kimi-cli 发起请求后，趋势数据将在此展示。</p></div>
             ) : (
-              <div className="insights-trend-chart">
-                <span className="insights-axis-label insights-axis-y">{trendMetric === "tokens" ? "Token 数量" : "调用次数"}</span>
-                <div className="insights-trend-bars">
-                  {trendData.map((point, i) => {
-                    const val = trendMetric === "tokens" ? point.tokens : point.calls;
-                    const maxVal = Math.max(...trendData.map((d) => trendMetric === "tokens" ? d.tokens : d.calls), 1);
-                    const height = Math.max((val / maxVal) * 100, 2);
-                    return (
-                      <div key={i} className="insights-trend-bar-group" title={`${point.date}: ${formatNumber(val)} ${trendMetric === "tokens" ? "tokens" : "次"}`}>
-                        <div className="insights-trend-bar" style={{ height: `${height}%` }} />
-                        <span className="insights-trend-bar-label">{point.date.slice(5)}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-                <span className="insights-axis-label insights-axis-x">日期</span>
-              </div>
+              <TrendChart data={trendData} metric={trendMetric} chartType={trendChartType} />
             )}
           </div>
         )}
@@ -532,7 +595,7 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
           <div className="insights-breakdown-panel">
             <p className="insights-tab-desc">按模型或 Profile 维度聚合统计，快速定位 Token 消耗大户。</p>
             <div style={{ marginBottom: "16px" }}>
-              <select value={breakdownDim} onChange={(e) => setBreakdownDim(e.target.value as "model" | "profile")} className="insights-select">
+              <select value={breakdownDim} onChange={(e) => setBreakdownDim(e.target.value as BreakdownDim)} className="insights-select">
                 <option value="model">按模型</option>
                 <option value="profile">按 Profile</option>
               </select>

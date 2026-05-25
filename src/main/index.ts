@@ -1081,6 +1081,7 @@ app.whenReady().then(async () => {
     createTray,
     updateTrayMenu,
     onExternalFileChange,
+    restoreInsightsRuntime: restoreInsightsRuntimeIfEnabled,
   });
 
   registerCliIpc(ipcMain);
@@ -1123,22 +1124,12 @@ app.whenReady().then(async () => {
         if (!latestAppState) {
           return { ok: false, message: "app state not loaded" };
         }
-        if (!usageDb) {
-          usageDb = await UsageDb.open({ dbPath: PANEL_USAGE_DB_PATH });
-        }
-        if (!usageLogWatcher) {
-          usageLogWatcher = new UsageLogWatcher({
-            getActiveProfile: () => latestAppState?.activeProfile ?? "default",
-            db: usageDb,
-          });
-        }
-        await usageLogWatcher.start();
+        await bootInsightsRuntime();
         latestAppState.panelSettings.insights_status = "enabled";
         latestAppState.panelSettings.insights_last_known_port = null;
         markSelfWrite("panel");
         await saveAppState(fileAccess, latestAppState);
         void updateBaseline();
-        startUsageIngest();
         return { ok: true };
       } catch (err) {
         return { ok: false, message: String(err) };
@@ -1249,5 +1240,29 @@ function stopUsageIngest(): void {
   if (usageIngestTimer) {
     clearInterval(usageIngestTimer);
     usageIngestTimer = null;
+  }
+}
+
+async function bootInsightsRuntime(): Promise<void> {
+  if (!usageDb) {
+    usageDb = await UsageDb.open({ dbPath: PANEL_USAGE_DB_PATH });
+  }
+  if (!usageLogWatcher) {
+    usageLogWatcher = new UsageLogWatcher({
+      getActiveProfile: () => latestAppState?.activeProfile ?? "default",
+      db: usageDb,
+    });
+  }
+  await usageLogWatcher.start();
+  startUsageIngest();
+}
+
+async function restoreInsightsRuntimeIfEnabled(state: AppState): Promise<void> {
+  if (state.panelSettings.insights_status !== "enabled") return;
+  if (usageDb && usageLogWatcher) return;
+  try {
+    await bootInsightsRuntime();
+  } catch (err) {
+    console.error("restore insights runtime failed", err);
   }
 }

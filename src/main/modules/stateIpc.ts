@@ -23,6 +23,7 @@ export interface StateIpcContext {
   createTray: () => void;
   updateTrayMenu: () => Promise<void>;
   onExternalFileChange: (changedFileIds: string[]) => void;
+  restoreInsightsRuntime?: (state: AppState) => Promise<void>;
 }
 
 export function registerStateIpc(ipcMain: IpcMain, ctx: StateIpcContext): void {
@@ -37,6 +38,9 @@ export function registerStateIpc(ipcMain: IpcMain, ctx: StateIpcContext): void {
       }
       void ctx.updateTrayMenu();
       void startWatching(state, ctx.onExternalFileChange);
+      if (ctx.restoreInsightsRuntime) {
+        void ctx.restoreInsightsRuntime(state);
+      }
       return state;
     } catch (error) {
       console.error("app:load-state", error);
