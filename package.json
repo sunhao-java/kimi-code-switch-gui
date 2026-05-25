@@ -22,13 +22,7 @@
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
-    "better-sqlite3": "^12.10.0",
-    "lucide-react": "^0.511.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-markdown": "^10.1.0",
-    "recharts": "^2.15.4",
-    "remark-gfm": "^4.0.1"
+    "better-sqlite3": "^12.10.0"
   },
   "devDependencies": {
     "@electron-toolkit/utils": "^3.0.0",
@@ -39,13 +33,17 @@
     "@types/node": "^22.15.3",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
-    "@types/recharts": "^1.8.29",
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^3.2.2",
     "electron": "^35.2.0",
     "electron-builder": "^26.0.12",
     "electron-vite": "^3.1.0",
     "jsdom": "^26.1.0",
+    "lucide-react": "^0.511.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vitest": "^3.2.2"
@@ -54,12 +52,18 @@
     "appId": "cn.crazycoder.kimi-code-switch-gui",
     "productName": "Kimi Code Switch GUI",
     "artifactName": "kimi-code-switch-gui-${version}-${os}-${arch}.${ext}",
+    "compression": "maximum",
+    "afterPack": "scripts/afterPack.cjs",
     "directories": {
       "output": "release"
     },
     "files": [
       "out/**/*",
-      "package.json"
+      "package.json",
+      "!**/node_modules/better-sqlite3/{deps,src,docs,benchmark,test,binding.gyp,CHANGELOG.md,README.md}",
+      "!**/node_modules/better-sqlite3/build/Release/{obj.target,.deps}",
+      "!**/node_modules/better-sqlite3/build/Release/*.{o,a,lib,exp}",
+      "!**/node_modules/{prebuild-install,node-abi,node-addon-api,node-gyp,nopt,prebuild,simple-get,tar-fs,tar-stream,decompress-response,detect-libc,expand-template,file-uri-to-path,fs-constants,github-from-package,mkdirp-classic,napi-build-utils,mimic-response,deep-extend,chownr,minimist,rc}"
     ],
     "asarUnpack": [
       "**/node_modules/better-sqlite3/**",
@@ -77,6 +81,10 @@
     "mac": {
       "icon": "resources/icon.png",
       "category": "public.app-category.developer-tools",
+      "electronLanguages": [
+        "en",
+        "zh_CN"
+      ],
       "target": [
         "dmg",
         "zip"
