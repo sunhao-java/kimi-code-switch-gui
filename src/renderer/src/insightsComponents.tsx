@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, AlertCircle, BarChart3, CheckCircle2, Database, HardDrive, LineChart, Power, Terminal, TrendingUp, Zap } from "lucide-react";
+import { Activity, AlertCircle, BarChart3, CheckCircle2, Database, HardDrive, LineChart, PieChart as PieIcon, Power, Table as TableIcon, Terminal, TrendingUp, Zap } from "lucide-react";
 import type { Locale } from "@shared/types";
 import type { InsightsSettings } from "@shared/usageTypes";
 import { t } from "./i18n";
@@ -7,13 +7,14 @@ import { SettingsGroup } from "./formControls";
 import { ToastContainer } from "./Toast";
 import { useToast } from "./useToast";
 import { TrendChart, type TrendChartType } from "./insightsChart";
+import { PieChart, type PieDatum } from "./insightsPieChart";
 import "./insights.css";
 
 const UI_PREFS_KEY = "kimi-insights-ui-prefs-v1";
 
 type InsightsTab = "overview" | "trend" | "breakdown" | "sessions";
 type TrendMetric = "tokens" | "calls";
-type BreakdownDim = "model" | "profile";
+type BreakdownView = "table" | "pie";
 type TimeRangeMode = "preset" | "custom";
 
 interface InsightsUiPrefs {
@@ -24,7 +25,8 @@ interface InsightsUiPrefs {
   customTo: string;
   trendMetric: TrendMetric;
   trendChartType: TrendChartType;
-  breakdownDim: BreakdownDim;
+  breakdownModelView: BreakdownView;
+  breakdownProfileView: BreakdownView;
 }
 
 const DEFAULT_UI_PREFS: InsightsUiPrefs = {
@@ -35,7 +37,8 @@ const DEFAULT_UI_PREFS: InsightsUiPrefs = {
   customTo: "",
   trendMetric: "tokens",
   trendChartType: "bar",
-  breakdownDim: "model",
+  breakdownModelView: "pie",
+  breakdownProfileView: "pie",
 };
 
 function loadUiPrefs(): InsightsUiPrefs {
@@ -406,7 +409,8 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
     reasoningTokens: number; avgLatencyMs: number; errorRate: number;
   } | null>(null);
   const [trendData, setTrendData] = useState<Array<{ date: string; tokens: number; calls: number }>>([]);
-  const [breakdownData, setBreakdownData] = useState<Array<{ name: string; calls: number; tokens: number; avgLatency: number }>>([]);
+  const [breakdownDataModel, setBreakdownDataModel] = useState<Array<{ name: string; calls: number; tokens: number; avgLatency: number }>>([]);
+  const [breakdownDataProfile, setBreakdownDataProfile] = useState<Array<{ name: string; calls: number; tokens: number; avgLatency: number }>>([]);
   const [sessionsData, setSessionsData] = useState<Array<{ sessionId: string; calls: number; tokens: number; duration: string; model: string }>>([]);
   const [timeRangeKey, setTimeRangeKey] = useState<string>(initialPrefs.timeRangeKey);
   const [customFrom, setCustomFrom] = useState(initialPrefs.customFrom);
@@ -415,12 +419,13 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
   const [loading, setLoading] = useState(false);
   const [trendMetric, setTrendMetric] = useState<TrendMetric>(initialPrefs.trendMetric);
   const [trendChartType, setTrendChartType] = useState<TrendChartType>(initialPrefs.trendChartType);
-  const [breakdownDim, setBreakdownDim] = useState<BreakdownDim>(initialPrefs.breakdownDim);
+  const [breakdownModelView, setBreakdownModelView] = useState<BreakdownView>(initialPrefs.breakdownModelView);
+  const [breakdownProfileView, setBreakdownProfileView] = useState<BreakdownView>(initialPrefs.breakdownProfileView);
   const { toasts, showToast, removeToast } = useToast();
 
   useEffect(() => {
-    saveUiPrefs({ activeTab, timeRangeKey, timeRangeMode, customFrom, customTo, trendMetric, trendChartType, breakdownDim });
-  }, [activeTab, timeRangeKey, timeRangeMode, customFrom, customTo, trendMetric, trendChartType, breakdownDim]);
+    saveUiPrefs({ activeTab, timeRangeKey, timeRangeMode, customFrom, customTo, trendMetric, trendChartType, breakdownModelView, breakdownProfileView });
+  }, [activeTab, timeRangeKey, timeRangeMode, customFrom, customTo, trendMetric, trendChartType, breakdownModelView, breakdownProfileView]);
 
   const getTimeRange = (): unknown => {
     if (timeRangeMode === "custom" && customFrom && customTo) {
@@ -442,18 +447,22 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
     setLoading(true);
     const range = getTimeRange() as never;
     try {
-      const [overviewRes, trendRes, breakdownRes, sessionsRes] = await Promise.allSettled([
+      const [overviewRes, trendRes, breakdownModelRes, breakdownProfileRes, sessionsRes] = await Promise.allSettled([
         window.kimiSwitch.usageQueryOverview(range),
         window.kimiSwitch.usageQueryTrend({ range, bucket: "day", groupBy: null }),
-        window.kimiSwitch.usageQueryBreakdown({ dim: breakdownDim, range, limit: 20, orderBy: "tokens" }),
+        window.kimiSwitch.usageQueryBreakdown({ dim: "model", range, limit: 20, orderBy: "tokens" }),
+        window.kimiSwitch.usageQueryBreakdown({ dim: "profile", range, limit: 20, orderBy: "tokens" }),
         window.kimiSwitch.usageQuerySessions({ range, limit: 20 }),
       ]);
       if (overviewRes.status === "fulfilled" && overviewRes.value.ok) setOverview(overviewRes.value.slice);
       if (trendRes.status === "fulfilled" && trendRes.value.ok) {
         setTrendData(trendRes.value.series.map((s) => ({ date: new Date(s.bucket).toISOString().slice(0, 10), tokens: s.tokens, calls: s.calls })));
       }
-      if (breakdownRes.status === "fulfilled" && breakdownRes.value.ok) {
-        setBreakdownData(breakdownRes.value.rows.map((r) => ({ name: r.name, calls: r.calls, tokens: r.tokens, avgLatency: r.avg_latency_ms })));
+      if (breakdownModelRes.status === "fulfilled" && breakdownModelRes.value.ok) {
+        setBreakdownDataModel(breakdownModelRes.value.rows.map((r) => ({ name: r.name, calls: r.calls, tokens: r.tokens, avgLatency: r.avg_latency_ms })));
+      }
+      if (breakdownProfileRes.status === "fulfilled" && breakdownProfileRes.value.ok) {
+        setBreakdownDataProfile(breakdownProfileRes.value.rows.map((r) => ({ name: r.name, calls: r.calls, tokens: r.tokens, avgLatency: r.avg_latency_ms })));
       }
       if (sessionsRes.status === "fulfilled" && sessionsRes.value.ok) {
         setSessionsData(sessionsRes.value.rows.map((r) => ({ sessionId: r.session_id, calls: r.calls, tokens: r.tokens, duration: r.ended_utc ? `${Math.round((r.ended_utc - r.started_utc) / 1000)}s` : "-", model: r.profile })));
@@ -466,12 +475,12 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
   };
 
   useEffect(() => { void loadStatus(); }, []);
-  useEffect(() => { if (settings?.insights_status === "enabled") void loadData(); }, [settings, timeRangeKey, timeRangeMode, customFrom, customTo, breakdownDim]);
+  useEffect(() => { if (settings?.insights_status === "enabled") void loadData(); }, [settings, timeRangeKey, timeRangeMode, customFrom, customTo]);
   useEffect(() => {
     const handler = (): void => { void loadData(); };
     window.addEventListener("kimi-refresh", handler);
     return () => window.removeEventListener("kimi-refresh", handler);
-  }, [timeRangeKey, timeRangeMode, customFrom, customTo, breakdownDim]);
+  }, [timeRangeKey, timeRangeMode, customFrom, customTo]);
 
   const isEnabled = settings?.insights_status === "enabled";
   if (!isEnabled) {
@@ -593,39 +602,23 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
 
         {activeTab === "breakdown" && (
           <div className="insights-breakdown-panel">
-            <p className="insights-tab-desc">按模型或 Profile 维度聚合统计，快速定位 Token 消耗大户。</p>
-            <div style={{ marginBottom: "16px" }}>
-              <select value={breakdownDim} onChange={(e) => setBreakdownDim(e.target.value as BreakdownDim)} className="insights-select">
-                <option value="model">按模型</option>
-                <option value="profile">按 Profile</option>
-              </select>
+            <p className="insights-tab-desc">{t(locale, "insightsBreakdownDesc")}</p>
+            <div className="insights-breakdown-dual">
+              <BreakdownCard
+                title={t(locale, "insightsBreakdownByModel")}
+                data={breakdownDataModel}
+                view={breakdownModelView}
+                onViewChange={setBreakdownModelView}
+                locale={locale}
+              />
+              <BreakdownCard
+                title={t(locale, "insightsBreakdownByProfile")}
+                data={breakdownDataProfile}
+                view={breakdownProfileView}
+                onViewChange={setBreakdownProfileView}
+                locale={locale}
+              />
             </div>
-            {breakdownData.length === 0 ? (
-              <div className="insights-coming-soon"><Database size={48} /><h3>暂无分组数据</h3><p>使用 kimi-cli 发起请求后，分组统计将在此展示。</p></div>
-            ) : (
-              <div className="insights-breakdown-table">
-                <div className="insights-table-header">
-                  <span className="insights-table-cell name">名称</span>
-                  <span className="insights-table-cell num">调用次数</span>
-                  <span className="insights-table-cell num">Token 总量</span>
-                  <span className="insights-table-cell num">占比</span>
-                  <span className="insights-table-cell num">平均延迟</span>
-                </div>
-                {breakdownData.map((row, i) => {
-                  const totalTokens = breakdownData.reduce((sum, r) => sum + r.tokens, 0) || 1;
-                  const pct = ((row.tokens / totalTokens) * 100).toFixed(1);
-                  return (
-                    <div key={i} className="insights-table-row">
-                      <span className="insights-table-cell name">{row.name || "(未知)"}</span>
-                      <span className="insights-table-cell num">{formatNumber(row.calls)}</span>
-                      <span className="insights-table-cell num">{formatNumber(row.tokens)}</span>
-                      <span className="insights-table-cell num">{pct}%</span>
-                      <span className="insights-table-cell num">{Math.round(row.avgLatency)} ms</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </div>
         )}
 
@@ -666,6 +659,82 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
         )}
       </div>
       <ToastContainer toasts={toasts} onRemove={removeToast} />
+    </div>
+  );
+}
+
+interface BreakdownCardProps {
+  title: string;
+  data: Array<{ name: string; calls: number; tokens: number; avgLatency: number }>;
+  view: BreakdownView;
+  onViewChange: (v: BreakdownView) => void;
+  locale: Locale;
+}
+
+function BreakdownCard({ title, data, view, onViewChange, locale }: BreakdownCardProps): JSX.Element {
+  const pieData: PieDatum[] = data.map((r) => ({ name: r.name || "(未知)", value: r.tokens }));
+
+  return (
+    <div className="insights-breakdown-card">
+      <div className="insights-breakdown-card-header">
+        <h4 className="insights-breakdown-card-title">{title}</h4>
+        <div className="insights-chart-type-toggle" role="tablist" aria-label="展示形式">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "table"}
+            className={`insights-chart-type-btn ${view === "table" ? "active" : ""}`}
+            onClick={() => onViewChange("table")}
+            title={t(locale, "insightsViewTable")}
+          >
+            <TableIcon size={14} />
+            <span>{t(locale, "insightsViewTable")}</span>
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "pie"}
+            className={`insights-chart-type-btn ${view === "pie" ? "active" : ""}`}
+            onClick={() => onViewChange("pie")}
+            title={t(locale, "insightsViewPie")}
+          >
+            <PieIcon size={14} />
+            <span>{t(locale, "insightsViewPie")}</span>
+          </button>
+        </div>
+      </div>
+      {data.length === 0 ? (
+        <div className="insights-coming-soon">
+          <Database size={36} />
+          <h3>{t(locale, "insightsBreakdownEmpty")}</h3>
+          <p>{t(locale, "insightsBreakdownEmptyHint")}</p>
+        </div>
+      ) : view === "table" ? (
+        <div className="insights-breakdown-table">
+          <div className="insights-table-header">
+            <span className="insights-table-cell name">名称</span>
+            <span className="insights-table-cell num">调用次数</span>
+            <span className="insights-table-cell num">Token 总量</span>
+            <span className="insights-table-cell num">占比</span>
+            <span className="insights-table-cell num">平均延迟</span>
+          </div>
+          {data.map((row, i) => {
+            const totalTokens = data.reduce((sum, r) => sum + r.tokens, 0) || 1;
+            const pct = ((row.tokens / totalTokens) * 100).toFixed(1);
+            return (
+              <div key={i} className="insights-table-row">
+                <span className="insights-table-cell name">{row.name || "(未知)"}</span>
+                <span className="insights-table-cell num">{formatNumber(row.calls)}</span>
+                <span className="insights-table-cell num">{formatNumber(row.tokens)}</span>
+                <span className="insights-table-cell num">{pct}%</span>
+                <span className="insights-table-cell num">{Math.round(row.avgLatency)} ms</span>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <PieChart data={pieData} unitLabel="tokens" />
+      )}
     </div>
   );
 }

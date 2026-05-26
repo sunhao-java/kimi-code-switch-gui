@@ -1005,3 +1005,142 @@
   justify-content: center;
 }
 
+/* ── 双维度并列布局 ── */
+.insights-breakdown-dual {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 960px) {
+  .insights-breakdown-dual {
+    grid-template-columns: 1fr;
+  }
+}
+
+.insights-breakdown-card {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.insights-breakdown-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(var(--primary-rgb), 0.03);
+}
+
+.insights-breakdown-card-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ── 饼图 ── */
+.insights-pie-wrap {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 20px 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.insights-pie-canvas {
+  flex-shrink: 0;
+}
+
+.insights-pie-svg {
+  display: block;
+}
+
+.insights-pie-slice {
+  transition: opacity 0.15s;
+}
+
+.insights-pie-center-label {
+  font-size: 12px;
+  fill: var(--muted);
+  font-family: inherit;
+}
+
+.insights-pie-center-value {
+  font-size: 16px;
+  font-weight: 700;
+  fill: var(--text);
+  font-family: inherit;
+}
+
+.insights-pie-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.insights-pie-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  transition: background 0.15s;
+  cursor: default;
+}
+
+.insights-pie-legend-item:hover,
+.insights-pie-legend-item.active {
+  background: rgba(var(--primary-rgb), 0.06);
+}
+
+.insights-pie-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.insights-pie-legend-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.insights-pie-legend-pct {
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  min-width: 44px;
+  text-align: right;
+}
+
+.insights-pie-legend-val {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  min-width: 56px;
+  text-align: right;
+}
+
+.insights-pie-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
