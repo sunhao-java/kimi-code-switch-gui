@@ -6,7 +6,7 @@
 
 ## OVERVIEW
 
-Electron desktop app for managing kimi-code-cli providers, models, profiles, MCP servers, skills, backups, shortcuts, and update checks. Stack: Electron 35, React 18, TypeScript 5, electron-vite, Vitest, electron-builder.
+Electron desktop app for managing kimi-code-cli providers, models, profiles, MCP servers, skills, backups, shortcuts, and update checks. It reads and writes TOML config files from `~/.kimi/` and supports zh-CN/en-US locales plus dark/light themes. Stack: Electron 35, React 18, TypeScript 5, electron-vite, Vitest, electron-builder.
 
 ## STRUCTURE
 
@@ -67,6 +67,11 @@ kimi-code-switch-gui/
 - Vitest runs in `jsdom`, includes `src/**/*.test.ts(x)`, and only collects coverage from `src/shared/**/*.ts` with 80/80/55/80 thresholds.
 - Use 2-space TypeScript with semicolons, double quotes, PascalCase React components, camelCase helpers, explicit public/shared types.
 - Shared logic uses small exported functions and plain records, not classes.
+- All config manipulation should go through shared pure state helpers, especially `src/shared/configStore.ts`; renderer code should not own config transforms.
+- `FileAccess` abstracts filesystem I/O for config code and tests should prefer in-memory implementations over real `~/.kimi/` files.
+- i18n is a simple key-value lookup in `src/renderer/src/i18n.ts`; do not introduce an external i18n library without a clear need.
+- CSS theming uses custom properties and root `data-theme`; preserve that mechanism when changing appearance behavior.
+- Keep tests next to source files and use focused single-file Vitest runs while iterating.
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -81,23 +86,27 @@ kimi-code-switch-gui/
 ## COMMANDS
 
 ```bash
-npm run dev:electron
-npm run build
-npm test
-npm run test:watch
-npm run dist:mac
-npm run dist:win
+npm run dev:electron    # Start Electron dev server with hot reload
+npm run build           # Type-check + build (tsc --noEmit && electron-vite build)
+npm test                # Run Vitest with coverage
+npm run test:watch      # Run Vitest in watch mode
+npm run dist:mac        # Build macOS installers (dmg + zip)
+npm run dist:win        # Build Windows installers (nsis + portable)
 npm run clean
+npx vitest run src/shared/configStore.test.ts  # Run a single test file
 ```
 
 ## RELEASE RULES
 
 When the user asks to `提交代码`:
 
-1. Inspect the actual changed files.
-2. Generate the commit message from those changes.
-3. Commit the relevant changed files.
-4. Push to `origin master`.
+Execute end-to-end without asking for confirmation:
+
+1. Run `git status` and `git diff` to inspect the actual changed files.
+2. Generate the commit message from the diff, following existing repo style from `git log`; prefer lowercase conventional-commit prefixes such as `feat:`, `fix:`, `chore:`, `ci:`, and `docs:`.
+3. Stage only files relevant to the current task.
+4. Commit with that message.
+5. Push to `origin master`.
 
 Prefer this push command when GitHub SSH stalls:
 
@@ -107,11 +116,31 @@ GIT_SSH_COMMAND='ssh -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliv
 
 When the user asks to `发布新版本`:
 
-1. If no version is provided, read the latest `vX.Y.Z` tag and increment patch.
-2. Update `CHANGELOG.md`, `README.md`, `package.json`, and `ABOUT_INFO.version` in `src/renderer/src/aboutPage.tsx`.
-3. Commit and push release changes.
-4. Create a strictly increasing `vX.Y.Z` tag.
-5. Push the tag so `.github/workflows/release.yml` builds installers.
+1. If a version is provided, use it only if it matches lowercase `vX.Y.Z`. If no version is provided, run `git fetch --tags`, read the latest `v*` tag, and increment the patch version.
+2. Update all version-bearing files:
+   - `CHANGELOGS/{locale}.md`: add a new `## [X.Y.Z] - YYYY-MM-DD` section to all 6 files: `zh-CN`, `zh-TW`, `en-US`, `ja-JP`, `de-DE`, `es-ES`. Translate the body for each language and mirror the section structure across files.
+   - `CHANGELOG.md`: keep it as the changelog index only; do not write release body content there.
+   - `README.md`: update any current-version references.
+   - `package.json`: bump the `version` field.
+   - In-app version references: grep the previous version string, notably `ABOUT_INFO.version` in `src/renderer/src/aboutPage.tsx`.
+3. Commit and push release changes using the commit SOP above; use a message such as `chore: release v1.0.2`.
+4. Create an annotated, strictly increasing `vX.Y.Z` tag. Extract the new section from `CHANGELOGS/zh-CN.md` as the tag message:
+   ```bash
+   awk -v ver="X.Y.Z" '
+     $0 ~ "^## \\[" ver "\\]" { capture = 1; next }
+     capture && /^## \[/ { exit }
+     capture { print }
+   ' CHANGELOGS/zh-CN.md > /tmp/release-notes.md
+   git tag -a vX.Y.Z -F /tmp/release-notes.md
+   ```
+5. Push the tag with `git push origin vX.Y.Z` so `.github/workflows/release.yml` builds installers and publishes the GitHub Release. CI re-extracts zh-CN and en-US sections from `CHANGELOGS/` and combines them with `---`.
+
+Release safety rails:
+
+- Do not use `--no-verify`.
+- Do not force-push to `main` or `master` without an explicit user request.
+- Never commit files that look like secrets, including `.env` and `credentials.*`.
+- If pre-commit hooks fail, fix the root cause and commit again; do not use `git commit --amend` for this failure path.
 
 ## NOTES
 
