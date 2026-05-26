@@ -8,3 +8,5 @@ release
 coverage
 *.log
 .deepseek
+.workflow/spec-analytics.jsonl
+.sisyphus
