@@ -123,6 +123,9 @@ export interface SessionRow {
   calls: number;
   tokens: number;
   profile: string;
+  models: string;
+  avg_latency_ms: number;
+  errors: number;
   inferred: boolean;
 }
 

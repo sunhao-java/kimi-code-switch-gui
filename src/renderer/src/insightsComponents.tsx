@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, AlertCircle, BarChart3, CheckCircle2, Database, HardDrive, LineChart, PieChart as PieIcon, Power, Table as TableIcon, Terminal, TrendingUp, Zap } from "lucide-react";
+import { Activity, AlertCircle, BarChart3, CheckCircle2, Clock, Cpu, Database, HardDrive, LineChart, PieChart as PieIcon, Power, Table as TableIcon, Terminal, TrendingUp, User, Zap } from "lucide-react";
 import type { Locale } from "@shared/types";
 import type { InsightsSettings } from "@shared/usageTypes";
 import { t } from "./i18n";
@@ -411,7 +411,7 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
   const [trendData, setTrendData] = useState<Array<{ date: string; tokens: number; calls: number }>>([]);
   const [breakdownDataModel, setBreakdownDataModel] = useState<Array<{ name: string; calls: number; tokens: number; avgLatency: number }>>([]);
   const [breakdownDataProfile, setBreakdownDataProfile] = useState<Array<{ name: string; calls: number; tokens: number; avgLatency: number }>>([]);
-  const [sessionsData, setSessionsData] = useState<Array<{ sessionId: string; calls: number; tokens: number; duration: string; model: string }>>([]);
+  const [sessionsData, setSessionsData] = useState<Array<{ sessionId: string; calls: number; tokens: number; duration: string; profile: string; models: string; avgLatency: number; errors: number; startedAt: number }>>([]);
   const [timeRangeKey, setTimeRangeKey] = useState<string>(initialPrefs.timeRangeKey);
   const [customFrom, setCustomFrom] = useState(initialPrefs.customFrom);
   const [customTo, setCustomTo] = useState(initialPrefs.customTo);
@@ -465,7 +465,17 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
         setBreakdownDataProfile(breakdownProfileRes.value.rows.map((r) => ({ name: r.name, calls: r.calls, tokens: r.tokens, avgLatency: r.avg_latency_ms })));
       }
       if (sessionsRes.status === "fulfilled" && sessionsRes.value.ok) {
-        setSessionsData(sessionsRes.value.rows.map((r) => ({ sessionId: r.session_id, calls: r.calls, tokens: r.tokens, duration: r.ended_utc ? `${Math.round((r.ended_utc - r.started_utc) / 1000)}s` : "-", model: r.profile })));
+        setSessionsData(sessionsRes.value.rows.map((r) => ({
+          sessionId: r.session_id,
+          calls: r.calls,
+          tokens: r.tokens,
+          duration: r.ended_utc ? formatDuration(r.ended_utc - r.started_utc) : "-",
+          profile: r.profile,
+          models: r.models,
+          avgLatency: r.avg_latency_ms,
+          errors: r.errors,
+          startedAt: r.started_utc,
+        })));
       }
     } catch (err) {
       showToast(`加载数据失败: ${String(err)}`, "error");
@@ -624,35 +634,72 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
 
         {activeTab === "sessions" && (
           <div className="insights-sessions-panel">
-            <p className="insights-tab-desc">按 Token 消耗排序的会话列表，点击终端图标可恢复该会话继续对话。</p>
+            <p className="insights-tab-desc">{t(locale, "insightsSessionsDesc")}</p>
             {sessionsData.length === 0 ? (
-              <div className="insights-coming-soon"><Zap size={48} /><h3>暂无会话数据</h3><p>使用 kimi-cli 发起请求后，会话排行将在此展示。</p></div>
+              <div className="insights-coming-soon"><Zap size={48} /><h3>{t(locale, "insightsSessionsEmpty")}</h3><p>{t(locale, "insightsSessionsEmptyHint")}</p></div>
             ) : (
-              <div className="insights-breakdown-table">
-                <div className="insights-table-header">
-                  <span className="insights-table-cell name">会话 ID</span>
-                  <span className="insights-table-cell num">调用次数</span>
-                  <span className="insights-table-cell num">Token 总量</span>
-                  <span className="insights-table-cell num">总耗时</span>
-                  <span className="insights-table-cell action"></span>
-                </div>
-                {sessionsData.map((row, i) => (
-                  <div key={i} className="insights-table-row">
-                    <span className="insights-table-cell name" style={{ fontFamily: "'SF Mono', monospace", fontSize: "0.8125rem" }}>{row.sessionId}</span>
-                    <span className="insights-table-cell num">{row.calls}</span>
-                    <span className="insights-table-cell num">{formatNumber(row.tokens)}</span>
-                    <span className="insights-table-cell num">{row.duration}</span>
-                    <span className="insights-table-cell action">
+              <div className="insights-session-list">
+                {sessionsData.map((row, i) => {
+                  const modelList = row.models ? row.models.split(",").filter(Boolean) : [];
+                  return (
+                    <div key={i} className="insights-session-card">
+                      <div className="insights-session-card-main">
+                        <div className="insights-session-card-header">
+                          <span className="insights-session-id" title={row.sessionId}>{row.sessionId}</span>
+                          {row.errors > 0 && (
+                            <span className="insights-session-badge danger" title={t(locale, "insightsSessionErrors")}>
+                              <AlertCircle size={12} />
+                              {row.errors}
+                            </span>
+                          )}
+                        </div>
+                        <div className="insights-session-meta">
+                          <span className="insights-session-meta-item" title={t(locale, "insightsSessionStartedAt")}>
+                            <Clock size={12} />
+                            {formatTimestamp(row.startedAt)}
+                          </span>
+                          {row.profile && (
+                            <span className="insights-session-meta-item" title={t(locale, "insightsSessionProfile")}>
+                              <User size={12} />
+                              {row.profile}
+                            </span>
+                          )}
+                          {modelList.length > 0 && (
+                            <span className="insights-session-meta-item" title={t(locale, "insightsSessionModels")}>
+                              <Cpu size={12} />
+                              {modelList.length === 1 ? modelList[0] : `${modelList[0]} +${modelList.length - 1}`}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="insights-session-stats">
+                        <div className="insights-session-stat">
+                          <div className="insights-session-stat-label">{t(locale, "insightsTotalTokens")}</div>
+                          <div className="insights-session-stat-value">{formatNumber(row.tokens)}</div>
+                        </div>
+                        <div className="insights-session-stat">
+                          <div className="insights-session-stat-label">{t(locale, "insightsTotalCalls")}</div>
+                          <div className="insights-session-stat-value">{row.calls}</div>
+                        </div>
+                        <div className="insights-session-stat">
+                          <div className="insights-session-stat-label">{t(locale, "insightsAvgLatency")}</div>
+                          <div className="insights-session-stat-value">{row.avgLatency > 0 ? `${row.avgLatency} ms` : "-"}</div>
+                        </div>
+                        <div className="insights-session-stat">
+                          <div className="insights-session-stat-label">{t(locale, "insightsSessionDuration")}</div>
+                          <div className="insights-session-stat-value">{row.duration}</div>
+                        </div>
+                      </div>
                       <button
                         className="insights-icon-button"
-                        title="在终端恢复此会话"
+                        title={t(locale, "insightsSessionResume")}
                         onClick={() => void window.kimiSwitch.usageOpenSessionTerminal(row.sessionId)}
                       >
                         <Terminal size={15} />
                       </button>
-                    </span>
-                  </div>
-                ))}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -768,4 +815,31 @@ function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
+}
+
+function formatTimestamp(ms: number): string {
+  if (!ms) return "-";
+  const d = new Date(ms);
+  const now = new Date();
+  const diffMs = now.getTime() - ms;
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) {
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+  if (diffMs < 7 * 86400000) {
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function formatDuration(ms: number): string {
+  if (!ms || ms < 0) return "-";
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  if (m < 60) return rs > 0 ? `${m}m ${rs}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm > 0 ? `${h}h ${rm}m` : `${h}h`;
 }

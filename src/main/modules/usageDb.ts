@@ -361,7 +361,10 @@ export class UsageDb {
           COUNT(*) AS calls,
           SUM(prompt_tokens + completion_tokens + cache_read_tokens
             + cache_creation_tokens + reasoning_tokens) AS tokens,
-          (SELECT profile FROM events e2 WHERE e2.session_hint = ue.session_hint ORDER BY ts LIMIT 1) AS profile
+          (SELECT profile FROM events e2 WHERE e2.session_hint = ue.session_hint ORDER BY ts LIMIT 1) AS profile,
+          GROUP_CONCAT(DISTINCT model) AS models,
+          CAST(AVG(latency_ms) AS INTEGER) AS avg_latency_ms,
+          SUM(CASE WHEN error_code IS NOT NULL THEN 1 ELSE 0 END) AS errors
         FROM events ue
         WHERE ts >= @from_ms AND ts < @to_ms AND session_hint IS NOT NULL
         GROUP BY session_hint
@@ -376,6 +379,9 @@ export class UsageDb {
       calls: number;
       tokens: number;
       profile: string;
+      models: string | null;
+      avg_latency_ms: number;
+      errors: number;
     }>;
     return rows.map((r) => ({
       session_id: r.session_id,
@@ -384,6 +390,9 @@ export class UsageDb {
       calls: r.calls,
       tokens: r.tokens,
       profile: r.profile ?? "",
+      models: r.models ?? "",
+      avg_latency_ms: r.avg_latency_ms ?? 0,
+      errors: r.errors ?? 0,
       inferred: false,
     }));
   }
