@@ -3,8 +3,7 @@ import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// Tauri 专用 vite 配置：仅构建 renderer（前端），后端由 src-tauri 的 Rust 提供。
-// 与 electron.vite.config.ts 并存，迁移期间两套构建互不影响。
+// Vite 配置：构建 renderer（前端），后端由 src-tauri 的 Rust 提供。
 export default defineConfig({
   root: resolve(__dirname, "src/renderer"),
   plugins: [react()],

@@ -4,41 +4,45 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Electron desktop app for managing `kimi-code-cli` configuration — providers, models, and profiles. Reads/writes TOML config files (`config.toml`, `config.profiles.toml`, `config.panel.toml`) from `~/.kimi/`. Supports zh-CN and en-US locales, dark/light themes.
+Tauri (Rust + WebView) desktop app for managing `kimi-code-cli` configuration — providers, models, and profiles. Reads/writes TOML config files (`config.toml`, `config.profiles.toml`, `config.panel.toml`) from `~/.kimi/`. Supports zh-CN and en-US locales, dark/light themes. Migrated from Electron (see git history on `feat/migrate-to-tauri`).
 
 ## Commands
 
 ```bash
-npm run dev:electron    # Start Electron dev server with hot reload
-npm run build           # Type-check + build (tsc --noEmit && electron-vite build)
+npm run dev             # Start Tauri dev (Rust backend + vite renderer with hot reload)
+npm run build           # Build Tauri app (release bundle)
 npm test                # Run tests with coverage (vitest run --coverage)
-npm run dist:mac        # Build macOS installers (dmg + zip)
-npm run dist:win        # Build Windows installers (nsis + portable)
+npm run dist:mac        # Build macOS dmg
+npm run dist:win        # Build Windows nsis
+npm run dev:web         # Renderer-only dev server (no Rust), for pure UI work
 ```
 
 Run a single test file: `npx vitest run src/shared/configStore.test.ts`
 
 ## Architecture
 
-Three-process Electron app built with `electron-vite`:
+**Architecture principle: thin Rust shell + business logic in the frontend.** The ~5300-line `src/shared/` business logic runs in the renderer; the Rust backend only exposes I/O and system-integration primitives. This let the migration reuse `src/shared/` with near-zero changes.
 
-- **Main** (`src/main/index.ts`) — Electron main process. Registers IPC handlers (`app:load-state`, `app:save-state`, `app:preview-state`, `app:default-settings`, `dialog:pick-file`). Owns file system access via a `FileAccess` adapter that resolves `~/` paths.
-- **Preload** (`src/preload/index.ts`) — Bridges IPC to renderer via `contextBridge.exposeInMainWorld("kimiSwitch", api)`. The renderer accesses it as `window.kimiSwitch`.
-- **Renderer** (`src/renderer/`) — React 18 SPA. Single `App.tsx` component handles all tabs (overview, profiles, providers, models, preview, settings). No router.
-
-**Shared layer** (`src/shared/`) — Pure logic shared across all processes:
-- `types.ts` — All TypeScript interfaces (`AppState`, `MainConfig`, `Profile`, `PanelSettings`, `PreviewBundle`, etc.)
-- `configStore.ts` — TOML parsing/serialization (`@iarna/toml`), state mutations (`upsertProvider`, `upsertModel`, `applyProfile`, etc.), preview/diff generation. This is the core business logic — all config manipulation goes through here.
+- **Rust backend** (`src-tauri/src/`) — Tauri v2 commands:
+  - `fs_access.rs` — file I/O (read/write/ensure_dir/remove_file/remove_dir/list_dir/list_subdirs/hostname), resolves `~/` paths
+  - `system.rs` — `exec_command` (run kimi/uv/osascript), `http_request` (reqwest; WebDAV/connectivity/GitHub/PyPI, bypasses browser CORS), `file_stat`/`read_file_slice` (log tail), `write_executable`
+  - `usage.rs` — SQLite via `rusqlite` (`usage_query`/`usage_exec`/...); frontend passes SQL + named params
+  - `tray.rs` — dynamic system tray; frontend passes menu JSON, clicks emit `tray://command`
+- **Renderer** (`src/renderer/`) — React 18 SPA. Single `App.tsx` handles all tabs. No router.
+  - `src/renderer/src/tauri/` — adapters bridging `window.kimiSwitch` to Rust commands. `kimiSwitch.ts` installs the global; `usageDb.ts`/`usageLogWatcher.ts`/`cli.ts`/`terminal.ts`/`webdav.ts`/`backup.ts`/`fileSnapshots.ts`/`tray.ts` port the former Electron-main logic to the frontend.
+- **Shared layer** (`src/shared/`) — Pure logic (zero Node/Electron deps), reused as-is:
+  - `types.ts` — all TS interfaces (`AppState`, `MainConfig`, `Profile`, `PanelSettings`, `PreviewBundle`, etc.)
+  - `configStore.ts` — TOML parse/serialize (`@iarna/toml`), state mutations (`upsertProvider`/`applyProfile`/...), preview/diff. Core business logic.
 
 ## Key Patterns
 
-- Path alias `@shared/*` maps to `src/shared/*` (configured in both tsconfig files and electron.vite.config.ts)
-- Path alias `@renderer/*` maps to `src/renderer/src/*` (renderer only)
-- All state mutations in `configStore.ts` are pure functions that take and return `AppState` — no side effects
-- `FileAccess` interface abstracts file I/O, making `configStore` testable with in-memory FS
-- The renderer gets state via IPC (`window.kimiSwitch.loadState()`) and sends mutations back via `window.kimiSwitch.saveState()`
+- `window.kimiSwitch` is injected at runtime by `src/renderer/src/tauri/kimiSwitch.ts` (gated on `__TAURI_INTERNALS__` in `main.tsx`), exposing the same API surface the Electron preload used to.
+- Path alias `@shared/*` → `src/shared/*`, `@renderer/*` → `src/renderer/src/*` (configured in `vite.tauri.config.ts` + tsconfigs)
+- All state mutations in `configStore.ts` are pure functions taking/returning `AppState` — no side effects
+- `FileAccess` interface abstracts file I/O; `tauri/fileAccess.ts` implements it via Rust commands, keeping `configStore` testable with in-memory FS
 - i18n is a simple key-value lookup in `src/renderer/src/i18n.ts` — no external i18n library
-- CSS uses custom properties for theming; `data-theme` attribute on `:root` switches between dark/light
+- CSS uses custom properties for theming; `data-theme` attribute on `:root` switches dark/light
+- Window is 1500×980 (also the min size) — the topbar layout assumes this width; titlebar uses `Transparent` + `trafficLightPosition {x:14,y:12}`
 
 ## Testing
 
@@ -49,7 +53,7 @@ Three-process Electron app built with `electron-vite`:
 
 ## Release
 
-Tag push (`v*`) triggers GitHub Actions workflow that builds macOS (dmg/zip) and Windows (nsis/portable) installers via `electron-builder`, then publishes to GitHub Releases.
+Tag push (`tauri-v*`) triggers `.github/workflows/release-tauri.yml`, which builds macOS (dmg, arm64 + x64) and Windows (nsis) bundles via `tauri-action`, then publishes a draft GitHub Release. Bundle config lives in `src-tauri/tauri.conf.json`.
 
 ## Workflow Automation (Agent SOP)
 

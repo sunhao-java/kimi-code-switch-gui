@@ -13,14 +13,15 @@
     "windows": [
       {
         "title": "Kimi Code Switch GUI",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 900,
-        "minHeight": 600,
+        "width": 1500,
+        "height": 980,
+        "minWidth": 1500,
+        "minHeight": 980,
         "resizable": true,
         "fullscreen": false,
-        "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "titleBarStyle": "Transparent",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 14, "y": 12 }
       }
     ],
     "security": {

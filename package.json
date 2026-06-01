@@ -1,55 +1,44 @@
 {
   "name": "kimi-code-switch-gui",
   "version": "1.1.9",
-  "description": "Electron desktop app for managing kimi-code-cli providers, models, and profiles.",
-  "main": "out/main/index.js",
+  "description": "Tauri desktop app for managing kimi-code-cli providers, models, and profiles.",
   "author": "Hulk Sun <sunhao.java@gmail.com>",
   "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {
-    "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true }); require('fs').rmSync('release', { recursive: true, force: true });\"",
-    "dev": "vite",
-    "dev:electron": "electron-vite dev",
-    "build": "tsc --noEmit && electron-vite build",
-    "preview": "vite preview",
+    "clean": "node -e \"require('fs').rmSync('dist-tauri', { recursive: true, force: true });\"",
+    "dev:web": "vite --config vite.tauri.config.ts",
+    "build:web": "vite build --config vite.tauri.config.ts",
+    "preview": "vite preview --config vite.tauri.config.ts",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
-    "postinstall": "electron-builder install-app-deps",
-    "dist": "npm run build && electron-builder --publish never",
-    "dist:mac": "npm run build && electron-builder --publish never --mac dmg zip",
-    "dist:win": "npm run build && electron-builder --publish never --win nsis portable",
     "tauri": "tauri",
     "tauri:dev:web": "vite --config vite.tauri.config.ts",
     "tauri:build:web": "vite build --config vite.tauri.config.ts",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "dist:mac": "tauri build --bundles dmg",
+    "dist:win": "tauri build --bundles nsis"
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
+    "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-global-shortcut": "^2.3.2",
     "@tauri-apps/plugin-opener": "^2.5.4",
-    "@tauri-apps/plugin-process": "^2.3.1",
-    "better-sqlite3": "^12.10.0"
+    "@tauri-apps/plugin-process": "^2.3.1"
   },
   "devDependencies": {
-    "@electron-toolkit/utils": "^3.0.0",
-    "@electron/rebuild": "^4.0.4",
-    "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/cli": "^2.11.2",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.15.3",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
     "@vitest/coverage-v8": "^3.2.2",
-    "electron": "^35.2.0",
-    "electron-builder": "^26.0.12",
-    "electron-vite": "^3.1.0",
     "jsdom": "^26.1.0",
     "lucide-react": "^0.511.0",
     "react": "^18.3.1",
@@ -59,71 +48,5 @@
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
     "vitest": "^3.2.2"
-  },
-  "build": {
-    "appId": "cn.crazycoder.kimi-code-switch-gui",
-    "productName": "Kimi Code Switch GUI",
-    "artifactName": "kimi-code-switch-gui-${version}-${os}-${arch}.${ext}",
-    "compression": "maximum",
-    "afterPack": "scripts/afterPack.cjs",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "out/**/*",
-      "package.json",
-      "!**/node_modules/better-sqlite3/{deps,src,docs,benchmark,test,binding.gyp,CHANGELOG.md,README.md}",
-      "!**/node_modules/better-sqlite3/build/Release/{obj.target,.deps}",
-      "!**/node_modules/better-sqlite3/build/Release/*.{o,a,lib,exp}",
-      "!**/node_modules/{prebuild-install,node-abi,node-addon-api,node-gyp,nopt,prebuild,simple-get,tar-fs,tar-stream,decompress-response,detect-libc,expand-template,file-uri-to-path,fs-constants,github-from-package,mkdirp-classic,napi-build-utils,mimic-response,deep-extend,chownr,minimist,rc}"
-    ],
-    "asarUnpack": [
-      "**/node_modules/better-sqlite3/**",
-      "**/*.node"
-    ],
-    "extraResources": [
-      {
-        "from": "resources",
-        "to": ".",
-        "filter": [
-          "**/*"
-        ]
-      }
-    ],
-    "mac": {
-      "icon": "resources/icon.png",
-      "category": "public.app-category.developer-tools",
-      "electronLanguages": [
-        "en",
-        "zh_CN"
-      ],
-      "target": [
-        "dmg",
-        "zip"
-      ]
-    },
-    "win": {
-      "icon": "resources/icon.png",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        }
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
-    }
   }
 }
