@@ -10,3 +10,7 @@ coverage
 .deepseek
 .workflow/spec-analytics.jsonl
 .sisyphus
+dist-tauri
+src-tauri/target
+src-tauri/gen
+.codegraph/daemon.pid

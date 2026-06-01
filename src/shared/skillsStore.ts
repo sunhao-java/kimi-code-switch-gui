@@ -1,4 +1,16 @@
-import { basename, join } from "node:path";
+// POSIX 路径工具（内联实现，避免依赖 node:path，使本模块可在 renderer 直接运行）。
+function join(...segments: string[]): string {
+  return segments
+    .filter((seg) => seg.length > 0)
+    .join("/")
+    .replace(/\/+/g, "/");
+}
+
+function basename(path: string): string {
+  const normalized = path.replace(/\/+$/, "");
+  const index = normalized.lastIndexOf("/");
+  return index >= 0 ? normalized.slice(index + 1) : normalized;
+}
 
 export type SkillType = "prompt" | "flow";
 export type SkillDiscoveryMode = "auto";

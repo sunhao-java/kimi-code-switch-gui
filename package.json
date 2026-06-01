@@ -18,7 +18,12 @@
     "postinstall": "electron-builder install-app-deps",
     "dist": "npm run build && electron-builder --publish never",
     "dist:mac": "npm run build && electron-builder --publish never --mac dmg zip",
-    "dist:win": "npm run build && electron-builder --publish never --win nsis portable"
+    "dist:win": "npm run build && electron-builder --publish never --win nsis portable",
+    "tauri": "tauri",
+    "tauri:dev:web": "vite --config vite.tauri.config.ts",
+    "tauri:build:web": "vite build --config vite.tauri.config.ts",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
@@ -27,6 +32,8 @@
   "devDependencies": {
     "@electron-toolkit/utils": "^3.0.0",
     "@electron/rebuild": "^4.0.4",
+    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/cli": "^2.11.2",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.2.0",
     "@types/better-sqlite3": "^7.6.13",
