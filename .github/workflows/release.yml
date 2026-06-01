@@ -1,15 +1,14 @@
-name: Release (Tauri)
+name: Release
 
-# Tauri 打包流水线，与 Electron 版 release.yml 并存。
-# 触发：推送 tauri-v* 标签（迁移期间用独立前缀，避免与 v* 的 Electron 流水线冲突）。
+# Tauri 打包流水线。触发：推送 v* 标签。
 on:
   push:
     tags:
-      - "tauri-v*"
+      - "v*"
   workflow_dispatch:
 
 jobs:
-  build-tauri:
+  build:
     permissions:
       contents: write
     strategy:

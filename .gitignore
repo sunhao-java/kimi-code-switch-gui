@@ -2,7 +2,6 @@
 .claude
 node_modules
 dist
-dist-electron
 out
 release
 coverage
@@ -10,9 +9,7 @@ coverage
 .deepseek
 .workflow/spec-analytics.jsonl
 .sisyphus
-dist-tauri
 src-tauri/target
 src-tauri/gen
 .codegraph/daemon.pid
 *.tsbuildinfo
-.workflow/spec-analytics.jsonl

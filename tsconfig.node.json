@@ -23,7 +23,7 @@
     "noEmit": true
   },
   "include": [
-    "vite.tauri.config.ts",
+    "vite.config.ts",
     "src/shared/**/*.ts",
     "vitest.config.ts"
   ]

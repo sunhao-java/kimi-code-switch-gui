@@ -37,7 +37,7 @@ Run a single test file: `npx vitest run src/shared/configStore.test.ts`
 ## Key Patterns
 
 - `window.kimiSwitch` is injected at runtime by `src/renderer/src/tauri/kimiSwitch.ts` (gated on `__TAURI_INTERNALS__` in `main.tsx`), exposing the same API surface the Electron preload used to.
-- Path alias `@shared/*` → `src/shared/*`, `@renderer/*` → `src/renderer/src/*` (configured in `vite.tauri.config.ts` + tsconfigs)
+- Path alias `@shared/*` → `src/shared/*`, `@renderer/*` → `src/renderer/src/*` (configured in `vite.config.ts` + tsconfigs)
 - All state mutations in `configStore.ts` are pure functions taking/returning `AppState` — no side effects
 - `FileAccess` interface abstracts file I/O; `tauri/fileAccess.ts` implements it via Rust commands, keeping `configStore` testable with in-memory FS
 - i18n is a simple key-value lookup in `src/renderer/src/i18n.ts` — no external i18n library
@@ -53,7 +53,7 @@ Run a single test file: `npx vitest run src/shared/configStore.test.ts`
 
 ## Release
 
-Tag push (`tauri-v*`) triggers `.github/workflows/release-tauri.yml`, which builds macOS (dmg, arm64 + x64) and Windows (nsis) bundles via `tauri-action`, then publishes a draft GitHub Release. Bundle config lives in `src-tauri/tauri.conf.json`.
+Tag push (`v*`) triggers `.github/workflows/release.yml`, which builds macOS (dmg, arm64 + x64) and Windows (nsis) bundles via `tauri-action`, then publishes a draft GitHub Release. Bundle config lives in `src-tauri/tauri.conf.json`.
 
 ## Workflow Automation (Agent SOP)
 
