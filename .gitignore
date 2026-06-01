@@ -13,4 +13,5 @@ coverage
 dist-tauri
 src-tauri/target
 src-tauri/gen
-.codegraph/daemon.pid*.tsbuildinfo
+.codegraph/daemon.pid
+*.tsbuildinfo
