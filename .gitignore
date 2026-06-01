@@ -7,7 +7,7 @@ release
 coverage
 *.log
 .deepseek
-.workflow/spec-analytics.jsonl
+spec-analytics.jsonl
 .sisyphus
 src-tauri/target
 src-tauri/gen

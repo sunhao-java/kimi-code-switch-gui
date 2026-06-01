@@ -14,10 +14,9 @@
       "node",
       "vitest/globals"
     ],
-    "baseUrl": ".",
     "paths": {
       "@shared/*": [
-        "src/shared/*"
+        "./src/shared/*"
       ]
     },
     "noEmit": true
