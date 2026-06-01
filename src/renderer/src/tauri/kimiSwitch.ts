@@ -25,6 +25,8 @@ import { UsageLogWatcher } from "./usageLogWatcher";
 import * as cli from "./cli";
 import { openKimiInTerminal, openSessionTerminal } from "./terminal";
 import { captureSnapshotForState, readManagedDocuments } from "./fileSnapshots";
+import * as backup from "./backup";
+import { setupTray, teardownTray } from "./tray";
 
 const skillFileAccess = {
   readText: (path: string) => tauriFileAccess.readText(path),
@@ -83,6 +85,9 @@ export const kimiSwitchTauri = {
     currentAppState = state;
     if (state.panelSettings.insights_status === "enabled") {
       void ensureUsageRuntime().catch((e) => console.error("usage runtime", e));
+    }
+    if (state.panelSettings.tray_icon) {
+      void setupTray(() => currentAppState, () => window.dispatchEvent(new Event("kimi-refresh"))).catch((e) => console.error("tray", e));
     }
     return state;
   },
@@ -185,9 +190,22 @@ export const kimiSwitchTauri = {
     return resp.ok ? resp.body : null;
   },
 
-  // ── 托盘（里程碑⑦，先空实现）──
-  setTray: () => Promise.resolve({ ok: true as const }),
-  refreshTrayMenu: () => Promise.resolve({ ok: true as const }),
+  // ── 托盘 ──
+  setTray: async (enabled: boolean) => {
+    if (currentAppState) currentAppState.panelSettings.tray_icon = enabled;
+    if (enabled) {
+      await setupTray(() => currentAppState, () => window.dispatchEvent(new Event("kimi-refresh")));
+    } else {
+      await teardownTray();
+    }
+    return { ok: true as const };
+  },
+  refreshTrayMenu: async () => {
+    if (currentAppState?.panelSettings.tray_icon) {
+      await setupTray(() => currentAppState, () => window.dispatchEvent(new Event("kimi-refresh")));
+    }
+    return { ok: true as const };
+  },
   onTrayCommand: () => () => {},
   onExternalFileChange: () => () => {},
 
@@ -275,16 +293,16 @@ export const kimiSwitchTauri = {
     return { ok: true as const };
   },
 
-  // ── backup（里程碑收尾，暂占位）──
-  runBackup: () => notImplemented("runBackup"),
-  listBackups: () => Promise.resolve([]),
-  deleteBackup: () => notImplemented("deleteBackup"),
-  restoreBackup: () => notImplemented("restoreBackup"),
-  restoreBackupSafe: () => notImplemented("restoreBackupSafe"),
-  restoreBackupDryRun: () => notImplemented("restoreBackupDryRun"),
-  testBackupWebdav: () => notImplemented("testBackupWebdav"),
+  // ── backup ──
+  runBackup: (state: AppState) => backup.runBackup(state),
+  listBackups: (state: AppState) => backup.listBackups(state),
+  deleteBackup: (state: AppState, backupName: string) => backup.deleteBackup(state, backupName),
+  restoreBackup: (state: AppState, backupName: string) => backup.restoreBackup(state, backupName),
+  restoreBackupSafe: (state: AppState, backupName: string, options?: { expectedSnapshot?: FileSnapshotBundle; allowOverwrite?: boolean }) => backup.restoreBackupSafe(state, backupName, options),
+  restoreBackupDryRun: (state: AppState, backupName: string) => backup.restoreBackupDryRun(state, backupName),
+  testBackupWebdav: (state: AppState) => backup.testBackupWebdav(state),
 
-  void: () => { void USAGE_JSONL_DIR; },
+  void: () => { void USAGE_JSONL_DIR; void notImplemented; },
 };
 
 export function installKimiSwitchTauri(): void {

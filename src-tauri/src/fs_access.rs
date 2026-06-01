@@ -62,6 +62,52 @@ pub fn remove_file(path: String) -> Result<(), String> {
     }
 }
 
+/// 递归删除目录（不存在时静默成功）。用于备份轮转/恢复。
+#[tauri::command]
+pub fn remove_dir(path: String) -> Result<(), String> {
+    let resolved = resolve_home(&path);
+    match std::fs::remove_dir_all(&resolved) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(format!("remove_dir {}: {}", resolved.display(), err)),
+    }
+}
+
+/// 主机名（备份元信息用）。
+#[tauri::command]
+pub fn hostname() -> String {
+    std::env::var("HOSTNAME")
+        .ok()
+        .or_else(|| {
+            std::process::Command::new("hostname")
+                .output()
+                .ok()
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        })
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "unknown-host".to_string())
+}
+
+/// 列目录下的子目录名（供备份枚举）。
+#[tauri::command]
+pub fn list_subdirs(path: String) -> Result<Vec<String>, String> {
+    let resolved = resolve_home(&path);
+    let entries = match std::fs::read_dir(&resolved) {
+        Ok(e) => e,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => return Err(format!("list_subdirs {}: {}", resolved.display(), err)),
+    };
+    let mut names = Vec::new();
+    for entry in entries.flatten() {
+        if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            if let Some(name) = entry.file_name().to_str() {
+                names.push(name.to_string());
+            }
+        }
+    }
+    Ok(names)
+}
+
 /// 判断路径是否存在。
 #[tauri::command]
 pub fn path_exists(path: String) -> bool {

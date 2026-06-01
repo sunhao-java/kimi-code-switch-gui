@@ -5,6 +5,7 @@
 
 mod fs_access;
 mod system;
+mod tray;
 mod usage;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -14,7 +15,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(usage::UsageState::default())
+        .manage(tray::TrayState::default())
         .invoke_handler(tauri::generate_handler![
             // 文件 I/O
             fs_access::read_text,
@@ -24,6 +27,9 @@ pub fn run() {
             fs_access::path_exists,
             fs_access::list_dir,
             fs_access::list_dir_typed,
+            fs_access::remove_dir,
+            fs_access::hostname,
+            fs_access::list_subdirs,
             // 系统集成
             system::exec_command,
             system::write_executable,
@@ -37,6 +43,9 @@ pub fn run() {
             usage::usage_exec_batch,
             usage::usage_exec_script,
             usage::usage_close,
+            // 托盘
+            tray::set_tray,
+            tray::show_main_window,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
