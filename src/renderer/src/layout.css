@@ -12,7 +12,8 @@
   min-width: 0;
   height: 100vh;
   overflow: hidden;
-  /* No transition on grid - layout changes are instant */
+  /* 折叠/展开时让 grid 列宽平滑过渡（WebKit 支持 grid-template-columns 动画） */
+  transition: grid-template-columns 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .shell.sidebar-collapsed {

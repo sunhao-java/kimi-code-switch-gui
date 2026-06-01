@@ -97,17 +97,10 @@ textarea:focus-visible {
   right: 0;
   height: var(--titlebar-height);
   z-index: 40;
+  /* Overlay 模式：系统在此区域绘制居中的红绿灯，这里仅作拖拽区，背景透明 */
   -webkit-app-region: drag;
   pointer-events: auto;
-  background:
-    linear-gradient(90deg, rgba(15, 36, 67, 0.96) 0%, rgba(12, 31, 56, 0.88) 42%, rgba(10, 44, 55, 0.82) 100%);
-  border-bottom: 1px solid rgba(124, 179, 255, 0.12);
-}
-
-:root[data-theme="light"] .window-titlebar {
-  background:
-    linear-gradient(90deg, rgba(239, 245, 252, 0.98) 0%, rgba(233, 241, 250, 0.94) 44%, rgba(227, 241, 238, 0.9) 100%);
-  border-bottom: 1px solid rgba(40, 92, 160, 0.12);
+  background: transparent;
 }
 
 .window-titlebar-safe {
@@ -157,6 +150,11 @@ textarea:focus-visible {
   overflow: hidden;
   min-width: 0;
   contain: layout style;
+  transition:
+    width 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    gap 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .shell.sidebar-collapsed .sidebar {
@@ -171,6 +169,7 @@ textarea:focus-visible {
   gap: 14px;
   align-items: center;
   min-width: 0;
+  transition: gap 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .shell.sidebar-collapsed .brand {
@@ -185,6 +184,9 @@ textarea:focus-visible {
   place-items: center;
   width: 54px;
   height: 54px;
+  transition:
+    width 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .shell.sidebar-collapsed .brand-mark {
@@ -220,6 +222,12 @@ textarea:focus-visible {
 .brand-copy {
   min-width: 0;
   overflow: hidden;
+  white-space: nowrap;
+  opacity: 1;
+  max-width: 180px;
+  transition:
+    opacity 200ms ease,
+    max-width 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .brand h1 {
@@ -250,7 +258,10 @@ textarea:focus-visible {
     color 180ms ease,
     border-color 180ms ease,
     background-color 180ms ease,
-    transform 180ms ease;
+    transform 180ms ease,
+    width 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .sidebar-collapse-button:hover {
@@ -266,7 +277,12 @@ textarea:focus-visible {
 }
 
 .shell.sidebar-collapsed .brand-copy {
-  display: none;
+  opacity: 0;
+  max-width: 0;
+  /* 折叠时文字先快速淡出，避免内容溢出窄栏 */
+  transition:
+    opacity 120ms ease,
+    max-width 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .shell.sidebar-collapsed .sidebar-collapse-button {
@@ -300,7 +316,6 @@ textarea:focus-visible {
   overflow: visible;
 }
 
-.nav-item,
 .action-button,
 .list-row,
 .list-copy-button {
@@ -309,6 +324,18 @@ textarea:focus-visible {
     border-color 180ms ease,
     background-color 180ms ease,
     box-shadow 180ms ease;
+}
+
+.nav-item {
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease,
+    width 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .nav-item {
@@ -334,6 +361,7 @@ textarea:focus-visible {
 
 .shell.sidebar-collapsed .nav-item {
   justify-content: center;
+  gap: 0;
   width: 48px;
   height: 48px;
   padding: 0;
@@ -354,11 +382,33 @@ textarea:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  opacity: 1;
+  max-width: 160px;
+  transition:
+    opacity 200ms ease,
+    max-width 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.nav-shortcut {
+  opacity: 1;
+  max-width: 60px;
+  transition:
+    opacity 200ms ease,
+    max-width 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .shell.sidebar-collapsed .nav-item > span,
 .shell.sidebar-collapsed .nav-shortcut {
-  display: none;
+  opacity: 0;
+  max-width: 0;
+  /* 折叠时标签快速淡出 + 收宽，图标得以居中；关交互避免误触 */
+  pointer-events: none;
+  margin: 0;
+  padding: 0;
+  border-width: 0;
+  transition:
+    opacity 110ms ease,
+    max-width 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .nav-shortcut {

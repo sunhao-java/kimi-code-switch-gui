@@ -181,7 +181,7 @@ pub async fn http_request(
     let mut req = client.request(req_method, &url);
 
     if let Some(hs) = headers {
-        for (k, v) in hs {
+        for (k, v) in &hs {
             req = req.header(k, v);
         }
     }

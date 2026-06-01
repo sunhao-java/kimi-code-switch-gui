@@ -87,7 +87,7 @@ export const kimiSwitchTauri = {
       void ensureUsageRuntime().catch((e) => console.error("usage runtime", e));
     }
     if (state.panelSettings.tray_icon) {
-      void setupTray(() => currentAppState, () => window.dispatchEvent(new Event("kimi-refresh"))).catch((e) => console.error("tray", e));
+      void setupTray(() => currentAppState, () => window.dispatchEvent(new Event("kimi-tray-reload"))).catch((e) => console.error("tray", e));
     }
     return state;
   },
@@ -194,7 +194,7 @@ export const kimiSwitchTauri = {
   setTray: async (enabled: boolean) => {
     if (currentAppState) currentAppState.panelSettings.tray_icon = enabled;
     if (enabled) {
-      await setupTray(() => currentAppState, () => window.dispatchEvent(new Event("kimi-refresh")));
+      await setupTray(() => currentAppState, () => window.dispatchEvent(new Event("kimi-tray-reload")));
     } else {
       await teardownTray();
     }
@@ -202,7 +202,7 @@ export const kimiSwitchTauri = {
   },
   refreshTrayMenu: async () => {
     if (currentAppState?.panelSettings.tray_icon) {
-      await setupTray(() => currentAppState, () => window.dispatchEvent(new Event("kimi-refresh")));
+      await setupTray(() => currentAppState, () => window.dispatchEvent(new Event("kimi-tray-reload")));
     }
     return { ok: true as const };
   },

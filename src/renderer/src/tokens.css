@@ -27,7 +27,9 @@
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-emphasis: cubic-bezier(0.22, 1, 0.36, 1);
   font-family: "IBM Plex Sans", "Space Grotesk", "SF Pro Display", sans-serif;
-  --titlebar-height: 40px;
+  /* Overlay 标题栏安全区：系统红绿灯绘制于此（trafficLightPosition y:18）。
+     内容区顶部留白 = 本值 + 16px，给红绿灯让位。 */
+  --titlebar-height: 22px;
 }
 
 :root[data-theme="light"] {

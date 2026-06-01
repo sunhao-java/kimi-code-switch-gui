@@ -19,9 +19,13 @@
         "minHeight": 980,
         "resizable": true,
         "fullscreen": false,
-        "titleBarStyle": "Transparent",
+        "titleBarStyle": "Overlay",
         "hiddenTitle": true,
-        "trafficLightPosition": { "x": 14, "y": 12 }
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 18
+        },
+        "decorations": true
       }
     ],
     "security": {
@@ -30,7 +34,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg", "nsis"],
+    "targets": [
+      "dmg",
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

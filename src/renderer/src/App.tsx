@@ -129,6 +129,15 @@ export function App(): JSX.Element {
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
   }, []);
 
+  // 托盘动作（切换语言/主题/Profile）已写盘，重新加载状态以实时刷新 UI
+  useEffect(() => {
+    function handleTrayReload(): void {
+      void loadState();
+    }
+    window.addEventListener("kimi-tray-reload", handleTrayReload);
+    return () => window.removeEventListener("kimi-tray-reload", handleTrayReload);
+  }, [loadState]);
+
   const handleCommandPaletteSelect = useCallback((result: SearchResult): void => {
     setCommandPaletteOpen(false);
     runAfterUnsavedHandled(() => {
@@ -217,8 +226,8 @@ export function App(): JSX.Element {
 
   return (
     <div className={isSidebarCollapsed ? "shell sidebar-collapsed" : "shell"}>
-      <div className="window-titlebar drag-region" aria-hidden="true">
-        <div className="window-titlebar-safe" />
+      <div className="window-titlebar drag-region" aria-hidden="true" data-tauri-drag-region>
+        <div className="window-titlebar-safe" data-tauri-drag-region />
       </div>
       {externalChange ? (
         <div className="app-tip-layer" role="status" aria-live="polite">
@@ -251,12 +260,12 @@ export function App(): JSX.Element {
       ) : null}
       <div className="background-grid" />
       <aside className="sidebar glass-panel">
-        <div className="brand drag-region">
-          <div className="brand-mark">
+        <div className="brand drag-region" data-tauri-drag-region>
+          <div className="brand-mark" data-tauri-drag-region>
             <img className="brand-logo brand-logo-light" src={logoLight} alt="Kimi Code Switch" />
             <img className="brand-logo brand-logo-dark" src={logoDark} alt="Kimi Code Switch" />
           </div>
-          <div className="brand-copy">
+          <div className="brand-copy" data-tauri-drag-region>
             <h1>{title}</h1>
             <p>{t(locale, "appSubtitle")}</p>
           </div>
