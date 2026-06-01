@@ -2,6 +2,25 @@
 
 This file records the project's notable changes. Format follows Keep a Changelog; the project uses `major.minor.patch` versioning.
 
+## [2.0.0] - 2026-06-01
+
+### Added
+
+- The system-tray right-click menu can now switch language, theme, and profile in real time — the UI updates immediately, no restart required.
+- The sidebar collapse/expand now animates smoothly.
+
+### Changed
+
+- **Architecture rewrite: migrated from Electron to Tauri v2 (Rust + the system WebView).** Adopts a "thin Rust shell + frontend business logic" architecture; the ~5,300-line `src/shared/` business logic is reused almost unchanged, while file I/O, command execution, HTTP requests, SQLite, and the system tray are now exposed through Rust commands.
+- Much smaller installers: the bundled Chromium runtime is gone in favor of the system WebView, significantly shrinking the macOS DMG and Windows NSIS packages.
+- The title bar now uses the native macOS Overlay style, with the traffic-light buttons drawn and vertically centered by the system.
+- Project naming normalized: Vite config `vite.config.ts`, build output `dist/`, and release workflow `release.yml` (trigger tag changed from `tauri-v*` to `v*`).
+
+### Fixed
+
+- The WebDAV connection test now shows readable messages on authentication failure (401/403) and rate limiting (429).
+- Fixed the UI not refreshing in real time after switching language/theme from the system tray.
+
 ## [1.1.9] - 2026-05-25
 
 ### Added

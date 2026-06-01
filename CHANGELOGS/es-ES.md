@@ -2,6 +2,25 @@
 
 Este archivo recoge los cambios relevantes del proyecto. El formato sigue Keep a Changelog y el proyecto adopta el esquema de versiones `major.minor.patch`.
 
+## [2.0.0] - 2026-06-01
+
+### Añadido
+
+- El menú contextual de la bandeja del sistema ahora permite cambiar idioma, tema y perfil en tiempo real; la interfaz se actualiza de inmediato, sin reiniciar.
+- El plegado/desplegado de la barra lateral ahora se anima de forma fluida.
+
+### Cambiado
+
+- **Reescritura de la arquitectura: migración de Electron a Tauri v2 (Rust + WebView del sistema).** Adopta una arquitectura de «capa fina de Rust + lógica de negocio en el frontend»; las ~5300 líneas de lógica de `src/shared/` se reutilizan casi sin cambios, mientras que la E/S de archivos, la ejecución de comandos, las peticiones HTTP, SQLite y la bandeja del sistema se exponen ahora mediante comandos de Rust.
+- Instaladores mucho más pequeños: se elimina el runtime de Chromium incluido en favor de la WebView del sistema, reduciendo notablemente los paquetes DMG de macOS y NSIS de Windows.
+- La barra de título usa ahora el estilo nativo Overlay de macOS, con los botones de semáforo dibujados y centrados verticalmente por el sistema.
+- Nomenclatura del proyecto normalizada: configuración de Vite `vite.config.ts`, salida de compilación `dist/` y flujo de publicación `release.yml` (etiqueta de activación cambiada de `tauri-v*` a `v*`).
+
+### Corregido
+
+- La prueba de conexión WebDAV ahora muestra mensajes legibles ante fallos de autenticación (401/403) y limitación de tasa (429).
+- Corregido que la interfaz no se actualizara en tiempo real tras cambiar idioma/tema desde la bandeja del sistema.
+
 ## [1.1.9] - 2026-05-25
 
 ### Añadido

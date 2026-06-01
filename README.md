@@ -220,7 +220,7 @@ npm run dist:win
 
 ## 当前版本
 
-- 应用版本：`1.1.9`
+- 应用版本：`2.0.0`
 - 变更记录：[CHANGELOG.md](CHANGELOG.md)（按语言分文件维护，详见 [`CHANGELOGS/`](CHANGELOGS/)）
 
 ## 参与开发
