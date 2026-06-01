@@ -1,0 +1,415 @@
+// 用量洞察 SQLite 前端适配：SQL 与时间/游标逻辑（移植自 main/modules/usageDb.ts）
+// 全部在 renderer 跑，通过 Rust 的 usage_* 命令操作 SQLite 连接。
+import { invoke } from "@tauri-apps/api/core";
+
+import type {
+  BreakdownRow,
+  Bucket,
+  EventFilter,
+  EventsPage,
+  GroupBy,
+  OverviewSlice,
+  SeriesPoint,
+  SessionRow,
+  TimeRange,
+  UsageEvent,
+} from "@shared/usageTypes";
+
+type Params = Record<string, string | number | null>;
+type Row = Record<string, unknown>;
+
+const SCHEMA_VERSION = 1;
+
+export const SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS schema_versions (
+  version INTEGER PRIMARY KEY,
+  applied_at_utc INTEGER NOT NULL,
+  description TEXT
+);
+CREATE TABLE IF NOT EXISTS events (
+  request_id TEXT NOT NULL PRIMARY KEY,
+  ts INTEGER NOT NULL,
+  ts_end INTEGER,
+  profile TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  prompt_tokens INTEGER NOT NULL DEFAULT 0,
+  completion_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+  reasoning_tokens INTEGER NOT NULL DEFAULT 0,
+  latency_ms INTEGER NOT NULL,
+  proxy_overhead_ms INTEGER NOT NULL DEFAULT 0,
+  error_code TEXT,
+  error_message TEXT,
+  http_status INTEGER NOT NULL DEFAULT 0,
+  session_hint TEXT,
+  cost_estimate REAL,
+  pricing_version TEXT,
+  metadata_json TEXT,
+  ingested_at_utc INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_events_ts ON events (ts DESC);
+CREATE INDEX IF NOT EXISTS idx_events_profile_ts ON events (profile, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_events_model_ts ON events (model, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_events_error_ts ON events (error_code, ts DESC) WHERE error_code IS NOT NULL;
+CREATE TABLE IF NOT EXISTS daily_aggregate (
+  day_utc TEXT NOT NULL,
+  profile TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  call_count INTEGER NOT NULL DEFAULT 0,
+  error_count INTEGER NOT NULL DEFAULT 0,
+  prompt_tokens_sum INTEGER NOT NULL DEFAULT 0,
+  completion_tokens_sum INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens_sum INTEGER NOT NULL DEFAULT 0,
+  cache_creation_tokens_sum INTEGER NOT NULL DEFAULT 0,
+  reasoning_tokens_sum INTEGER NOT NULL DEFAULT 0,
+  latency_ms_sum INTEGER NOT NULL DEFAULT 0,
+  latency_ms_max INTEGER NOT NULL DEFAULT 0,
+  cost_estimate_sum REAL,
+  PRIMARY KEY (day_utc, profile, provider, model)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS idx_agg_day ON daily_aggregate (day_utc);
+CREATE TABLE IF NOT EXISTS ingest_state (
+  source_path TEXT NOT NULL PRIMARY KEY,
+  byte_offset INTEGER NOT NULL DEFAULT 0,
+  inode_signature TEXT,
+  last_ingested_utc INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'ok'
+);
+CREATE TRIGGER IF NOT EXISTS trg_events_aggregate
+AFTER INSERT ON events
+BEGIN
+  INSERT INTO daily_aggregate (
+    day_utc, profile, provider, model,
+    call_count, error_count,
+    prompt_tokens_sum, completion_tokens_sum,
+    cache_read_tokens_sum, cache_creation_tokens_sum, reasoning_tokens_sum,
+    latency_ms_sum, latency_ms_max
+  ) VALUES (
+    strftime('%Y-%m-%d', NEW.ts / 1000, 'unixepoch'),
+    NEW.profile, NEW.provider, NEW.model,
+    1, CASE WHEN NEW.error_code IS NULL THEN 0 ELSE 1 END,
+    NEW.prompt_tokens, NEW.completion_tokens,
+    NEW.cache_read_tokens, NEW.cache_creation_tokens, NEW.reasoning_tokens,
+    NEW.latency_ms, NEW.latency_ms
+  )
+  ON CONFLICT(day_utc, profile, provider, model) DO UPDATE SET
+    call_count = call_count + 1,
+    error_count = error_count + CASE WHEN NEW.error_code IS NULL THEN 0 ELSE 1 END,
+    prompt_tokens_sum = prompt_tokens_sum + NEW.prompt_tokens,
+    completion_tokens_sum = completion_tokens_sum + NEW.completion_tokens,
+    cache_read_tokens_sum = cache_read_tokens_sum + NEW.cache_read_tokens,
+    cache_creation_tokens_sum = cache_creation_tokens_sum + NEW.cache_creation_tokens,
+    reasoning_tokens_sum = reasoning_tokens_sum + NEW.reasoning_tokens,
+    latency_ms_sum = latency_ms_sum + NEW.latency_ms,
+    latency_ms_max = MAX(latency_ms_max, NEW.latency_ms);
+END;
+`;
+
+async function query(sql: string, params?: Params): Promise<Row[]> {
+  return invoke<Row[]>("usage_query", { sql, params: params ?? null });
+}
+
+async function exec(sql: string, params?: Params): Promise<number> {
+  return invoke<number>("usage_exec", { sql, params: params ?? null });
+}
+
+function num(v: unknown, fallback = 0): number {
+  return typeof v === "number" && Number.isFinite(v) ? v : fallback;
+}
+
+function str(v: unknown, fallback = ""): string {
+  return typeof v === "string" ? v : fallback;
+}
+
+// ── 时间区间计算（移植自 usageDb computeBounds）──
+interface RangeBounds {
+  fromMs: number;
+  toMs: number;
+  fromDay: string;
+  toDay: string;
+}
+
+function msToDayString(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+function dayStringToMs(day: string): number {
+  return new Date(`${day}T00:00:00.000Z`).getTime();
+}
+
+function makeBounds(fromMs: number, toMs: number): RangeBounds {
+  return { fromMs, toMs, fromDay: msToDayString(fromMs), toDay: msToDayString(toMs) };
+}
+
+function computeBounds(range: TimeRange): RangeBounds {
+  const now = Date.now();
+  if (typeof range === "string") {
+    const DAY = 86400000;
+    switch (range) {
+      case "today": {
+        const s = new Date(now);
+        s.setHours(0, 0, 0, 0);
+        return makeBounds(s.getTime(), now);
+      }
+      case "3d": return makeBounds(now - 3 * DAY, now);
+      case "7d": return makeBounds(now - 7 * DAY, now);
+      case "14d": return makeBounds(now - 14 * DAY, now);
+      case "30d": return makeBounds(now - 30 * DAY, now);
+      case "90d": return makeBounds(now - 90 * DAY, now);
+      case "mtd": {
+        const s = new Date(now);
+        s.setDate(1);
+        s.setHours(0, 0, 0, 0);
+        return makeBounds(s.getTime(), now);
+      }
+    }
+  }
+  const r = range as { fromUtc: number; toUtc: number };
+  return makeBounds(r.fromUtc, r.toUtc);
+}
+
+function encodeCursor(ts: number, id: string): string {
+  return btoa(JSON.stringify({ ts, id }));
+}
+
+function decodeCursor(cursor: string | null): { ts: number; id: string } | null {
+  if (!cursor) return null;
+  try {
+    const obj = JSON.parse(atob(cursor)) as { ts: number; id: string };
+    return typeof obj.ts === "number" && typeof obj.id === "string" ? obj : null;
+  } catch {
+    return null;
+  }
+}
+
+type BreakdownOrder = "tokens" | "calls" | "errors" | "avg_latency_ms" | "cache_hit_rate";
+const ORDER_COLUMN_MAP: Record<BreakdownOrder, string> = {
+  tokens: "tokens",
+  calls: "calls",
+  errors: "errors",
+  avg_latency_ms: "avg_latency_ms",
+  cache_hit_rate: "cache_hit_rate",
+};
+
+// ── 公开 API ──
+
+export async function open(dbPath: string): Promise<void> {
+  await invoke("usage_open", { dbPath, schemaSql: SCHEMA_SQL });
+  const rows = await query("SELECT MAX(version) AS version FROM schema_versions");
+  const current = num(rows[0]?.version, 0);
+  if (current < SCHEMA_VERSION) {
+    await exec(
+      "INSERT INTO schema_versions(version, applied_at_utc, description) VALUES (@v, @t, @d)",
+      { v: SCHEMA_VERSION, t: Date.now(), d: "initial schema" },
+    );
+  }
+}
+
+export async function close(): Promise<void> {
+  await invoke("usage_close");
+}
+
+const INSERT_SQL = `
+  INSERT OR IGNORE INTO events (
+    request_id, ts, ts_end, profile, provider, model,
+    prompt_tokens, completion_tokens, cache_read_tokens, cache_creation_tokens, reasoning_tokens,
+    latency_ms, proxy_overhead_ms, error_code, error_message, http_status,
+    session_hint, cost_estimate, pricing_version, metadata_json, ingested_at_utc
+  ) VALUES (
+    @request_id, @ts, @ts_end, @profile, @provider, @model,
+    @prompt_tokens, @completion_tokens, @cache_read_tokens, @cache_creation_tokens, @reasoning_tokens,
+    @latency_ms, @proxy_overhead_ms, @error_code, @error_message, @http_status,
+    @session_hint, @cost_estimate, @pricing_version, @metadata_json, @ingested_at_utc
+  )
+`;
+
+function eventToParams(e: UsageEvent): Params {
+  return { ...e, ingested_at_utc: Date.now() } as unknown as Params;
+}
+
+export async function insertEvent(event: UsageEvent): Promise<boolean> {
+  const changes = await exec(INSERT_SQL, eventToParams(event));
+  return changes > 0;
+}
+
+export async function insertEventsBatch(events: UsageEvent[]): Promise<number> {
+  if (events.length === 0) return 0;
+  const now = Date.now();
+  const rows = events.map((e) => ({ ...e, ingested_at_utc: now }));
+  return invoke<number>("usage_exec_batch", { sql: INSERT_SQL, rows });
+}
+
+export async function getEventCount(): Promise<number> {
+  const rows = await query("SELECT COUNT(*) AS cnt FROM events");
+  return num(rows[0]?.cnt);
+}
+
+export async function queryOverview(range: TimeRange): Promise<OverviewSlice> {
+  const b = computeBounds(range);
+  const rows = await query(
+    `SELECT
+       COALESCE(SUM(call_count),0) AS calls,
+       COALESCE(SUM(prompt_tokens_sum+completion_tokens_sum+cache_read_tokens_sum+cache_creation_tokens_sum+reasoning_tokens_sum),0) AS tokens,
+       COALESCE(SUM(cache_read_tokens_sum),0) AS cache_read,
+       COALESCE(SUM(prompt_tokens_sum+cache_read_tokens_sum),0) AS cache_input,
+       COALESCE(SUM(reasoning_tokens_sum),0) AS reasoning,
+       COALESCE(SUM(latency_ms_sum),0) AS latency_sum,
+       COALESCE(SUM(error_count),0) AS errors
+     FROM daily_aggregate WHERE day_utc BETWEEN @from_day AND @to_day`,
+    { from_day: b.fromDay, to_day: b.toDay },
+  );
+  const r = rows[0] ?? {};
+  const calls = num(r.calls);
+  const cacheInput = num(r.cache_input);
+  return {
+    totalCalls: calls,
+    totalTokens: num(r.tokens),
+    cacheHitRate: cacheInput > 0 ? num(r.cache_read) / cacheInput : 0,
+    reasoningTokens: num(r.reasoning),
+    avgLatencyMs: calls > 0 ? num(r.latency_sum) / calls : 0,
+    errorRate: calls > 0 ? num(r.errors) / calls : 0,
+  };
+}
+
+export async function queryTrend(range: TimeRange, bucket: Bucket, groupBy: GroupBy | null): Promise<SeriesPoint[]> {
+  const b = computeBounds(range);
+  const groupCol = groupBy === "profile" ? "profile" : groupBy === "model" ? "model" : groupBy === "provider" ? "provider" : "''";
+  if (bucket === "hour") {
+    const rows = await query(
+      `SELECT (ts/3600000)*3600000 AS bucket, ${groupCol} AS grp,
+         SUM(prompt_tokens+completion_tokens+cache_read_tokens+cache_creation_tokens+reasoning_tokens) AS tokens,
+         COUNT(*) AS calls
+       FROM events WHERE ts >= @from_ms AND ts < @to_ms
+       GROUP BY bucket, grp ORDER BY bucket`,
+      { from_ms: b.fromMs, to_ms: b.toMs },
+    );
+    return rows.map((r) => ({ bucket: num(r.bucket), group: str(r.grp), tokens: num(r.tokens), calls: num(r.calls) }));
+  }
+  const rows = await query(
+    `SELECT day_utc AS bucket, ${groupCol} AS grp,
+       SUM(prompt_tokens_sum+completion_tokens_sum+cache_read_tokens_sum+cache_creation_tokens_sum+reasoning_tokens_sum) AS tokens,
+       SUM(call_count) AS calls
+     FROM daily_aggregate WHERE day_utc BETWEEN @from_day AND @to_day
+     GROUP BY day_utc, grp ORDER BY day_utc`,
+    { from_day: b.fromDay, to_day: b.toDay },
+  );
+  return rows.map((r) => ({ bucket: dayStringToMs(str(r.bucket)), group: str(r.grp), tokens: num(r.tokens), calls: num(r.calls) }));
+}
+
+export async function queryBreakdown(dim: "profile" | "model", range: TimeRange, limit: number, orderBy: BreakdownOrder): Promise<BreakdownRow[]> {
+  const b = computeBounds(range);
+  const orderCol = ORDER_COLUMN_MAP[orderBy];
+  const rows = await query(
+    `SELECT ${dim} AS name, SUM(call_count) AS calls,
+       SUM(prompt_tokens_sum+completion_tokens_sum+cache_read_tokens_sum+cache_creation_tokens_sum+reasoning_tokens_sum) AS tokens,
+       SUM(error_count) AS errors,
+       CAST(SUM(latency_ms_sum) AS REAL)/NULLIF(SUM(call_count),0) AS avg_latency_ms,
+       CAST(SUM(cache_read_tokens_sum) AS REAL)/NULLIF(SUM(prompt_tokens_sum+cache_read_tokens_sum),0) AS cache_hit_rate
+     FROM daily_aggregate WHERE day_utc BETWEEN @from_day AND @to_day
+     GROUP BY ${dim} ORDER BY ${orderCol} DESC LIMIT @limit`,
+    { from_day: b.fromDay, to_day: b.toDay, limit: Math.max(1, Math.min(50, limit)) },
+  );
+  return rows.map((r) => ({
+    name: str(r.name),
+    calls: num(r.calls),
+    tokens: num(r.tokens),
+    errors: num(r.errors),
+    avg_latency_ms: num(r.avg_latency_ms),
+    cache_hit_rate: num(r.cache_hit_rate),
+  }));
+}
+
+export async function queryHeaviestSessions(range: TimeRange, limit: number): Promise<SessionRow[]> {
+  const b = computeBounds(range);
+  const rows = await query(
+    `SELECT session_hint AS session_id, MIN(ts) AS started_utc, MAX(ts_end) AS ended_utc,
+       COUNT(*) AS calls,
+       SUM(prompt_tokens+completion_tokens+cache_read_tokens+cache_creation_tokens+reasoning_tokens) AS tokens,
+       (SELECT profile FROM events e2 WHERE e2.session_hint = ue.session_hint ORDER BY ts LIMIT 1) AS profile,
+       GROUP_CONCAT(DISTINCT model) AS models,
+       CAST(AVG(latency_ms) AS INTEGER) AS avg_latency_ms,
+       SUM(CASE WHEN error_code IS NOT NULL THEN 1 ELSE 0 END) AS errors
+     FROM events ue WHERE ts >= @from_ms AND ts < @to_ms AND session_hint IS NOT NULL
+     GROUP BY session_hint ORDER BY tokens DESC LIMIT @limit`,
+    { from_ms: b.fromMs, to_ms: b.toMs, limit: Math.max(1, Math.min(50, limit)) },
+  );
+  return rows.map((r) => ({
+    session_id: str(r.session_id),
+    started_utc: num(r.started_utc),
+    ended_utc: r.ended_utc === null ? null : num(r.ended_utc),
+    calls: num(r.calls),
+    tokens: num(r.tokens),
+    profile: str(r.profile),
+    models: str(r.models),
+    avg_latency_ms: num(r.avg_latency_ms),
+    errors: num(r.errors),
+    inferred: false,
+  }));
+}
+
+export async function queryEvents(filter: EventFilter, cursor: string | null, pageSize: number): Promise<EventsPage> {
+  const b = computeBounds(filter.range);
+  const size = Math.max(1, Math.min(200, pageSize));
+  const conditions = ["ts >= @from_ms", "ts < @to_ms"];
+  const params: Params = { from_ms: b.fromMs, to_ms: b.toMs };
+
+  const dc = decodeCursor(cursor);
+  if (dc) {
+    conditions.push("(ts < @cursor_ts OR (ts = @cursor_ts AND request_id < @cursor_id))");
+    params.cursor_ts = dc.ts;
+    params.cursor_id = dc.id;
+  }
+  const addIn = (vals: string[] | undefined, col: string, prefix: string): void => {
+    if (!vals?.length) return;
+    conditions.push(`${col} IN (${vals.map((_, i) => `@${prefix}_${i}`).join(",")})`);
+    vals.forEach((v, i) => { params[`${prefix}_${i}`] = v; });
+  };
+  addIn(filter.profiles, "profile", "p");
+  addIn(filter.models, "model", "m");
+  addIn(filter.providers, "provider", "pr");
+  if (filter.errorState === "error") conditions.push("error_code IS NOT NULL");
+  else if (filter.errorState === "success") conditions.push("error_code IS NULL");
+
+  params.limit = size + 1;
+  const rows = await query(
+    `SELECT * FROM events WHERE ${conditions.join(" AND ")} ORDER BY ts DESC, request_id DESC LIMIT @limit`,
+    params,
+  );
+  const hasMore = rows.length > size;
+  const page = (hasMore ? rows.slice(0, size) : rows) as unknown as UsageEvent[];
+  const last = page[page.length - 1];
+  const nextCursor = hasMore && last ? encodeCursor(last.ts, last.request_id) : null;
+  return { rows: page, nextCursor };
+}
+
+export async function pruneOldEvents(retentionDays: number): Promise<number> {
+  const cutoff = Date.now() - retentionDays * 86400000;
+  return exec("DELETE FROM events WHERE ts < @cutoff", { cutoff });
+}
+
+export async function purgeAll(): Promise<void> {
+  await invoke("usage_exec_script", {
+    sql: "DELETE FROM events; DELETE FROM daily_aggregate; DELETE FROM ingest_state;",
+  });
+}
+
+export async function getIngestState(sourcePath: string): Promise<{ byteOffset: number; inodeSignature: string | null } | null> {
+  const rows = await query("SELECT byte_offset, inode_signature FROM ingest_state WHERE source_path = @p", { p: sourcePath });
+  if (!rows[0]) return null;
+  return { byteOffset: num(rows[0].byte_offset), inodeSignature: (rows[0].inode_signature as string | null) ?? null };
+}
+
+export async function setIngestState(sourcePath: string, byteOffset: number, inodeSignature: string | null, status = "ok"): Promise<void> {
+  await exec(
+    `INSERT INTO ingest_state (source_path, byte_offset, inode_signature, last_ingested_utc, status)
+     VALUES (@p, @o, @sig, @t, @st)
+     ON CONFLICT(source_path) DO UPDATE SET
+       byte_offset=excluded.byte_offset, inode_signature=excluded.inode_signature,
+       last_ingested_utc=excluded.last_ingested_utc, status=excluded.status`,
+    { p: sourcePath, o: byteOffset, sig: inodeSignature, t: Date.now(), st: status },
+  );
+}

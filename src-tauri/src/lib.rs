@@ -4,6 +4,8 @@
 //! 继续跑在前端 renderer，后端只暴露 I/O 和系统集成的原子能力。
 
 mod fs_access;
+mod system;
+mod usage;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -12,7 +14,9 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .manage(usage::UsageState::default())
         .invoke_handler(tauri::generate_handler![
+            // 文件 I/O
             fs_access::read_text,
             fs_access::write_text,
             fs_access::ensure_dir,
@@ -20,6 +24,19 @@ pub fn run() {
             fs_access::path_exists,
             fs_access::list_dir,
             fs_access::list_dir_typed,
+            // 系统集成
+            system::exec_command,
+            system::write_executable,
+            system::file_stat,
+            system::read_file_slice,
+            system::http_request,
+            // 用量洞察 SQLite
+            usage::usage_open,
+            usage::usage_query,
+            usage::usage_exec,
+            usage::usage_exec_batch,
+            usage::usage_exec_script,
+            usage::usage_close,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
