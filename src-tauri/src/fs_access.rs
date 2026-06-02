@@ -160,3 +160,55 @@ pub fn list_dir_typed(path: String) -> Result<Vec<DirEntry>, String> {
     }
     Ok(result)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_home_expands_tilde_prefix() {
+        let home = dirs::home_dir().expect("home dir required for this test");
+        let resolved = resolve_home("~/.kimi/config.toml");
+        assert_eq!(resolved, home.join(".kimi/config.toml"));
+    }
+
+    #[test]
+    fn resolve_home_expands_bare_tilde() {
+        let home = dirs::home_dir().expect("home dir required for this test");
+        assert_eq!(resolve_home("~"), home);
+    }
+
+    #[test]
+    fn resolve_home_keeps_absolute_path_unchanged() {
+        // 绝对路径不含 ~ 前缀，应原样返回。
+        assert_eq!(resolve_home("/etc/hosts"), PathBuf::from("/etc/hosts"));
+    }
+
+    #[test]
+    fn resolve_home_keeps_relative_path_unchanged() {
+        // 相对路径既非 "~" 也无 "~/" 前缀，原样返回。
+        assert_eq!(resolve_home("foo/bar.txt"), PathBuf::from("foo/bar.txt"));
+    }
+
+    #[test]
+    fn resolve_home_does_not_expand_tilde_in_middle() {
+        // 只识别开头的 ~/ 与单独的 ~，路径中间的 ~ 不展开。
+        assert_eq!(
+            resolve_home("/var/~cache"),
+            PathBuf::from("/var/~cache")
+        );
+    }
+
+    #[test]
+    fn dir_entry_serializes_is_directory_camel_case() {
+        let entry = DirEntry {
+            name: "skills".to_string(),
+            is_directory: true,
+        };
+        let json = serde_json::to_value(&entry).unwrap();
+        assert_eq!(json["name"], "skills");
+        // serde rename 应输出 camelCase 键 isDirectory。
+        assert_eq!(json["isDirectory"], true);
+        assert!(json.get("is_directory").is_none());
+    }
+}

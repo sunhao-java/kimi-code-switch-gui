@@ -183,3 +183,128 @@ pub fn usage_close(state: tauri::State<UsageState>) -> Result<(), String> {
     *state.conn.lock().unwrap() = None;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn json_to_sql_maps_primitive_kinds() {
+        assert!(matches!(json_to_sql(&Json::Null), Value::Null));
+        assert!(matches!(json_to_sql(&Json::Bool(true)), Value::Integer(1)));
+        assert!(matches!(json_to_sql(&Json::Bool(false)), Value::Integer(0)));
+        assert!(matches!(
+            json_to_sql(&Json::Number(Number::from(42))),
+            Value::Integer(42)
+        ));
+        match json_to_sql(&Json::Number(Number::from_f64(1.5).unwrap())) {
+            Value::Real(f) => assert_eq!(f, 1.5),
+            other => panic!("expected Real, got {other:?}"),
+        }
+        match json_to_sql(&Json::String("hi".into())) {
+            Value::Text(t) => assert_eq!(t, "hi"),
+            other => panic!("expected Text, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn json_to_sql_serializes_compound_kinds_as_text() {
+        // 数组/对象等复合类型转字符串文本，避免绑定失败。
+        let arr = serde_json::json!([1, 2]);
+        match json_to_sql(&arr) {
+            Value::Text(t) => assert_eq!(t, "[1,2]"),
+            other => panic!("expected Text, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_home_expands_tilde_prefix() {
+        let home = dirs::home_dir().expect("home dir required");
+        assert_eq!(resolve_home("~/.kimi/usage.db"), home.join(".kimi/usage.db"));
+    }
+
+    #[test]
+    fn resolve_home_keeps_plain_path() {
+        assert_eq!(resolve_home("/tmp/usage.db"), PathBuf::from("/tmp/usage.db"));
+    }
+
+    fn make_table_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE events (id INTEGER PRIMARY KEY, name TEXT, amount INTEGER);",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn bind_named_maps_named_params_and_returns_rows() {
+        let conn = make_table_conn();
+        conn.execute(
+            "INSERT INTO events (name, amount) VALUES ('a', 10), ('b', 20), ('a', 30)",
+            [],
+        )
+        .unwrap();
+
+        let mut params: HashMap<String, Json> = HashMap::new();
+        params.insert("name".into(), Json::String("a".into()));
+
+        let mut stmt = conn
+            .prepare("SELECT amount FROM events WHERE name = @name ORDER BY amount")
+            .unwrap();
+        bind_named(&mut stmt, &params).unwrap();
+        let mut rows = stmt.raw_query();
+
+        let mut amounts = Vec::new();
+        while let Some(row) = rows.next().unwrap() {
+            let v = row.get_ref(0).unwrap();
+            amounts.push(sql_to_json(v));
+        }
+        // 多行映射：name='a' 命中两行 10 与 30。
+        assert_eq!(amounts.len(), 2);
+        assert_eq!(amounts[0], Json::Number(Number::from(10)));
+        assert_eq!(amounts[1], Json::Number(Number::from(30)));
+    }
+
+    #[test]
+    fn bind_named_empty_result_set() {
+        let conn = make_table_conn();
+        let mut params: HashMap<String, Json> = HashMap::new();
+        params.insert("name".into(), Json::String("missing".into()));
+
+        let mut stmt = conn
+            .prepare("SELECT amount FROM events WHERE name = @name")
+            .unwrap();
+        bind_named(&mut stmt, &params).unwrap();
+        let mut rows = stmt.raw_query();
+        assert!(rows.next().unwrap().is_none());
+    }
+
+    #[test]
+    fn bind_named_ignores_unused_param_keys() {
+        // SQL 中不含 @ghost 占位符，多余的键应被静默跳过（parameter_index 返回 None）。
+        let conn = make_table_conn();
+        let mut params: HashMap<String, Json> = HashMap::new();
+        params.insert("name".into(), Json::String("a".into()));
+        params.insert("ghost".into(), Json::Number(Number::from(99)));
+
+        let mut stmt = conn
+            .prepare("SELECT amount FROM events WHERE name = @name")
+            .unwrap();
+        // 不应 panic / 报错。
+        bind_named(&mut stmt, &params).unwrap();
+    }
+
+    #[test]
+    fn sql_to_json_maps_column_kinds() {
+        assert_eq!(sql_to_json(ValueRef::Null), Json::Null);
+        assert_eq!(
+            sql_to_json(ValueRef::Integer(7)),
+            Json::Number(Number::from(7))
+        );
+        assert_eq!(
+            sql_to_json(ValueRef::Text(b"hello")),
+            Json::String("hello".into())
+        );
+    }
+}

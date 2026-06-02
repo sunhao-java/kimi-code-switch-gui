@@ -1,0 +1,112 @@
+{
+  "id": "TASK-001",
+  "title": "前端适配层单元测试 + 覆盖率门禁扩展",
+  "description": "为 src/renderer/src/tauri/ 下逻辑密集的适配层补单元测试（迁移时从 Electron 主进程搬来、当前零测试），并把 vitest 覆盖率门禁从仅 src/shared/** 扩展到 src/renderer/src/tauri/**。",
+
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "test",
+  "priority": "high",
+  "effort": "large",
+  "action": "在 src/renderer/src/tauri/ 下为以下逻辑密集适配层各新建同名 .test.ts：webdav.test.ts（覆盖 testWebDavConnection 对 401/403/429 的友好报错分支 + 正常路径）、usageDb.test.ts（覆盖 SQL 语句/命名参数构造、查询结果映射）、usageLogWatcher.test.ts（日志行解析）、backup.test.ts（备份编排：本地/WebDAV 分支、回滚点）、tray.test.ts（buildMenu 生成的菜单 JSON 结构、locale/theme/profile 勾选态、tray://command 动作路由）、cli.test.ts、terminal.test.ts。统一用 vi.mock 拦截依赖：vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))，tray 还需 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn() }))，kimiSwitch 涉及 vi.mock('@tauri-apps/api/app'). 断言 invoke 被以正确 command 名 + 参数调用、返回值被正确解析、错误被转成预期消息。薄转发层 fileAccess.ts/fileSnapshots.ts 低优先（仅在提升聚合覆盖率必要时补）。随后在 vitest.config.ts 的 coverage.include 数组追加 'src/renderer/src/tauri/**/*.ts'，运行 npm test 看实测覆盖率，按达成值设定 thresholds（薄包装会拉低 branch，不强行套 shared 的 55；以新 include 整体能稳定通过为准，建议 lines/functions/statements 不低于 70、branches 不低于 50，最终值以实测微调并写注释说明）。",
+  "status": "completed",
+  "completed_at": "2026-06-02T14:25:05+0800",
+  "actual_duration": null,
+
+  "scope": "src/renderer/src/tauri/",
+  "focus_paths": ["src/renderer/src/tauri/", "vitest.config.ts"],
+
+  "read_first": [
+    "src/renderer/src/tauri/webdav.ts",
+    "src/renderer/src/tauri/usageDb.ts",
+    "src/renderer/src/tauri/usageLogWatcher.ts",
+    "src/renderer/src/tauri/backup.ts",
+    "src/renderer/src/tauri/tray.ts",
+    "src/renderer/src/tauri/cli.ts",
+    "src/renderer/src/tauri/terminal.ts",
+    "src/renderer/src/useAppPersistence.test.ts",
+    "src/shared/configStore.test.ts",
+    "vitest.config.ts"
+  ],
+
+  "depends_on": [],
+  "wave": 1,
+  "parallel_group": "A",
+  "execution_group": null,
+  "executor": "agent",
+
+  "convergence": {
+    "criteria": [
+      "src/renderer/src/tauri/webdav.test.ts exists",
+      "src/renderer/src/tauri/usageDb.test.ts exists",
+      "src/renderer/src/tauri/tray.test.ts exists",
+      "src/renderer/src/tauri/backup.test.ts exists",
+      "grep -rn \"vi.mock(\\\"@tauri-apps/api/core\\\"\" src/renderer/src/tauri/ matches at least 3 files",
+      "vitest.config.ts contains 'src/renderer/src/tauri'",
+      "webdav.test.ts contains '429'",
+      "npm test exits 0"
+    ],
+    "verification": "npm test （含 --coverage，门禁须通过）",
+    "definition_of_done": "迁移层逻辑密集适配层有单测保护，覆盖率门禁覆盖 src/renderer/src/tauri/**，CI test job 能拦住此区域的回归。"
+  },
+
+  "files": [
+    { "path": "src/renderer/src/tauri/webdav.test.ts", "action": "create", "target": "testWebDavConnection", "change": "测试 401/403/429 友好报错分支 + 正常 PROPFIND 路径，mock invoke(http_request)" },
+    { "path": "src/renderer/src/tauri/usageDb.test.ts", "action": "create", "target": "SQL/参数构造与结果映射", "change": "mock invoke(usage_query/usage_exec)，断言 SQL + 命名参数 + 行映射" },
+    { "path": "src/renderer/src/tauri/usageLogWatcher.test.ts", "action": "create", "target": "日志解析", "change": "喂样例日志行，断言解析结果" },
+    { "path": "src/renderer/src/tauri/backup.test.ts", "action": "create", "target": "备份编排", "change": "本地/WebDAV 分支 + 回滚点，mock invoke" },
+    { "path": "src/renderer/src/tauri/tray.test.ts", "action": "create", "target": "buildMenu + 动作路由", "change": "断言菜单 JSON 结构与勾选态，mock invoke + listen" },
+    { "path": "src/renderer/src/tauri/cli.test.ts", "action": "create", "target": "命令封装", "change": "mock invoke(exec_command)，断言参数与解析" },
+    { "path": "src/renderer/src/tauri/terminal.test.ts", "action": "create", "target": "终端启动", "change": "断言临时配置生成与命令拼接" },
+    { "path": "vitest.config.ts", "action": "modify", "target": "coverage.include / thresholds", "change": "include 追加 'src/renderer/src/tauri/**/*.ts'；thresholds 按实测设定（建议 lines/functions/statements>=70, branches>=50）并加注释" }
+  ],
+
+  "implementation": [
+    "读 useAppPersistence.test.ts / configStore.test.ts 确认 vitest + @testing-library 用法与 fixture 构造惯例",
+    "逐个读待测适配层，识别可断言的纯逻辑点（参数构造、结果解析、错误分支）",
+    "为每个文件写 *.test.ts：顶部 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))，import 后用 vi.mocked(invoke).mockResolvedValue(...) 驱动分支",
+    "tray.test.ts 额外 mock '@tauri-apps/api/event' 的 listen；涉及 exit 的用例 mock '@tauri-apps/plugin-process'",
+    "在 vitest.config.ts 的 coverage.include 追加 'src/renderer/src/tauri/**/*.ts'",
+    "运行 npm test，读覆盖率报告，对未达标文件补断言或调整 thresholds 到稳定可过的实测值，并在 config 里加注释说明为何低于 shared",
+    "确保 npm test 全绿且门禁通过"
+  ],
+
+  "test": {
+    "commands": ["npm test"],
+    "unit": ["webdav", "usageDb", "usageLogWatcher", "backup", "tray", "cli", "terminal"],
+    "integration": [],
+    "success_metrics": ["新增适配层测试全部通过", "覆盖率门禁含 src/renderer/src/tauri/** 且通过"]
+  },
+
+  "reference": {
+    "pattern": "renderHook + 内存 fixture（useAppPersistence.test.ts）；纯函数 + 内存 FS（configStore.test.ts）",
+    "files": ["src/renderer/src/useAppPersistence.test.ts", "src/shared/configStore.test.ts"],
+    "examples": null
+  },
+
+  "rationale": {
+    "chosen_approach": "mock invoke 边界后测试前端侧逻辑，是覆盖适配层最低成本且最有效的方式；聚焦逻辑密集文件避免为转发样板写空断言",
+    "decision_factors": ["适配层零测试是 v2.0.0 最大质量风险", "本会话已暴露 tray/webdav 两个真实回归", "renderer 已有可复用测试范式"],
+    "tradeoffs": "薄转发层覆盖率有限，故门禁阈值按实测设定而非套用 shared"
+  },
+
+  "risks": [
+    { "risk": "门禁阈值初值过高导致 CI 红", "mitigation": "按实测达成值设定 + 注释说明" }
+  ],
+
+  "code_skeleton": null,
+
+  "doc_context": {
+    "affected_features": ["WebDAV 备份", "用量洞察", "系统托盘", "终端启动"],
+    "affected_components": ["src/renderer/src/tauri/*", "vitest.config.ts"],
+    "affected_requirements": ["REQ-101"],
+    "adr_ids": []
+  },
+
+  "meta": {
+    "estimated_time": "0.5-1 天",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false
+  }
+}

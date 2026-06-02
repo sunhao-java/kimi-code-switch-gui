@@ -115,3 +115,76 @@ pub fn show_main_window(app: AppHandle) -> Result<(), String> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 注：菜单构建（build_menu_items/set_tray）依赖 Tauri runtime 的 AppHandle，
+    // 不在单测范围内；这里覆盖前端→Rust 的菜单结构 JSON 解析契约（MenuItemSpec）。
+
+    #[test]
+    fn menu_item_spec_parses_minimal_clickable_item() {
+        let spec: MenuItemSpec =
+            serde_json::from_str(r#"{ "id": "open", "label": "打开" }"#).unwrap();
+        assert_eq!(spec.id.as_deref(), Some("open"));
+        assert_eq!(spec.label.as_deref(), Some("打开"));
+        // 缺省字段：非分隔符、未勾选、无子菜单。
+        assert!(!spec.separator);
+        assert!(!spec.checked);
+        assert!(spec.submenu.is_empty());
+    }
+
+    #[test]
+    fn menu_item_spec_parses_separator() {
+        let spec: MenuItemSpec = serde_json::from_str(r#"{ "separator": true }"#).unwrap();
+        assert!(spec.separator);
+        assert!(spec.id.is_none());
+        assert!(spec.label.is_none());
+    }
+
+    #[test]
+    fn menu_item_spec_parses_checked_flag() {
+        let spec: MenuItemSpec =
+            serde_json::from_str(r#"{ "id": "profile-a", "label": "Profile A", "checked": true }"#)
+                .unwrap();
+        assert!(spec.checked);
+        assert_eq!(spec.id.as_deref(), Some("profile-a"));
+    }
+
+    #[test]
+    fn menu_item_spec_parses_nested_submenu() {
+        let json = r#"{
+            "label": "Profiles",
+            "submenu": [
+                { "id": "p1", "label": "One", "checked": true },
+                { "separator": true },
+                { "id": "p2", "label": "Two" }
+            ]
+        }"#;
+        let spec: MenuItemSpec = serde_json::from_str(json).unwrap();
+        assert_eq!(spec.label.as_deref(), Some("Profiles"));
+        assert!(spec.id.is_none());
+        assert_eq!(spec.submenu.len(), 3);
+        assert_eq!(spec.submenu[0].id.as_deref(), Some("p1"));
+        assert!(spec.submenu[0].checked);
+        assert!(spec.submenu[1].separator);
+        assert_eq!(spec.submenu[2].id.as_deref(), Some("p2"));
+        assert!(!spec.submenu[2].checked);
+    }
+
+    #[test]
+    fn menu_spec_parses_full_array() {
+        // 顶层是 Vec<MenuItemSpec>，与 set_tray 的 menu 参数同构。
+        let json = r#"[
+            { "id": "show", "label": "显示窗口" },
+            { "separator": true },
+            { "id": "quit", "label": "退出" }
+        ]"#;
+        let menu: Vec<MenuItemSpec> = serde_json::from_str(json).unwrap();
+        assert_eq!(menu.len(), 3);
+        assert_eq!(menu[0].id.as_deref(), Some("show"));
+        assert!(menu[1].separator);
+        assert_eq!(menu[2].id.as_deref(), Some("quit"));
+    }
+}

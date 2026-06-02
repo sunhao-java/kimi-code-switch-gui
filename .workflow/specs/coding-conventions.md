@@ -29,7 +29,7 @@ Auto-generated from project analysis. Update manually as patterns evolve.
 
 ## Patterns
 - Pure functions for state mutations (configStore pattern)
-- IPC registration: `registerXxxIpc(ipcMain, ctx)` with typed context interface
+- Backend bridge: Tauri adapters call Rust commands via `invoke()` / `listen()`, exposed through `window.kimiSwitch`
 - React hooks: custom hooks in separate files (useToast.ts, useShortcuts.ts)
 - CSS: custom properties via tokens.css, no Tailwind
 - i18n: simple key-value lookup function `t(locale, key)`

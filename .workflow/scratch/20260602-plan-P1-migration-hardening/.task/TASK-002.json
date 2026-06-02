@@ -1,0 +1,103 @@
+{
+  "id": "TASK-002",
+  "title": "Rust tauri 命令契约/集成测试 + CI 接入 cargo test",
+  "description": "为 src-tauri 的 23 个 tauri 命令补契约级测试（当前零 Rust 测试），针对可纯化的逻辑（~/ 路径解析、SQL 命名参数映射、http 请求构造、tray 菜单 JSON 解析），并把 cargo test 接入 CI 的 test job。",
+
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "test",
+  "priority": "high",
+  "effort": "medium",
+  "action": "在 src-tauri/src/ 各模块底部添加 #[cfg(test)] mod tests。优先纯化可测逻辑：fs_access.rs 的 ~/ 与相对路径解析（提取为纯函数 resolve_path(input)->PathBuf 后断言展开正确）、usage.rs 的 SQL + 命名参数绑定映射（断言 named params 顺序/名称、空结果与多行映射）、system.rs 的 http_request 头部/方法构造与 file_stat/read_file_slice 的边界（提取请求构造为纯 helper）、tray.rs 的菜单 JSON（MenuItemSpec）解析与构建。对必须 Tauri runtime 的命令，抽取纯 helper 测 helper，不强测 runtime。随后在 .github/workflows/release.yml 的 test job 增加一步：安装 Rust stable + 运行 `cd src-tauri && cargo test`（带 swatinem/rust-cache 复用缓存）。",
+  "status": "completed",
+  "completed_at": "2026-06-02T14:16:42+0800",
+  "actual_duration": null,
+
+  "scope": "src-tauri/src/",
+  "focus_paths": ["src-tauri/src/", ".github/workflows/release.yml"],
+
+  "read_first": [
+    "src-tauri/src/fs_access.rs",
+    "src-tauri/src/usage.rs",
+    "src-tauri/src/system.rs",
+    "src-tauri/src/tray.rs",
+    "src-tauri/src/lib.rs",
+    "src-tauri/Cargo.toml",
+    ".github/workflows/release.yml"
+  ],
+
+  "depends_on": [],
+  "wave": 1,
+  "parallel_group": "B",
+  "execution_group": null,
+  "executor": "agent",
+
+  "convergence": {
+    "criteria": [
+      "grep -rn '#\\[cfg(test)\\]' src-tauri/src/ matches at least 3 files",
+      "src-tauri/src/fs_access.rs contains 'mod tests'",
+      "src-tauri/src/usage.rs contains 'mod tests'",
+      "cd src-tauri && cargo test exits 0",
+      ".github/workflows/release.yml contains 'cargo test'"
+    ],
+    "verification": "cd src-tauri && cargo test；并确认 release.yml test job 含 cargo test 步骤",
+    "definition_of_done": "Rust 命令的契约逻辑有测试覆盖，cargo test 通过且在 CI 中执行，迁移正确性不再只靠手测。"
+  },
+
+  "files": [
+    { "path": "src-tauri/src/fs_access.rs", "action": "modify", "target": "路径解析 + #[cfg(test)]", "change": "提取 ~/ 解析为纯函数并加 mod tests 断言展开与相对路径" },
+    { "path": "src-tauri/src/usage.rs", "action": "modify", "target": "SQL 参数映射 + #[cfg(test)]", "change": "纯化命名参数绑定并加 mod tests 断言映射/空/多行" },
+    { "path": "src-tauri/src/system.rs", "action": "modify", "target": "http 请求构造 + #[cfg(test)]", "change": "提取请求构造 helper 并加 mod tests 断言方法/头部" },
+    { "path": "src-tauri/src/tray.rs", "action": "modify", "target": "菜单 JSON 解析 + #[cfg(test)]", "change": "加 mod tests 断言 MenuItemSpec 解析/构建" },
+    { "path": ".github/workflows/release.yml", "action": "modify", "target": "test job", "change": "增加 Rust stable 安装 + 'cd src-tauri && cargo test' 步骤（复用 rust-cache）" }
+  ],
+
+  "implementation": [
+    "读各 Rust 模块，识别哪些命令体可纯化（不依赖 AppHandle/State 的部分抽成自由函数）",
+    "对 fs_access 的路径解析、usage 的参数映射、system 的请求构造、tray 的菜单解析分别提取纯 helper",
+    "在每个模块底部加 #[cfg(test)] mod tests { use super::*; #[test] fn ... }",
+    "本地 cd src-tauri && cargo test 跑通",
+    "在 release.yml test job（当前仅 npm test）追加：dtolnay/rust-toolchain@stable + swatinem/rust-cache + run: cd src-tauri && cargo test",
+    "确认 CI test job 既跑 npm test 又跑 cargo test"
+  ],
+
+  "test": {
+    "commands": ["cd src-tauri && cargo test"],
+    "unit": ["fs_access path resolution", "usage param mapping", "system request build", "tray menu parse"],
+    "integration": [],
+    "success_metrics": ["cargo test 通过", "CI test job 含 cargo test"]
+  },
+
+  "reference": {
+    "pattern": "Rust 标准 #[cfg(test)] mod tests 内联单测",
+    "files": ["src-tauri/src/fs_access.rs"],
+    "examples": null
+  },
+
+  "rationale": {
+    "chosen_approach": "契约级单测纯化 helper，性价比远高于搭建完整 Tauri runtime 集成测试",
+    "decision_factors": ["23 命令零测试", "迁移正确性目前靠手测", "CI 当前不跑 Rust 测试"],
+    "tradeoffs": "不覆盖需 runtime 的命令端到端路径（本期范围外）"
+  },
+
+  "risks": [
+    { "risk": "部分命令逻辑与 Tauri runtime 强耦合，纯化困难", "mitigation": "只纯化可分离部分，runtime 路径留待后续 e2e 里程碑" },
+    { "risk": "CI 加 cargo test 拉长 test job 时长", "mitigation": "用 swatinem/rust-cache 复用编译缓存" }
+  ],
+
+  "code_skeleton": null,
+
+  "doc_context": {
+    "affected_features": ["文件 I/O", "用量 SQLite", "HTTP/WebDAV", "系统托盘"],
+    "affected_components": ["src-tauri/src/*", ".github/workflows/release.yml"],
+    "affected_requirements": ["REQ-102"],
+    "adr_ids": []
+  },
+
+  "meta": {
+    "estimated_time": "0.5 天",
+    "risk": "medium",
+    "autonomous": true,
+    "checkpoint": false
+  }
+}

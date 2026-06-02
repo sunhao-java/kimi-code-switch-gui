@@ -1,0 +1,52 @@
+{
+  "phase": 1,
+  "milestone": "v2.0.x",
+  "status": "passed",
+  "verified_at": "2026-06-02T14:30:00+0800",
+  "verifier": "maestro-verify (fresh evidence)",
+  "coverage_score": 1.0,
+  "must_haves": {
+    "truths": [
+      {
+        "claim": "REQ-101 适配层有单测 + 覆盖率门禁扩展",
+        "status": "verified",
+        "evidence": "7 个 *.test.ts; vi.mock(@tauri-apps/api/core)×7 文件; vitest.config 含 src/renderer/src/tauri; webdav.test 含 429×3; npm test exit 0 (22 files / 338 tests)"
+      },
+      {
+        "claim": "REQ-102 Rust 命令有契约测试 + CI cargo test",
+        "status": "verified",
+        "evidence": "#[cfg(test)]×4 (fs_access/usage/system/tray); fs_access+usage 含 mod tests; cargo test 26 passed / 0 failed; release.yml 含 cargo test×3"
+      },
+      {
+        "claim": "REQ-103 知识文档同步到 Tauri",
+        "status": "verified",
+        "evidence": "project.md Tauri×4 / Electron×0; specs ipcMain|preload×0; specs Tauri|src-tauri|invoke 命中 3 文件"
+      }
+    ],
+    "artifacts": [
+      { "path": "src/renderer/src/tauri/*.test.ts", "status": "exists", "substantive": true },
+      { "path": "src-tauri/src/{fs_access,usage,system,tray}.rs #[cfg(test)]", "status": "exists", "substantive": true },
+      { "path": ".workflow/project.md + .workflow/specs/*.md", "status": "exists", "substantive": true },
+      { "path": "vitest.config.ts (coverage gate 扩展)", "status": "exists", "substantive": true },
+      { "path": ".github/workflows/release.yml (CI cargo test)", "status": "exists", "substantive": true }
+    ],
+    "key_links": [
+      { "from": "vitest coverage.include -> src/renderer/src/tauri/**", "status": "wired" },
+      { "from": "CI test job -> npm test + cargo test", "status": "wired" }
+    ]
+  },
+  "gaps": [],
+  "constraint_violations": [],
+  "antipatterns": [],
+  "fix_plans": [],
+  "human_verification": [],
+  "coverage": {
+    "frontend_aggregate": "Stmts 79 / Branch 81 / Func 90 / Lines 79 (门禁 70/70/50/70 通过)",
+    "rust_tests": "26 passed / 0 failed",
+    "note": "前端 22 files/338 tests 全绿; 后端 cargo test 全绿"
+  },
+  "residual_notes": [
+    "薄转发层 kimiSwitch/fileSnapshots/fileAccess 暂未测（计划列为低优先，门禁作用于 All files 聚合，不受影响）",
+    "Rust runtime 强耦合命令（set_tray/exec_command 真实 IO/SQLite State 注入）未做 e2e，留待后续里程碑"
+  ]
+}

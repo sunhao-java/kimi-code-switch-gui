@@ -162,6 +162,31 @@ pub struct HttpResponse {
     pub body: String,
 }
 
+/// 纯构造：把方法/URL/头部/请求体组装成一个 reqwest::Request。
+/// 与发送解耦，便于单测断言方法、头部与 body 的构造结果（覆盖 WebDAV 的
+/// MKCOL/PROPFIND 等非标准方法及大小写归一化）。
+fn build_http_request(
+    client: &reqwest::Client,
+    method: &str,
+    url: &str,
+    headers: Option<&HashMap<String, String>>,
+    body: Option<String>,
+) -> Result<reqwest::Request, String> {
+    let req_method = reqwest::Method::from_bytes(method.to_uppercase().as_bytes())
+        .map_err(|e| format!("invalid method {method}: {e}"))?;
+    let mut req = client.request(req_method, url);
+
+    if let Some(hs) = headers {
+        for (k, v) in hs {
+            req = req.header(k, v);
+        }
+    }
+    if let Some(b) = body {
+        req = req.body(b);
+    }
+    req.build().map_err(|e| format!("build request: {e}"))
+}
+
 /// 通用 HTTP 请求（reqwest）：覆盖 WebDAV（MKCOL/PROPFIND/PUT/DELETE）、
 /// provider 连通性测试、PyPI/GitHub 版本检查——绕过浏览器 fetch 的方法限制与 CORS。
 #[tauri::command]
@@ -176,20 +201,12 @@ pub async fn http_request(
         .build()
         .map_err(|e| format!("client build: {e}"))?;
 
-    let req_method = reqwest::Method::from_bytes(method.to_uppercase().as_bytes())
-        .map_err(|e| format!("invalid method {method}: {e}"))?;
-    let mut req = client.request(req_method, &url);
+    let req = build_http_request(&client, &method, &url, headers.as_ref(), body)?;
 
-    if let Some(hs) = headers {
-        for (k, v) in &hs {
-            req = req.header(k, v);
-        }
-    }
-    if let Some(b) = body {
-        req = req.body(b);
-    }
-
-    let resp = req.send().await.map_err(|e| format!("request: {e}"))?;
+    let resp = client
+        .execute(req)
+        .await
+        .map_err(|e| format!("request: {e}"))?;
     let status = resp.status();
     let text = resp.text().await.map_err(|e| format!("read body: {e}"))?;
     Ok(HttpResponse {
@@ -197,4 +214,92 @@ pub async fn http_request(
         ok: status.is_success(),
         body: text,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn client() -> reqwest::Client {
+        reqwest::Client::builder().build().unwrap()
+    }
+
+    #[test]
+    fn resolve_home_expands_tilde_prefix() {
+        let home = dirs::home_dir().expect("home dir required");
+        assert_eq!(resolve_home("~/run.sh"), home.join("run.sh"));
+    }
+
+    #[test]
+    fn resolve_home_keeps_plain_path() {
+        assert_eq!(resolve_home("/tmp/run.sh"), PathBuf::from("/tmp/run.sh"));
+    }
+
+    #[test]
+    fn augmented_path_dedupes_and_includes_homebrew() {
+        let path = augmented_path();
+        let parts: Vec<&str> = path.split(':').collect();
+        // 去重：每个条目唯一。
+        let mut seen = std::collections::HashSet::new();
+        for p in &parts {
+            assert!(seen.insert(*p), "duplicate path entry: {p}");
+        }
+        // 补齐常见 CLI 路径。
+        assert!(parts.contains(&"/opt/homebrew/bin"));
+        assert!(parts.contains(&"/usr/local/bin"));
+    }
+
+    #[test]
+    fn build_http_request_normalizes_method_to_uppercase() {
+        let req = build_http_request(&client(), "get", "https://example.com/", None, None)
+            .unwrap();
+        assert_eq!(req.method().as_str(), "GET");
+        assert_eq!(req.url().as_str(), "https://example.com/");
+    }
+
+    #[test]
+    fn build_http_request_supports_webdav_methods() {
+        // WebDAV 的非标准方法（浏览器 fetch 不支持）应可构造。
+        for m in ["PROPFIND", "MKCOL", "DELETE", "PUT"] {
+            let req =
+                build_http_request(&client(), m, "https://dav.example.com/x", None, None).unwrap();
+            assert_eq!(req.method().as_str(), m);
+        }
+    }
+
+    #[test]
+    fn build_http_request_applies_headers_and_body() {
+        let mut headers = HashMap::new();
+        headers.insert("Authorization".to_string(), "Bearer t0ken".to_string());
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+
+        let req = build_http_request(
+            &client(),
+            "POST",
+            "https://api.example.com/v1",
+            Some(&headers),
+            Some("{\"k\":1}".to_string()),
+        )
+        .unwrap();
+
+        assert_eq!(req.method().as_str(), "POST");
+        assert_eq!(
+            req.headers().get("authorization").unwrap(),
+            "Bearer t0ken"
+        );
+        assert_eq!(
+            req.headers().get("content-type").unwrap(),
+            "application/json"
+        );
+        let body_bytes = req.body().and_then(|b| b.as_bytes()).unwrap();
+        assert_eq!(body_bytes, b"{\"k\":1}");
+    }
+
+    #[test]
+    fn build_http_request_rejects_invalid_method() {
+        // 含空格的非法方法名应报错而非 panic。
+        let err = build_http_request(&client(), "BAD METHOD", "https://x", None, None)
+            .unwrap_err();
+        assert!(err.contains("invalid method"));
+    }
 }

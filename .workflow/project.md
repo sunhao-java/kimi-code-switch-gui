@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Electron 桌面应用，为 kimi-code-cli 提供可视化配置管理界面。用户可以通过 GUI 管理 providers、models、profiles、MCP servers、skills，无需手动编辑 TOML 配置文件。面向使用 kimi-cli 的开发者。
+Tauri v2 (Rust + 系统 WebView) 桌面应用，为 kimi-code-cli 提供可视化配置管理界面。用户可以通过 GUI 管理 providers、models、profiles、MCP servers、skills，无需手动编辑 TOML 配置文件。面向使用 kimi-cli 的开发者。
 
 ## Core Value
 
@@ -40,7 +40,7 @@ Electron 桌面应用，为 kimi-code-cli 提供可视化配置管理界面。�
 
 ## Context
 
-项目基于 electron-vite 构建，三进程架构（main/preload/renderer）。配置文件存储在 `~/.kimi/` 目录。使用 `@iarna/toml` 解析 TOML，`better-sqlite3` 存储用量数据。UI 使用自定义 CSS 变量系统（tokens.css + components.css + layout.css），不依赖 Tailwind。
+项目采用薄 Rust 壳 + 前端业务逻辑架构：`src-tauri` 暴露 Rust 命令（文件 IO、系统集成、SQLite、托盘），`src/renderer` 是 React SPA 及其 Tauri 适配层，`src/shared` 承载零依赖的纯业务逻辑。配置文件存储在 `~/.kimi/` 目录。使用 `@iarna/toml` 解析 TOML，用量数据由 Rust 后端经 `rusqlite` 存入 SQLite。UI 使用自定义 CSS 变量系统（tokens.css + components.css + layout.css），不依赖 Tailwind。
 
 ## Constraints
 
@@ -51,10 +51,10 @@ Electron 桌面应用，为 kimi-code-cli 提供可视化配置管理界面。�
 
 ## Tech Stack
 
-- **Runtime**: Electron 35 + Node.js
+- **Runtime**: Tauri v2 + Rust + 系统 WebView
 - **Frontend**: React 18 + TypeScript 5.8
-- **Build**: electron-vite + esbuild
-- **Storage**: @iarna/toml (配置) + better-sqlite3 (用量)
+- **Build**: Tauri CLI + Vite (vite.config.ts → dist/)
+- **Storage**: @iarna/toml (配置) + Rust rusqlite (用量，SQLite 由 Rust 后端提供)
 - **Icons**: Lucide React
 - **Test**: Vitest + jsdom
 
@@ -66,7 +66,7 @@ Electron 桌面应用，为 kimi-code-cli 提供可视化配置管理界面。�
 | 纯函数 configStore | 可测试性 + 无副作用 | 已实施 |
 | FileAccess 抽象 | 测试时用内存 FS，生产用真实 FS | 已实施 |
 | CSS 变量系统 | 主题切换简单，不引入 Tailwind 依赖 | 已实施 |
-| IPC 模块化注册 | 每个功能域独立注册，main/index.ts 保持精简 | 已实施 |
+| 薄 Rust 壳 + 前端业务逻辑 | Rust 仅暴露 IO/系统集成原语，src/shared 业务逻辑在渲染层复用 | 已实施 |
 
 ## Stakeholders
 

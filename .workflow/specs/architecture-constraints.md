@@ -9,33 +9,35 @@ category: arch
 Auto-generated from project structure. Update manually as architecture evolves.
 
 ## Module Structure
-- Type: single-package (Electron app with electron-vite)
+- Type: single-package (Tauri v2 app — thin Rust shell + frontend business logic)
 - Key modules:
-  - `src/main/` — Electron main process (IPC handlers, file I/O, system integration)
-  - `src/main/modules/` — Feature-specific IPC modules (terminal, fileWatcher, usageDb, etc.)
-  - `src/preload/` — Context bridge (exposes IPC to renderer via `window.kimiSwitch`)
-  - `src/renderer/src/` — React SPA (single App.tsx, tab-based navigation)
-  - `src/renderer/src/tabs/` — Tab panel components
-  - `src/shared/` — Pure logic shared across all processes (types, stores, utilities)
+  - `src-tauri/src/` — Rust backend, exposes Tauri commands (I/O + system-integration primitives only):
+    - `fs_access.rs` — file I/O (read/write/ensure_dir/list_dir/hostname, resolves `~/` paths)
+    - `system.rs` — `exec_command`, `http_request` (reqwest), log tail, `write_executable`
+    - `usage.rs` — SQLite via `rusqlite` (`usage_query`/`usage_exec`/...)
+    - `tray.rs` — dynamic system tray (menu JSON in, `tray://command` events out)
+  - `src/renderer/src/` — React SPA (single App.tsx, tab-based navigation, no router)
+  - `src/renderer/src/tauri/` — adapters bridging `window.kimiSwitch` to Rust commands (kimiSwitch.ts, usageDb.ts, cli.ts, terminal.ts, webdav.ts, tray.ts, ...)
+  - `src/shared/` — Pure logic (zero Node/Rust deps): types, configStore, utilities
 
 ## Layer Boundaries
-- `shared/` → no imports from main/preload/renderer (pure, process-agnostic)
-- `main/modules/` → may import from `@shared/*`, never from renderer/preload
-- `preload/` → imports types from `@shared/*`, bridges IPC
-- `renderer/` → imports from `@shared/*` and `@renderer/*`, accesses main via `window.kimiSwitch`
+- `shared/` → no imports from renderer or Tauri adapters (pure, host-agnostic)
+- `src/renderer/src/tauri/` → may import types from `@shared/*`, bridges to Rust via `invoke()` / `listen()`
+- `renderer/` → imports from `@shared/*` and `@renderer/*`, accesses backend via `window.kimiSwitch`
+- `src-tauri/src/` → Rust I/O and system primitives only; no business logic (that lives in `src/shared`)
 
 ## Dependency Rules
-- Renderer NEVER imports from main or preload directly
-- All cross-process communication via IPC (ipcMain.handle / ipcRenderer.invoke)
+- Renderer NEVER calls Rust commands directly — always via the `window.kimiSwitch` adapter surface
+- `window.kimiSwitch` is injected at runtime (gated on `__TAURI_INTERNALS__`); adapters call `invoke()` for commands and `listen()` for backend events
 - Shared layer has zero side effects — all functions are pure
-- FileAccess interface abstracts filesystem (enables in-memory testing)
+- FileAccess interface abstracts filesystem (Tauri adapter in prod, in-memory for testing)
 
 ## Technology Constraints
-- Runtime: Electron 35 + Node.js (native modules via electron-rebuild)
-- Module system: ESM (electron-vite handles CJS interop)
+- Runtime: Tauri v2 + Rust + system WebView
+- Frontend module system: ESM (Vite)
 - Strict mode: TypeScript strict (noEmit check in build)
-- Native deps: better-sqlite3 (requires electron-rebuild)
-- Build: electron-vite (vite for renderer, esbuild for main/preload)
+- Backend storage: SQLite via Rust `rusqlite`
+- Build: Tauri CLI + Vite (vite.config.ts → dist/)
 
 ## Entries
 

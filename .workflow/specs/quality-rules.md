@@ -8,8 +8,8 @@ category: quality
 
 ## Build Gate
 - `tsc --noEmit` must pass (zero type errors)
-- `electron-vite build` must succeed
-- No esbuild transform errors
+- `npm run build` (Tauri CLI + Vite) must succeed
+- `cargo build` (src-tauri) must succeed
 
 ## Test Gate
 - `npm test` (vitest run --coverage) must pass all tests

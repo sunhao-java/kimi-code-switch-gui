@@ -1,0 +1,92 @@
+{
+  "id": "TASK-003",
+  "title": "知识文档同步到 Tauri v2 架构",
+  "description": "将迁移后仍陈旧的项目知识文档（.workflow/project.md 与 .workflow/specs 架构约束）从 Electron 描述同步为 Tauri v2，以已准确的 CLAUDE.md 为单一真源。",
+
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "docs",
+  "priority": "medium",
+  "effort": "small",
+  "action": "以 CLAUDE.md（迁移后已准确）为真源，重写 .workflow/project.md 的 What This Is / Context / Tech Stack / Constraints 段：把 'Electron 桌面应用' 改为 'Tauri v2 (Rust + WebView) 桌面应用'，'三进程架构(main/preload/renderer)' 改为 '薄 Rust 壳 + 前端业务逻辑（src-tauri Rust 命令 + src/renderer + src/shared）'，Runtime 从 'Electron 35 + Node.js' 改为 'Tauri v2 + Rust + 系统 WebView'，Build 从 'electron-vite + esbuild' 改为 'Tauri CLI + Vite (vite.config.ts → dist/)'，移除 electron-builder/better-sqlite3-native 描述（SQLite 现由 Rust rusqlite 提供）。同步更新 .workflow/specs 下的架构约束文件：Module Structure 改为 src-tauri/src（fs_access/system/usage/tray）+ src/renderer/src/tauri 适配层 + src/shared；Layer Boundaries / Dependency Rules 把 'IPC ipcMain/ipcRenderer'、'preload context bridge' 改为 'window.kimiSwitch → invoke() Tauri command + listen() 事件'；Technology Constraints 的 Runtime 改为 Tauri v2。全程不得引入新事实，仅与 CLAUDE.md 对齐。",
+  "status": "completed",
+  "completed_at": "2026-06-02T14:14:50+0800",
+  "actual_duration": null,
+
+  "scope": ".workflow/",
+  "focus_paths": [".workflow/project.md", ".workflow/specs/"],
+
+  "read_first": [
+    "CLAUDE.md",
+    ".workflow/project.md",
+    ".workflow/specs/"
+  ],
+
+  "depends_on": [],
+  "wave": 1,
+  "parallel_group": "C",
+  "execution_group": null,
+  "executor": "agent",
+
+  "convergence": {
+    "criteria": [
+      ".workflow/project.md contains 'Tauri'",
+      "grep -c 'Electron' .workflow/project.md returns 0 (或仅出现在 git 历史/迁移说明语境)",
+      "grep -rn 'electron-vite' .workflow/project.md returns nothing",
+      "grep -rln 'ipcMain\\|preload' .workflow/specs/ returns nothing",
+      ".workflow/specs contains 'src-tauri' or 'invoke' or 'Tauri'"
+    ],
+    "verification": "grep 校验 project.md 与 specs 不再含 Electron/electron-vite/ipcMain/preload，且含 Tauri/src-tauri/invoke",
+    "definition_of_done": "maestro 项目知识文档与现实（Tauri v2）一致，后续 analyze/plan 加载的架构上下文不再误导。"
+  },
+
+  "files": [
+    { "path": ".workflow/project.md", "action": "modify", "target": "What This Is / Context / Tech Stack / Constraints", "change": "Electron→Tauri v2；三进程→薄 Rust 壳+前端业务逻辑；electron-vite→Vite+Tauri CLI；better-sqlite3→Rust rusqlite" },
+    { "path": ".workflow/specs/", "action": "modify", "target": "架构约束(Module Structure/Layer Boundaries/Dependency Rules/Technology Constraints)", "change": "IPC/preload→window.kimiSwitch+invoke()+listen()；main/modules→src-tauri/src；Runtime→Tauri v2" }
+  ],
+
+  "implementation": [
+    "读 CLAUDE.md 的 Architecture / Key Patterns 段作为真源",
+    "读 .workflow/project.md 与 .workflow/specs 下架构文件，标出所有 Electron 时代描述",
+    "逐段重写 project.md（What This Is/Context/Tech Stack/Constraints），仅做事实对齐",
+    "重写 specs 架构约束（Module Structure/Layer Boundaries/Dependency Rules/Technology Constraints）",
+    "grep 自检：无 Electron/electron-vite/ipcMain/preload，含 Tauri/src-tauri/invoke"
+  ],
+
+  "test": {
+    "commands": ["grep -rn 'electron-vite\\|ipcMain\\|preload' .workflow/project.md .workflow/specs/"],
+    "unit": [],
+    "integration": [],
+    "success_metrics": ["陈旧 Electron 描述清零", "Tauri 架构描述就位"]
+  },
+
+  "reference": {
+    "pattern": "CLAUDE.md 的 Architecture 段（迁移后已准确）",
+    "files": ["CLAUDE.md"],
+    "examples": null
+  },
+
+  "rationale": {
+    "chosen_approach": "以已准确的 CLAUDE.md 为单一真源对齐，避免重复发明事实",
+    "decision_factors": ["project.md 与 specs/arch 均仍写 Electron，与现实矛盾", "陈旧上下文会误导后续 maestro analyze/plan"],
+    "tradeoffs": "纯文档任务，无运行时风险"
+  },
+
+  "risks": [],
+
+  "code_skeleton": null,
+
+  "doc_context": {
+    "affected_features": [],
+    "affected_components": [".workflow/project.md", ".workflow/specs/"],
+    "affected_requirements": ["REQ-103"],
+    "adr_ids": []
+  },
+
+  "meta": {
+    "estimated_time": "1-2 小时",
+    "risk": "low",
+    "autonomous": true,
+    "checkpoint": false
+  }
+}
