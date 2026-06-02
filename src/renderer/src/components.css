@@ -2651,16 +2651,51 @@ textarea:focus-visible {
   color: var(--muted);
 }
 
-.providers-health-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 12px;
+.providers-health-banner {
+  position: relative;
   margin-bottom: 14px;
+  padding: 12px 38px 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.06), rgba(var(--primary-2-rgb), 0.03));
+  animation: providers-health-banner-in 0.22s ease;
+}
+
+@keyframes providers-health-banner-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.providers-health-banner-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.providers-health-banner-close:hover {
+  background: rgba(var(--primary-rgb), 0.12);
+  color: var(--text);
 }
 
 .providers-health-empty {
-  align-self: center;
   font-size: 0.82rem;
   color: var(--muted);
 }
@@ -2677,11 +2712,23 @@ textarea:focus-visible {
 .providers-health-item {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 4px 11px;
-  border-radius: 8px;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 999px;
   font-size: 0.8rem;
-  background: rgba(151, 169, 196, 0.08);
+  border: 1px solid transparent;
+  background: rgba(151, 169, 196, 0.1);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.providers-health-item.ok {
+  background: color-mix(in srgb, var(--primary-2) 13%, transparent);
+  border-color: color-mix(in srgb, var(--primary-2) 30%, transparent);
+}
+
+.providers-health-item.fail {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
 }
 
 .providers-health-item .providers-health-dot {
@@ -2693,14 +2740,17 @@ textarea:focus-visible {
 
 .providers-health-item.ok .providers-health-dot {
   background: var(--primary-2);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-2) 22%, transparent);
 }
 
 .providers-health-item.fail .providers-health-dot {
   background: var(--danger);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 22%, transparent);
 }
 
 .providers-health-name {
   font-weight: 600;
+  color: var(--text);
 }
 
 .providers-health-reason {

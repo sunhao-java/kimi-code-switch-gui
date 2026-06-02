@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bug, Copy, Download, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Star, Terminal, Trash2, Upload, X } from "lucide-react";
+import { Activity, Bug, Copy, Download, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Star, Terminal, Trash2, Upload, X } from "lucide-react";
 import { applyProfile, cloneProfile, deleteModel, deleteProfile, deleteProvider, exportConfig, getImportPreview, importConfig, toggleFavorite, validateImportData, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
 import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
 import {
@@ -43,6 +43,7 @@ import { Field, FontSizeSliderField, SelectField, SettingsGroup, ShortcutRecorde
 import { t, translateError } from "../i18n";
 import { InsightsSettingsPanel, InsightsDashboard } from "../insightsComponents";
 import { EmptyState, SplitLayout } from "../layoutComponents";
+import { ProviderHealthBanner } from "../providerHealthBanner";
 import { OverviewDashboard } from "../overviewDashboard";
 import { SkillsWorkspace } from "../skillsWorkspace";
 import type { ProviderHealthResult } from "../tauri/cli";
@@ -237,6 +238,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   const [importDialog, setImportDialog] = useState<{ open: boolean; preview: ImportPreview | null; data: ExportBundle | null; strategy: ImportConflictStrategy }>({ open: false, preview: null, data: null, strategy: "skip" });
   const [providerHealthResults, setProviderHealthResults] = useState<ProviderHealthResult[] | null>(null);
   const [isProviderHealthChecking, setIsProviderHealthChecking] = useState(false);
+  const [providerHealthBannerOpen, setProviderHealthBannerOpen] = useState(false);
+  const [providerHealthBannerKey, setProviderHealthBannerKey] = useState(0);
 
   const runProvidersHealthCheck = (): void => {
     const api = getApi();
@@ -247,7 +250,12 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     void Promise.resolve(api.runProvidersHealthCheck(state))
       .then((results) => setProviderHealthResults(results))
       .catch(() => setProviderHealthResults([]))
-      .finally(() => setIsProviderHealthChecking(false));
+      .finally(() => {
+        setIsProviderHealthChecking(false);
+        // key++ 让提示条重挂载以重置自动关闭计时；open=true 重新展示。
+        setProviderHealthBannerKey((key) => key + 1);
+        setProviderHealthBannerOpen(true);
+      });
   };
 
   const providerHealthReasonLabel = (result: ProviderHealthResult): string => {
@@ -324,39 +332,32 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
         ) : null}
 
         {activeTab === "providers" ? (
-          <>
-          <div className="providers-health-bar">
-            <button
-              className={isProviderHealthChecking ? "action-button compact is-loading" : "action-button compact"}
-              type="button"
-              disabled={isProviderHealthChecking || providerEntries.length === 0}
-              onClick={runProvidersHealthCheck}
-            >
-              {isProviderHealthChecking ? <LoaderCircle size={14} className="button-spinner" /> : <Power size={14} />}
-              <span>{isProviderHealthChecking ? t(locale, "providerHealthChecking") : t(locale, "providerHealthCheck")}</span>
-            </button>
-            {providerHealthResults ? (
-              providerHealthResults.length === 0 ? (
-                <span className="providers-health-empty">{t(locale, "providerHealthEmpty")}</span>
-              ) : (
-                <ul className="providers-health-list">
-                  {providerHealthResults.map((result) => (
-                    <li
-                      key={result.providerName}
-                      className={result.ok ? "providers-health-item ok" : "providers-health-item fail"}
-                    >
-                      <span className="providers-health-dot" aria-hidden="true" />
-                      <span className="providers-health-name">{result.providerName}</span>
-                      <span className="providers-health-reason">
-                        {result.ok ? providerHealthReasonLabel(result) : `${t(locale, "providerHealthFail")} · ${providerHealthReasonLabel(result)}`}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )
-            ) : null}
-          </div>
           <SplitLayout
+            headerActions={
+              <button
+                className={isProviderHealthChecking ? "action-button compact icon-only is-loading" : "action-button compact icon-only"}
+                type="button"
+                disabled={isProviderHealthChecking || providerEntries.length === 0}
+                aria-label={t(locale, "providerHealthCheck")}
+                title={t(locale, "providerHealthCheck")}
+                onClick={runProvidersHealthCheck}
+              >
+                {isProviderHealthChecking ? <LoaderCircle size={15} className="button-spinner" /> : <Activity size={15} />}
+              </button>
+            }
+            listBanner={
+              providerHealthBannerOpen && providerHealthResults ? (
+                <ProviderHealthBanner
+                  key={providerHealthBannerKey}
+                  results={providerHealthResults}
+                  emptyLabel={t(locale, "providerHealthEmpty")}
+                  failLabel={t(locale, "providerHealthFail")}
+                  reasonLabel={providerHealthReasonLabel}
+                  closeLabel={t(locale, "close")}
+                  onClose={() => setProviderHealthBannerOpen(false)}
+                />
+              ) : null
+            }
             listTitle={t(locale, "providers")}
             listItems={providerEntries.map(([name]) => name)}
             dirtyItems={dirtyProviders}
@@ -460,7 +461,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               <EmptyState locale={locale} />
             )}
           </SplitLayout>
-        </>) : null}
+        ) : null}
 
         {activeTab === "models" ? (
           <SplitLayout

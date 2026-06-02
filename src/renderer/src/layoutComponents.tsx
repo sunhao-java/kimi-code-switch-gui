@@ -25,6 +25,7 @@ export function SplitLayout(props: {
   itemClassName?: (item: string) => string | null;
   renderItemAction?: (item: string) => JSX.Element | null;
   headerActions?: JSX.Element | null;
+  listBanner?: JSX.Element | null;
   reverse?: boolean;
   children: JSX.Element;
 }): JSX.Element {
@@ -48,6 +49,7 @@ export function SplitLayout(props: {
             ) : null}
           </div>
         </div>
+        {props.listBanner}
         <div className="list-scroll">
           {props.listItems.map((item) => (
             <div
