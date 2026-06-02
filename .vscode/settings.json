@@ -1,0 +1,4 @@
+{
+  "// css.lint.vendorPrefix": "标准属性 line-clamp 已在源码补全，但 VS Code 内置 CSS 校验器对其标准化识别不全，会对 -webkit-line-clamp 误报 vendorPrefix；此处关闭该条规则的误报。",
+  "css.lint.vendorPrefix": "ignore"
+}

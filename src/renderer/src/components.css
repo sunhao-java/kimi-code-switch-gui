@@ -6207,6 +6207,7 @@ textarea:focus-visible {
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 5;
+  line-clamp: 5;
 }
 
 .skills-read-row p {
@@ -6214,6 +6215,7 @@ textarea:focus-visible {
   overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .skills-issue p {
