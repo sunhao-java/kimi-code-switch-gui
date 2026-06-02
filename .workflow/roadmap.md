@@ -19,11 +19,11 @@ v2.0.0 完成 Electron→Tauri v2 架构重写后，产品进入"巩固地基 �
 
 ### Milestone 1: 迁移善后 (v2.0.x)
 **Target**: 补齐 v2.0.0 Tauri 迁移引入的测试盲区、命令桥验证缺口与陈旧文档，把地基夯实。
-**Status**: active
+**Status**: completed
 
 #### Phases
 
-- [ ] **Phase 1: 迁移层质量加固** — 适配层补测+覆盖率门禁扩展+命令桥集成测试+知识文档同步
+- [x] **Phase 1: 迁移层质量加固** — 适配层补测+覆盖率门禁扩展+命令桥集成测试+知识文档同步
 
 #### Phase Details
 
@@ -40,24 +40,29 @@ v2.0.0 完成 Electron→Tauri v2 架构重写后，产品进入"巩固地基 �
 ---
 
 ### Milestone 2: 分发体验 + Insights 一期 (v2.1)
-**Target**: 解除 macOS 未签名导致的"已损坏"获客摩擦，并把 Insights 从"看用量"升级为"看花费"。
-**Status**: planned
+**Target**: 降低 macOS 未签名应用的首次打开摩擦，并把 Insights 从"看用量"升级为"看花费"。
+**Status**: completed
+
+> 规划期澄清调整：用户暂无 Apple Developer / Windows 代码签名证书。故 **REQ-201 降级**为"优化未签名分发体验"（不做 CI 公证），**REQ-202（Windows 签名）延后**至后续具备证书的里程碑。完整 macOS 公证（notarization）一并推迟。
 
 #### Phases
 
-- [ ] **Phase 1: 签名公证 + 成本估算** — macOS 公证/签名、Windows 签名、provider 定价成本估算
+- [x] **Phase 1: 成本估算 + 分发体验优化** — provider/model 定价成本估算 + 未签名 macOS 去隔离指引
 
 #### Phase Details
 
-##### Phase 1: 签名公证 + 成本估算
-**Goal**: 让安装包开箱即用（无安全劝退），并给用量数据加上金额维度。
-**Depends on**: Milestone 1 Phase 1（在加固后的地基上改 CI 与新增功能）
-**Requirements**: REQ-201, REQ-202, REQ-203
+##### Phase 1: 成本估算 + 分发体验优化
+**Goal**: 给用量数据加上金额维度，并降低未签名 macOS 应用的首次打开摩擦。
+**Depends on**: Milestone 1 Phase 1（在加固后的地基上新增功能）
+**Requirements**: REQ-201（降级）, REQ-203
 **Success Criteria** (what must be TRUE):
-  1. macOS DMG 经签名 + 公证（notarization），用户首次打开不再出现"已损坏"提示，homebrew cask 可移除 xattr 去隔离的 caveat
-  2. Windows 安装包经签名（若用户盘子需要），SmartScreen 警告消除
-  3. Insights 新增成本估算：基于各 provider 定价表，把 token 用量换算为金额并在仪表盘展示
-  4. release.yml 增加签名/公证步骤且 CI 通过；成本估算遵循"零网络上报、本地计算"约束
+  1. Insights 新增成本估算：provider/model 单价（用户可编辑 + 内置默认），按 token 用量换算金额并在仪表盘展示；无定价时显式"未设定价"而非误导性 0；遵循"零网络上报、本地计算"约束
+  2. ModelConfig 加定价字段、cost 读时计算（改价即重算历史），有单测保护
+  3. 未签名 macOS DMG 的去隔离方法在 homebrew cask caveat 与 README 中清晰一致（xattr / --no-quarantine）
+
+**Deferred（移出本里程碑，待证书条件具备）**:
+  - REQ-202 Windows 代码签名（SmartScreen 警告消除）
+  - 完整 macOS 签名 + 公证（notarization，消除"已损坏"根因）
 
 ---
 
@@ -87,7 +92,7 @@ v2.0.0 完成 Electron→Tauri v2 架构重写后，产品进入"巩固地基 �
 ## Scope Decisions
 
 - **In scope**: 迁移层测试加固、命令桥集成测试、知识文档同步、macOS 公证/签名、Windows 签名、成本估算、recharts 交互图、tray 洞察入口、配置漂移探测、CLI 版本探测、provider 健康巡检
-- **Deferred**: 成本估算的多币种/历史定价回溯（一期先做当前定价）；recharts 之外的高级可视化（热力图等）
+- **Deferred**: Windows 代码签名 + 完整 macOS 公证（REQ-202 及 REQ-201 完整版，待 Apple/Windows 证书条件具备）；成本估算的多币种/历史定价回溯（一期先做当前定价）；recharts 之外的高级可视化（热力图等）
 - **Out of scope**（继承 project.md，不变）: 云端数据上报（隐私优先，全本地）、多用户/团队维度统计、持久化 Prompt/Response 全文、替代 provider 官方账单
 
 ## Requirements Traceability
@@ -97,9 +102,9 @@ v2.0.0 完成 Electron→Tauri v2 架构重写后，产品进入"巩固地基 �
 | REQ-101 | 迁移层（src/renderer/src/tauri/**）补单测 + 覆盖率门禁扩展 | review(新增) | M1·P1 |
 | REQ-102 | 23 个 Rust tauri 命令集成/契约测试 | review(新增) | M1·P1 |
 | REQ-103 | 同步陈旧文档 project.md + specs/arch 到 Tauri 架构 | review(新增) | M1·P1 |
-| REQ-201 | macOS 公证 + 签名 | review(新增) | M2·P1 |
-| REQ-202 | Windows 签名 | review(新增) | M2·P1 |
-| REQ-203 | 成本估算（基于 provider 定价） | project.md Active / deferred | M2·P1 |
+| REQ-201 | 未签名 macOS 分发体验优化（降级：去隔离指引，不做公证） | review(新增) | M2·P1 ✅ |
+| REQ-202 | Windows 签名 | review(新增) | Deferred（待证书） |
+| REQ-203 | 成本估算（用户可编辑 + 内置默认定价） | project.md Active / deferred | M2·P1 ✅ |
 | REQ-301 | 趋势图升级 recharts 交互式 | project.md Active / deferred | M3·P1 |
 | REQ-302 | Tray 菜单洞察快捷入口 | project.md Active / deferred | M3·P1 |
 | REQ-303 | 配置格式漂移探测 | review(新增) | M3·P1 |
@@ -112,6 +117,6 @@ v2.0.0 完成 Electron→Tauri v2 架构重写后，产品进入"巩固地基 �
 
 | Milestone | Phase | Status | Completed |
 |-----------|-------|--------|-----------|
-| 1. 迁移善后 (v2.0.x) | 1. 迁移层质量加固 | Not started | - |
-| 2. 分发体验 + Insights 一期 (v2.1) | 1. 签名公证 + 成本估算 | Not started | - |
+| 1. 迁移善后 (v2.0.x) | 1. 迁移层质量加固 | ✅ Completed (VRF-001, 零 gap) | 2026-06-02 |
+| 2. 分发体验 + Insights 一期 (v2.1) | 1. 成本估算 + 分发体验优化 | ✅ Completed (VRF-002, 零 gap) | 2026-06-02 |
 | 3. Insights 二期 + 上游韧性 (v2.2) | 1. Insights 增强 + 上游兼容韧性 | Not started | - |

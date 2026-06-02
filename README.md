@@ -160,7 +160,8 @@ kimi --config-file <临时配置文件>
 
 ```bash
 npm ci
-npm run dev:electron
+npm run dev          # Tauri 开发模式（Rust 后端 + Vite 渲染层热更新）
+npm run dev:web      # 仅渲染层（不带 Rust），纯 UI 调试用
 ```
 
 ### 测试
@@ -178,17 +179,17 @@ npm run build
 ### 打包
 
 ```bash
-npm run dist
+npm run build        # Tauri 发布构建（当前平台）
 ```
 
-按平台打包：
+按平台打包安装器：
 
 ```bash
-npm run dist:mac
-npm run dist:win
+npm run dist:mac     # macOS dmg
+npm run dist:win     # Windows nsis
 ```
 
-构建产物默认输出到 `release/`。
+构建产物输出到 `src-tauri/target/<target>/release/bundle/`（dmg / nsis）。
 
 ## macOS 首次打开
 
@@ -212,23 +213,24 @@ npm run dist:win
 
 ## 技术栈
 
-- Electron
+- Tauri v2（Rust + 系统 WebView）
 - React 18
 - TypeScript
-- Vite / electron-vite
+- Vite
 - Vitest
-- electron-builder
+- SQLite（Rust `rusqlite`，用量数据）/ `@iarna/toml`（配置）
+
+> 采用「薄 Rust 壳 + 前端业务逻辑」架构：约 5300 行 `src/shared/` 业务逻辑跑在渲染层，Rust 后端只暴露文件 I/O、命令执行、HTTP、SQLite、系统托盘等系统能力。
 
 ## 目录结构
 
 ```text
 .
-├── src/main                # Electron 主进程、窗口、托盘、IPC、备份和更新检查
-├── src/preload             # preload bridge，暴露安全 API 给渲染进程
-├── src/renderer            # React UI、样式、i18n、页面交互
-├── src/shared              # 配置模型、序列化、状态转换、校验和单元测试
+├── src-tauri/src           # Rust 后端命令：fs_access / system / usage / tray
+├── src/renderer/src        # React UI、样式、i18n、页面交互
+├── src/renderer/src/tauri  # 适配层：window.kimiSwitch → invoke() / listen()
+├── src/shared              # 纯逻辑：配置模型、序列化、状态转换、校验和单元测试
 ├── docs/images             # README 截图资源
-├── resources               # 应用图标与托盘资源
 └── .github/workflows       # GitHub Release 工作流
 ```
 
@@ -236,7 +238,7 @@ npm run dist:win
 
 仓库内置 [`.github/workflows/release.yml`](.github/workflows/release.yml)。
 
-推送形如 `v1.1.7` 的 tag 后，工作流会安装依赖、运行测试、构建 macOS / Windows 安装包、生成 SHA256 校验文件，并上传到 GitHub Release。
+推送形如 `v2.0.0` 的 tag 后，工作流会运行测试（npm + cargo）、从 `CHANGELOGS/` 提取中英双语 release note 创建 GitHub Release、构建 macOS（dmg, arm64 + x64）/ Windows（nsis）安装包并上传，最后更新 `homebrew-kimi-code-switch` tap。
 
 ## 当前版本
 
