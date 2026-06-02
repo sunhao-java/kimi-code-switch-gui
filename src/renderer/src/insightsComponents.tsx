@@ -424,6 +424,7 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
   const [trendChartType, setTrendChartType] = useState<TrendChartType>(initialPrefs.trendChartType);
   const [breakdownModelView, setBreakdownModelView] = useState<BreakdownView>(initialPrefs.breakdownModelView);
   const [breakdownProfileView, setBreakdownProfileView] = useState<BreakdownView>(initialPrefs.breakdownProfileView);
+  const [selectedTrendPoint, setSelectedTrendPoint] = useState<{ date: string; tokens: number; calls: number } | null>(null);
   const { toasts, showToast, removeToast } = useToast();
 
   useEffect(() => {
@@ -620,7 +621,26 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
                   <span className="insights-trend-cost-label">{t(locale, "costEstimate")}</span>
                   <span className="insights-trend-cost-value">{formatCost(costTotal, locale)}</span>
                 </div>
-                <TrendChart data={trendData} metric={trendMetric} chartType={trendChartType} />
+                <TrendChart
+                  data={trendData}
+                  metric={trendMetric}
+                  chartType={trendChartType}
+                  labels={{ legend: t(locale, "chartLegend"), clickHint: t(locale, "chartClickHint") }}
+                  onPointClick={(point) =>
+                    setSelectedTrendPoint((prev) => (prev?.date === point.date ? null : point))
+                  }
+                />
+                {selectedTrendPoint && (
+                  <div className="insights-trend-detail">
+                    <span className="insights-trend-detail-date">{selectedTrendPoint.date}</span>
+                    <span className="insights-trend-detail-stat">
+                      {t(locale, "insightsTotalTokens")}: {formatNumber(selectedTrendPoint.tokens)}
+                    </span>
+                    <span className="insights-trend-detail-stat">
+                      {t(locale, "insightsTotalCalls")}: {formatNumber(selectedTrendPoint.calls)}
+                    </span>
+                  </div>
+                )}
               </>
             )}
           </div>

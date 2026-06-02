@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import parseTomlString from "@iarna/toml/parse-string.js";
 
 import {
   createDefaultPanelSettings,
@@ -18,7 +19,7 @@ import { buildConfigDoctorReport, buildRedactedPreviewBundle } from "@shared/con
 import { scanSkills } from "@shared/skillsStore";
 import { compareReleaseVersions } from "@shared/versionUtils";
 import { computeEventCost, resolveModelPricing } from "@shared/pricing";
-import type { AppState, ModelConfig, PanelSettings, PreviewBundle, OpenKimiTerminalRequest, FileSnapshotBundle } from "@shared/types";
+import type { AppState, ManagedFileId, ModelConfig, PanelSettings, PreviewBundle, OpenKimiTerminalRequest, FileSnapshotBundle } from "@shared/types";
 
 import { tauriFileAccess, pathExists } from "./fileAccess";
 import * as usageDb from "./usageDb";
@@ -154,7 +155,32 @@ export const kimiSwitchTauri = {
     return { ok: true };
   },
   captureSnapshot: (state: AppState): Promise<FileSnapshotBundle> => captureSnapshotForState(state),
-  runDoctor: (state: AppState) => buildConfigDoctorReport(state),
+  runDoctor: async (state: AppState) => {
+    // 读取并解析磁盘原始文档，供 buildConfigDoctorReport 做配置漂移（未知字段）探测。
+    // 单文件解析失败不阻断体检——跳过该文件的漂移检测即可。
+    const normalized = normalizeStatePaths(state);
+    const disk = await readManagedDocuments({
+      config: normalized.configPath,
+      profiles: normalized.profilesPath,
+      panel: normalized.panelSettingsPath,
+      mcp: normalized.mcpConfigPath,
+    });
+    const safeToml = (text?: string): unknown => {
+      if (!text) return undefined;
+      try { return parseTomlString(text); } catch { return undefined; }
+    };
+    const safeJson = (text?: string): unknown => {
+      if (!text) return undefined;
+      try { return JSON.parse(text); } catch { return undefined; }
+    };
+    const rawDocs: Partial<Record<ManagedFileId, unknown>> = {
+      config: safeToml(disk.config),
+      profiles: safeToml(disk.profiles),
+      panel: safeToml(disk.panel),
+      mcp: safeJson(disk.mcp),
+    };
+    return buildConfigDoctorReport(state, rawDocs);
+  },
   previewState: async (state: AppState): Promise<PreviewBundle> => {
     const normalized = normalizeStatePaths(state);
     const disk = await readManagedDocuments({
@@ -199,6 +225,7 @@ export const kimiSwitchTauri = {
   // ── CLI / MCP / 连通性 ──
   getInstallSource: (): Promise<"homebrew" | "manual" | "development"> => Promise.resolve("manual"),
   getCliVersion: (options?: { checkLatest?: boolean }) => cli.getCliVersion(options),
+  runProvidersHealthCheck: (state: AppState) => cli.runProvidersHealthCheck(state),
   upgradeKimiCli: () => cli.upgradeKimiCli(),
   testMcpServer: (name: string) => cli.runKimiMcpCommand(["test", name]),
   authMcpServer: (name: string) => cli.runKimiMcpCommand(["auth", name]),

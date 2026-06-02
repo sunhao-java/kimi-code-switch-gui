@@ -6,6 +6,7 @@ import type { AppState, Locale } from "@shared/types";
 import { ABOUT_INFO } from "./aboutPage";
 import { APPEARANCE_THEME_OPTIONS, labelForLocale } from "./appOptions";
 import { t } from "./i18n";
+import { evaluateCliCompatibility, MIN_CLI_VERSION } from "./tauri/cli";
 
 export type DiagnosticLevel = "ok" | "failed" | "pending" | "unavailable";
 
@@ -120,6 +121,18 @@ export function OverviewDashboard(props: {
       : cliVersion.version
     : t(locale, "overviewCliNotFound");
 
+  const cliCompatStatus = evaluateCliCompatibility(cliVersion);
+  const cliCompatLabel =
+    cliCompatStatus === "compatible"
+      ? t(locale, "cliCompatCompatible")
+      : cliCompatStatus === "outdated"
+        ? t(locale, "cliOutdated")
+        : t(locale, "cliCompatUnknown");
+  const cliCompatTitle =
+    cliCompatStatus === "outdated"
+      ? t(locale, "cliCompatOutdatedHint").replace("{min}", MIN_CLI_VERSION)
+      : t(locale, "cliCompatTitle");
+
   const boolLabel = (v: boolean): string => t(locale, v ? "overviewOn" : "overviewOff");
 
   function themeLabel(theme: string): string {
@@ -152,7 +165,7 @@ export function OverviewDashboard(props: {
         <div className="overview-hero-body">
           <div className="overview-hero-col">
             <div className="overview-hero-col-title">{t(locale, "overviewAppVersion")}</div>
-            <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewCliVersion")}</span><span className={cliVersion.installed ? "overview-hero-kv-value overview-cli-version-value" : "overview-hero-kv-value overview-cli-version-value text-warn"}><span>{cliVersionText}</span><button className="overview-cli-check-button" type="button" title={t(locale, "overviewCliCheck")} aria-label={t(locale, "overviewCliCheck")} disabled={isCliVersionChecking || isCliUpdating} onClick={() => void checkCliVersion(true)}>{isCliVersionChecking ? <LoaderCircle size={13} className="button-spinner" /> : <RefreshCw size={13} />}</button>{cliVersion.hasUpdate ? <button className="overview-cli-check-button" type="button" title={t(locale, "overviewCliUpdate")} aria-label={t(locale, "overviewCliUpdate")} disabled={isCliUpdating || isCliVersionChecking} onClick={() => void upgradeCli()}>{isCliUpdating ? <LoaderCircle size={13} className="button-spinner" /> : <Download size={13} />}</button> : null}</span></div>
+            <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewCliVersion")}</span><span className={cliVersion.installed ? "overview-hero-kv-value overview-cli-version-value" : "overview-hero-kv-value overview-cli-version-value text-warn"}><span>{cliVersionText}</span>{cliVersion.installed ? <span className={`cli-compat-badge cli-compat-${cliCompatStatus}`} title={cliCompatTitle}>{cliCompatLabel}</span> : null}<button className="overview-cli-check-button" type="button" title={t(locale, "overviewCliCheck")} aria-label={t(locale, "overviewCliCheck")} disabled={isCliVersionChecking || isCliUpdating} onClick={() => void checkCliVersion(true)}>{isCliVersionChecking ? <LoaderCircle size={13} className="button-spinner" /> : <RefreshCw size={13} />}</button>{cliVersion.hasUpdate ? <button className="overview-cli-check-button" type="button" title={t(locale, "overviewCliUpdate")} aria-label={t(locale, "overviewCliUpdate")} disabled={isCliUpdating || isCliVersionChecking} onClick={() => void upgradeCli()}>{isCliUpdating ? <LoaderCircle size={13} className="button-spinner" /> : <Download size={13} />}</button> : null}</span></div>
             <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewDefaultModel")}</span><span className="overview-hero-kv-value">{activeProfile?.default_model || "-"}</span></div>
             <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewTheme")}</span><span className="overview-hero-kv-value">{themeLabel(state.panelSettings.appearance_theme)}</span></div>
           </div>

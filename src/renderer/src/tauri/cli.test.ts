@@ -5,7 +5,7 @@ import type { AppState } from "@shared/types";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 import { invoke } from "@tauri-apps/api/core";
-import { getCliVersion, runKimiConnectivityTest, runKimiMcpCommand, upgradeKimiCli } from "./cli";
+import { evaluateCliCompatibility, getCliVersion, MIN_CLI_VERSION, runKimiConnectivityTest, runKimiMcpCommand, runProvidersHealthCheck, upgradeKimiCli } from "./cli";
 
 const mockedInvoke = vi.mocked(invoke);
 
@@ -139,5 +139,70 @@ describe("runKimiConnectivityTest", () => {
   it("throws a descriptive error when the upstream returns non-ok", async () => {
     mockedInvoke.mockResolvedValue(http(401, "unauthorized") as unknown as never);
     await expect(runKimiConnectivityTest(connectivityState(), "p/m")).rejects.toThrow(/HTTP 401/);
+  });
+});
+
+describe("evaluateCliCompatibility", () => {
+  it("returns unknown when not installed", () => {
+    expect(evaluateCliCompatibility({ version: "", installed: false })).toBe("unknown");
+  });
+
+  it("returns unknown when the version is not a clean semver", () => {
+    expect(evaluateCliCompatibility({ version: "dev", installed: true })).toBe("unknown");
+  });
+
+  it("flags versions below the minimum as outdated", () => {
+    expect(evaluateCliCompatibility({ version: "0.9.0", installed: true })).toBe("outdated");
+  });
+
+  it("treats the minimum version and above as compatible", () => {
+    expect(evaluateCliCompatibility({ version: MIN_CLI_VERSION, installed: true })).toBe("compatible");
+    expect(evaluateCliCompatibility({ version: "9.9.9", installed: true })).toBe("compatible");
+  });
+});
+
+describe("runProvidersHealthCheck", () => {
+  function healthState(): AppState {
+    return {
+      activeProfile: "work",
+      mainConfig: {
+        default_model: "ok/m",
+        models: {
+          "ok/m": { provider: "ok", model: "m-1" },
+          "limited/m": { provider: "limited", model: "m-2" },
+          "broken/m": { provider: "broken", model: "m-3" },
+          "nokey/m": { provider: "nokey", model: "m-4" },
+        },
+        providers: {
+          ok: { type: "openai_legacy", base_url: "https://ok.example.com/v1", api_key: "sk-ok" },
+          limited: { type: "openai_legacy", base_url: "https://limited.example.com/v1", api_key: "sk-l" },
+          broken: { type: "openai_legacy", base_url: "https://broken.example.com/v1", api_key: "sk-b" },
+          nomodel: { type: "openai_legacy", base_url: "https://nm.example.com/v1", api_key: "sk-n" },
+          nokey: { type: "openai_legacy", base_url: "https://nk.example.com/v1", api_key: "" },
+        },
+      },
+    } as unknown as AppState;
+  }
+
+  it("probes every provider independently and reports per-item results", async () => {
+    mockedInvoke.mockImplementation((cmd: string, args: Record<string, unknown>) => {
+      const url = String(args.url ?? "");
+      if (url.includes("ok.example.com")) return Promise.resolve(http(200, "{}") as unknown as never);
+      if (url.includes("limited.example.com")) return Promise.resolve(http(429, "slow down") as unknown as never);
+      if (url.includes("broken.example.com")) return Promise.reject(new Error("connection refused")) as unknown as never;
+      return Promise.resolve(http(500, "boom") as unknown as never);
+    });
+
+    const results = await runProvidersHealthCheck(healthState());
+    const byName = Object.fromEntries(results.map((r) => [r.providerName, r]));
+
+    expect(byName.ok.ok).toBe(true);
+    expect(byName.ok.reason).toBe("ok");
+    expect(byName.limited.ok).toBe(false);
+    expect(byName.limited.reason).toBe("rate-limited");
+    expect(byName.broken.ok).toBe(false);
+    expect(byName.broken.reason).toBe("network-error");
+    expect(byName.nomodel.reason).toBe("no-model");
+    expect(byName.nokey.reason).toBe("missing-api-key");
   });
 });

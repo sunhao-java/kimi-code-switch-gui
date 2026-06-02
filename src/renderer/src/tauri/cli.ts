@@ -34,6 +34,24 @@ export interface CliVersionResult {
   hasUpdate?: boolean;
 }
 
+// GUI 期望的 kimi-cli 版本范围：低于 MIN 判定为过旧（功能可能不兼容）。
+// EXPECTED 是当前 GUI 主要对照测试过的版本，仅作展示参考。
+export const MIN_CLI_VERSION = "1.0.0";
+export const EXPECTED_CLI_VERSION = "1.4.0";
+
+export type CliCompatStatus = "compatible" | "outdated" | "unknown";
+
+// 基于检测到的 CLI 版本产出兼容性状态：
+// - 未安装 / 无法解析版本号 → unknown
+// - 低于 MIN_CLI_VERSION → outdated
+// - 否则 → compatible
+export function evaluateCliCompatibility(result: Pick<CliVersionResult, "version" | "installed">): CliCompatStatus {
+  if (!result.installed) return "unknown";
+  const version = normalizeReleaseVersion(result.version);
+  if (!/^\d+\.\d+\.\d+$/.test(version)) return "unknown";
+  return compareReleaseVersions(version, MIN_CLI_VERSION) < 0 ? "outdated" : "compatible";
+}
+
 export async function getCliVersion(options: { checkLatest?: boolean } = {}): Promise<CliVersionResult> {
   let result: CliVersionResult;
   try {
@@ -170,4 +188,70 @@ export async function runKimiConnectivityTest(state: AppState, modelName: string
     totalMs,
     status: resp.status,
   };
+}
+
+// ── 全 provider 批量健康巡检 ──
+// 复用 buildRequest 的请求构造做轻量连通性探测；逐项独立 try/catch，
+// 单个 provider 失败（含 429 限流）不阻断其余。
+export type ProviderHealthReason = "ok" | "no-model" | "missing-base-url" | "missing-api-key" | "rate-limited" | "http-error" | "network-error";
+
+export interface ProviderHealthResult {
+  providerName: string;
+  ok: boolean;
+  reason: ProviderHealthReason;
+  status?: number;
+  latencyMs?: number;
+  detail?: string;
+}
+
+// 为某 provider 选一个代表 model（首个引用该 provider 的 model）。
+function findRepresentativeModel(state: AppState, providerName: string): { modelName: string; model: ModelConfig } | null {
+  for (const [modelName, model] of Object.entries(state.mainConfig.models)) {
+    if (model.provider === providerName) return { modelName, model };
+  }
+  return null;
+}
+
+async function probeProvider(providerName: string, provider: ProviderConfig, model: ModelConfig): Promise<ProviderHealthResult> {
+  if (!provider.base_url.trim()) {
+    return { providerName, ok: false, reason: "missing-base-url" };
+  }
+  if (!provider.api_key.trim()) {
+    return { providerName, ok: false, reason: "missing-api-key" };
+  }
+  const startedAt = performance.now();
+  try {
+    const req = buildRequest(provider, model, "hi");
+    const resp = await http("POST", req.endpoint, req.headers, JSON.stringify(req.body));
+    const latencyMs = Math.max(0, Math.round(performance.now() - startedAt));
+    if (resp.ok) {
+      return { providerName, ok: true, reason: "ok", status: resp.status, latencyMs };
+    }
+    if (resp.status === 429) {
+      return { providerName, ok: false, reason: "rate-limited", status: resp.status, latencyMs };
+    }
+    return { providerName, ok: false, reason: "http-error", status: resp.status, latencyMs, detail: resp.body.slice(0, 200) };
+  } catch (error) {
+    const latencyMs = Math.max(0, Math.round(performance.now() - startedAt));
+    return { providerName, ok: false, reason: "network-error", latencyMs, detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function runProvidersHealthCheck(state: AppState): Promise<ProviderHealthResult[]> {
+  const entries = Object.entries(state.mainConfig.providers);
+  const results = await Promise.all(
+    entries.map(async ([providerName, provider]): Promise<ProviderHealthResult> => {
+      const rep = findRepresentativeModel(state, providerName);
+      if (!rep) {
+        return { providerName, ok: false, reason: "no-model" };
+      }
+      // 逐项独立：单个 provider 探测失败不抛出，统一收敛为结果对象。
+      try {
+        return await probeProvider(providerName, provider, rep.model);
+      } catch (error) {
+        return { providerName, ok: false, reason: "network-error", detail: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+  );
+  return results;
 }

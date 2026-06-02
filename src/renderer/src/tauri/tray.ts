@@ -25,13 +25,13 @@ const LOCALE_LABELS: Array<[Locale, string]> = [
   ["es-ES", "Español"],
 ];
 
-const TRAY_LABELS: Record<Locale, { show: string; profile: string; language: string; theme: string; auto: string; light: string; dark: string; quit: string }> = {
-  "zh-CN": { show: "显示窗口", profile: "切换 Profile", language: "切换语言", theme: "切换主题", auto: "跟随系统", light: "浅色", dark: "深色", quit: "退出" },
-  "zh-TW": { show: "顯示視窗", profile: "切換 Profile", language: "切換語言", theme: "切換主題", auto: "跟隨系統", light: "淺色", dark: "深色", quit: "結束" },
-  "en-US": { show: "Show Window", profile: "Switch Profile", language: "Language", theme: "Theme", auto: "System", light: "Light", dark: "Dark", quit: "Quit" },
-  "ja-JP": { show: "ウィンドウを表示", profile: "Profile 切替", language: "言語", theme: "テーマ", auto: "システム", light: "ライト", dark: "ダーク", quit: "終了" },
-  "de-DE": { show: "Fenster anzeigen", profile: "Profil wechseln", language: "Sprache", theme: "Thema", auto: "System", light: "Hell", dark: "Dunkel", quit: "Beenden" },
-  "es-ES": { show: "Mostrar ventana", profile: "Cambiar perfil", language: "Idioma", theme: "Tema", auto: "Sistema", light: "Claro", dark: "Oscuro", quit: "Salir" },
+const TRAY_LABELS: Record<Locale, { show: string; insights: string; profile: string; language: string; theme: string; auto: string; light: string; dark: string; quit: string }> = {
+  "zh-CN": { show: "显示窗口", insights: "用量洞察", profile: "切换 Profile", language: "切换语言", theme: "切换主题", auto: "跟随系统", light: "浅色", dark: "深色", quit: "退出" },
+  "zh-TW": { show: "顯示視窗", insights: "用量洞察", profile: "切換 Profile", language: "切換語言", theme: "切換主題", auto: "跟隨系統", light: "淺色", dark: "深色", quit: "結束" },
+  "en-US": { show: "Show Window", insights: "Usage Insights", profile: "Switch Profile", language: "Language", theme: "Theme", auto: "System", light: "Light", dark: "Dark", quit: "Quit" },
+  "ja-JP": { show: "ウィンドウを表示", insights: "使用状況インサイト", profile: "Profile 切替", language: "言語", theme: "テーマ", auto: "システム", light: "ライト", dark: "ダーク", quit: "終了" },
+  "de-DE": { show: "Fenster anzeigen", insights: "Nutzungsanalyse", profile: "Profil wechseln", language: "Sprache", theme: "Thema", auto: "System", light: "Hell", dark: "Dunkel", quit: "Beenden" },
+  "es-ES": { show: "Mostrar ventana", insights: "Análisis de uso", profile: "Cambiar perfil", language: "Idioma", theme: "Tema", auto: "Sistema", light: "Claro", dark: "Oscuro", quit: "Salir" },
 };
 
 function buildMenu(state: AppState): MenuItemSpec[] {
@@ -39,6 +39,7 @@ function buildMenu(state: AppState): MenuItemSpec[] {
   const labels = TRAY_LABELS[settings.locale] ?? TRAY_LABELS["en-US"];
   return [
     { id: "show-window", label: labels.show },
+    { id: "show-insights", label: labels.insights },
     { separator: true },
     {
       label: labels.profile,
@@ -91,6 +92,9 @@ export async function setupTray(
 
       if (action === "show-window") {
         await invoke("show_main_window");
+      } else if (action === "show-insights") {
+        await invoke("show_main_window");
+        window.dispatchEvent(new Event("kimi-open-insights"));
       } else if (action === "quit") {
         await exit(0);
       } else if (action.startsWith("profile:")) {

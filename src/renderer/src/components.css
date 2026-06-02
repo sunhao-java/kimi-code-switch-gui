@@ -2622,6 +2622,91 @@ textarea:focus-visible {
   gap: 6px;
 }
 
+.cli-compat-badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+
+.cli-compat-badge.cli-compat-compatible {
+  background: rgba(132, 247, 211, 0.14);
+  color: var(--primary-2);
+}
+
+:root[data-theme="light"] .cli-compat-badge.cli-compat-compatible {
+  background: rgba(20, 155, 116, 0.12);
+  color: #0d7a5f;
+}
+
+.cli-compat-badge.cli-compat-outdated {
+  background: rgba(var(--danger-rgb, 210, 63, 100), 0.14);
+  color: var(--danger);
+}
+
+.cli-compat-badge.cli-compat-unknown {
+  background: rgba(151, 169, 196, 0.12);
+  color: var(--muted);
+}
+
+.providers-health-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.providers-health-empty {
+  align-self: center;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.providers-health-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.providers-health-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  background: rgba(151, 169, 196, 0.08);
+}
+
+.providers-health-item .providers-health-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.providers-health-item.ok .providers-health-dot {
+  background: var(--primary-2);
+}
+
+.providers-health-item.fail .providers-health-dot {
+  background: var(--danger);
+}
+
+.providers-health-name {
+  font-weight: 600;
+}
+
+.providers-health-reason {
+  color: var(--muted);
+}
+
 .overview-cli-check-button {
   display: inline-grid;
   place-items: center;
@@ -7212,4 +7297,71 @@ textarea:focus-visible {
   .model-pricing-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* 趋势图图例（legend）+ 点击提示。颜色全部走设计 token，亮/暗主题自动适配 */
+.insights-chart-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.insights-chart-legend-title {
+  font-weight: 600;
+  color: var(--text);
+}
+.insights-chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.insights-chart-legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: linear-gradient(
+    180deg,
+    rgba(var(--primary-rgb), 0.9),
+    rgba(var(--primary-2-rgb), 0.7)
+  );
+  box-shadow: 0 0 0 1px rgba(var(--primary-rgb), 0.35) inset;
+}
+.insights-chart-legend-label {
+  color: var(--text);
+}
+.insights-chart-legend-hint {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.insights-chart-bar.selected {
+  filter: brightness(1.08);
+}
+.insights-chart-point.selected {
+  filter: drop-shadow(0 0 4px rgba(var(--primary-rgb), 0.55));
+}
+.insights-trend-detail {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+  padding: 10px 14px;
+  border: 1px solid rgba(var(--primary-rgb), 0.25);
+  border-radius: 12px;
+  background: rgba(var(--primary-rgb), 0.06);
+  font-size: 0.8125rem;
+  color: var(--text);
+}
+.insights-trend-detail-date {
+  font-weight: 600;
+  color: rgba(var(--primary-rgb), 1);
+}
+.insights-trend-detail-stat {
+  color: var(--muted);
 }

@@ -10,6 +10,7 @@ import { getShortcutConflicts } from "./shortcutStore";
 import type {
   AppState,
   ConfigDoctorReport,
+  ConfigDriftEntry,
   DoctorIssue,
   DoctorSeverity,
   ManagedFileId,
@@ -112,7 +113,10 @@ export function buildRedactedPreviewBundle(
   };
 }
 
-export function buildConfigDoctorReport(state: AppState): ConfigDoctorReport {
+export function buildConfigDoctorReport(
+  state: AppState,
+  rawDocs?: Partial<Record<ManagedFileId, unknown>>,
+): ConfigDoctorReport {
   const normalizedState = normalizeStatePaths(state);
   const issues: DoctorIssue[] = [];
 
@@ -121,6 +125,8 @@ export function buildConfigDoctorReport(state: AppState): ConfigDoctorReport {
   validateMcpServers(state.mcpConfig.mcpServers, issues);
   validateBackupSettings(state, normalizedState, issues);
   validateShortcutConflicts(normalizedState, issues);
+
+  const drift = rawDocs ? detectUnknownFields(rawDocs) : [];
 
   const errorCount = issues.filter((issue) => issue.severity === "error").length;
   const warningCount = issues.filter((issue) => issue.severity === "warning").length;
@@ -133,6 +139,7 @@ export function buildConfigDoctorReport(state: AppState): ConfigDoctorReport {
     errorCount,
     warningCount,
     infoCount,
+    drift,
   };
 }
 
@@ -615,4 +622,106 @@ function normalizeSemanticServerName(name: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+interface FieldNode {
+  known?: string[];
+  children?: Record<string, FieldNode>;
+  wildcard?: FieldNode;
+  open?: boolean;
+}
+
+const PROVIDER_NODE: FieldNode = { known: ["type", "base_url", "api_key"] };
+const MODEL_NODE: FieldNode = {
+  known: ["provider", "model", "max_context_size", "capabilities", "pricing"],
+};
+
+const KNOWN_FIELD_SCHEMA: Partial<Record<ManagedFileId, FieldNode>> = {
+  config: {
+    known: [
+      "default_model", "default_thinking", "default_yolo", "default_plan_mode",
+      "default_editor", "theme", "show_thinking_stream", "merge_all_available_skills",
+      "hooks", "models", "providers", "loop_control", "background",
+      "notifications", "services", "mcp",
+    ],
+    children: {
+      providers: { wildcard: PROVIDER_NODE },
+      models: { wildcard: MODEL_NODE },
+      loop_control: { open: true },
+      background: { open: true },
+      notifications: { open: true },
+      services: { open: true },
+      mcp: { open: true },
+    },
+  },
+  profiles: {
+    known: ["active_profile", "profiles"],
+    children: {
+      profiles: {
+        wildcard: {
+          known: [
+            "name", "label", "default_model", "default_thinking", "default_yolo",
+            "default_plan_mode", "default_editor", "theme", "show_thinking_stream",
+            "merge_all_available_skills",
+          ],
+        },
+      },
+    },
+  },
+  mcp: {
+    known: ["mcpServers"],
+    children: {
+      mcpServers: {
+        wildcard: {
+          known: [
+            "enabled", "transport", "url", "headers", "command", "args", "env",
+          ],
+          // unknown MCP server keys are preserved via McpServerConfig.extra, so treat as open
+          open: true,
+        },
+      },
+    },
+  },
+};
+
+export function detectUnknownFields(
+  rawDocs: Partial<Record<ManagedFileId, unknown>>,
+): ConfigDriftEntry[] {
+  const drift: ConfigDriftEntry[] = [];
+  for (const [file, schema] of Object.entries(KNOWN_FIELD_SCHEMA) as Array<[ManagedFileId, FieldNode]>) {
+    const raw = rawDocs[file];
+    if (raw === undefined || raw === null) {
+      continue;
+    }
+    walkUnknownFields(file, raw, schema, "", drift);
+  }
+  return drift;
+}
+
+function walkUnknownFields(
+  file: ManagedFileId,
+  value: unknown,
+  node: FieldNode,
+  path: string,
+  drift: ConfigDriftEntry[],
+): void {
+  if (node.open || !isRecord(value)) {
+    return;
+  }
+  const known = new Set(node.known ?? []);
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = path ? `${path}.${key}` : key;
+    if (node.wildcard) {
+      walkUnknownFields(file, child, node.wildcard, childPath, drift);
+      continue;
+    }
+    if (!known.has(key)) {
+      drift.push({ file, path: path || "(root)", key });
+      continue;
+    }
+    const childNode = node.children?.[key];
+    if (childNode) {
+      walkUnknownFields(file, child, childNode, childPath, drift);
+    }
+  }
 }

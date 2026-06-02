@@ -1,0 +1,54 @@
+{
+  "id": "TASK-002",
+  "title": "配置格式漂移探测",
+  "description": "扩展既有 buildConfigDoctorReport，检测 ~/.kimi 配置文件中 GUI 不认识的未知字段，提示而非静默丢弃，降低 CLI 升级后 GUI 落后的风险。REQ-303。",
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "feature",
+  "priority": "high",
+  "effort": "medium",
+  "action": "在 src/shared/configSafety.ts 扩展 buildConfigDoctorReport（或新增纯函数 detectUnknownFields(rawDocs, parsedState)）：对比磁盘原始 TOML/JSON（config.toml/config.profiles.toml/config.panel.toml/mcp.json）解析出的键集合与 GUI 已知字段集合，列出未被 GUI 识别/保留的顶层及嵌套键，产出 drift 警告项（{ file, path, key }）并入 ConfigDoctorReport（新增 unknownFields 或 drift 段）。在配置体检 UI（doctor 报告展示处，tabComponents 或设置页）渲染这些 drift 提示。全部纯逻辑加单测（src/shared/configSafety.test.ts 补用例）。i18n 6 语言补 drift 相关 key（如 driftTitle/driftUnknownField）。",
+  "status": "completed",
+  "completed_at": "2026-06-02T21:23:00+08:00",
+  "actual_duration": null,
+  "scope": "src/shared/",
+  "focus_paths": ["src/shared/configSafety.ts", "src/shared/configSafety.test.ts", "src/renderer/src/tabComponents.tsx", "src/renderer/src/i18n.ts"],
+  "read_first": ["src/shared/configSafety.ts", "src/shared/configSafety.test.ts", "src/shared/types.ts", "src/renderer/src/tabComponents.tsx", "src/renderer/src/i18n.ts"],
+  "depends_on": [],
+  "wave": 2,
+  "parallel_group": null,
+  "execution_group": null,
+  "executor": "agent",
+  "convergence": {
+    "criteria": [
+      "grep -n 'unknownField\\|drift\\|detectUnknown' src/shared/configSafety.ts matches",
+      "grep -n 'drift\\|unknownField\\|detectUnknown' src/shared/configSafety.test.ts matches",
+      "src/renderer/src/i18n.ts contains 'driftTitle' or 'driftUnknownField'",
+      "grep -c 'driftTitle\\|driftUnknownField' src/renderer/src/i18n.ts >= 6",
+      "npm test exits 0",
+      "npm run build:web exits 0"
+    ],
+    "verification": "npm test（含 shared 门禁）+ build:web；构造含未知字段的配置确认被探测",
+    "definition_of_done": "GUI 能探测并提示 ~/.kimi 配置中的未知字段，有单测覆盖，UI 展示，6 语言齐。"
+  },
+  "files": [
+    { "path": "src/shared/configSafety.ts", "action": "modify", "target": "drift 探测", "change": "对比原始文档键集 vs 已知字段，产出 unknown/drift 列表并入 ConfigDoctorReport" },
+    { "path": "src/shared/configSafety.test.ts", "action": "modify", "target": "drift 单测", "change": "含未知字段/无未知/嵌套未知用例" },
+    { "path": "src/renderer/src/tabComponents.tsx", "action": "modify", "target": "体检报告 UI", "change": "渲染 drift 提示" },
+    { "path": "src/renderer/src/i18n.ts", "action": "modify", "target": "6 语言", "change": "补 driftTitle/driftUnknownField 等 key" }
+  ],
+  "implementation": [
+    "读 configSafety.ts 的 buildConfigDoctorReport + ManagedDocuments 结构 + types.ts 已知字段",
+    "实现未知字段检测（纯函数）：raw 解析键集 - 已知字段集 = drift",
+    "并入 ConfigDoctorReport，补 configSafety.test.ts 用例",
+    "tabComponents 体检报告处渲染 drift",
+    "i18n 6 语言补 key；npm test + build:web 通过"
+  ],
+  "test": { "commands": ["npm test", "npm run build:web"], "unit": ["configSafety drift"], "integration": [], "success_metrics": ["未知字段被探测", "门禁通过", "6 语言齐"] },
+  "reference": { "pattern": "既有 buildConfigDoctorReport / redactUnknownValue 递归遍历", "files": ["src/shared/configSafety.ts"], "examples": null },
+  "rationale": { "chosen_approach": "扩展既有 doctor 报告而非新建探测器，复用递归遍历基础设施", "decision_factors": ["configSafety 已有 ConfigDoctorReport + 递归遍历", "降低 CLI 升级漂移风险"], "tradeoffs": "未知字段判定依赖已知字段集维护" },
+  "risks": [{ "risk": "误报已知但 GUI 不展示的字段", "mitigation": "已知字段集涵盖所有 GUI 读写字段，存疑字段标 info 而非 error" }],
+  "code_skeleton": null,
+  "doc_context": { "affected_features": ["配置体检"], "affected_components": ["configSafety.ts"], "affected_requirements": ["REQ-303"], "adr_ids": [] },
+  "meta": { "estimated_time": "0.5-1 天", "risk": "medium", "autonomous": true, "checkpoint": false }
+}

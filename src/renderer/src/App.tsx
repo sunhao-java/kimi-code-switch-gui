@@ -138,6 +138,15 @@ export function App(): JSX.Element {
     return () => window.removeEventListener("kimi-tray-reload", handleTrayReload);
   }, [loadState]);
 
+  // 托盘「用量洞察」入口：显示窗口后切到 Insights 子页
+  useEffect(() => {
+    function handleOpenInsights(): void {
+      runAfterUnsavedHandled(() => setActiveTab("insights"));
+    }
+    window.addEventListener("kimi-open-insights", handleOpenInsights);
+    return () => window.removeEventListener("kimi-open-insights", handleOpenInsights);
+  }, [runAfterUnsavedHandled, setActiveTab]);
+
   const handleCommandPaletteSelect = useCallback((result: SearchResult): void => {
     setCommandPaletteOpen(false);
     runAfterUnsavedHandled(() => {

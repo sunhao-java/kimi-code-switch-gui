@@ -45,11 +45,12 @@ import { InsightsSettingsPanel, InsightsDashboard } from "../insightsComponents"
 import { EmptyState, SplitLayout } from "../layoutComponents";
 import { OverviewDashboard } from "../overviewDashboard";
 import { SkillsWorkspace } from "../skillsWorkspace";
+import type { ProviderHealthResult } from "../tauri/cli";
 import type { AppContext } from "./appContext";
 import {
   ProviderForm, ModelForm, ProfileForm, McpServerForm,
   SecretField, PathField, createCopyName, createLocalizedCopyName, createDefaultMcpServer,
-  formatMessage, formatSkillPathLabel, renderSkillPathLabel,
+  formatMessage, formatSkillPathLabel, renderSkillPathLabel, DoctorDriftList,
 } from "../tabComponents";
 
 type TabPanelsProps = Pick<
@@ -234,6 +235,41 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   ];
   const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>("general");
   const [importDialog, setImportDialog] = useState<{ open: boolean; preview: ImportPreview | null; data: ExportBundle | null; strategy: ImportConflictStrategy }>({ open: false, preview: null, data: null, strategy: "skip" });
+  const [providerHealthResults, setProviderHealthResults] = useState<ProviderHealthResult[] | null>(null);
+  const [isProviderHealthChecking, setIsProviderHealthChecking] = useState(false);
+
+  const runProvidersHealthCheck = (): void => {
+    const api = getApi();
+    if (!api || typeof api.runProvidersHealthCheck !== "function" || isProviderHealthChecking) {
+      return;
+    }
+    setIsProviderHealthChecking(true);
+    void Promise.resolve(api.runProvidersHealthCheck(state))
+      .then((results) => setProviderHealthResults(results))
+      .catch(() => setProviderHealthResults([]))
+      .finally(() => setIsProviderHealthChecking(false));
+  };
+
+  const providerHealthReasonLabel = (result: ProviderHealthResult): string => {
+    switch (result.reason) {
+      case "ok":
+        return result.latencyMs != null
+          ? `${t(locale, "providerHealthOk")} · ${result.latencyMs}ms`
+          : t(locale, "providerHealthOk");
+      case "no-model":
+        return t(locale, "providerHealthNoModel");
+      case "missing-base-url":
+        return t(locale, "providerHealthMissingBaseUrl");
+      case "missing-api-key":
+        return t(locale, "providerHealthMissingApiKey");
+      case "rate-limited":
+        return t(locale, "providerHealthRateLimited");
+      case "http-error":
+        return formatMessage(t(locale, "providerHealthHttpError"), { status: result.status ?? 0 });
+      default:
+        return t(locale, "providerHealthNetworkError");
+    }
+  };
   const settingsSubTabs: Array<{ id: SettingsSubTab; label: string; description: string }> = [
     {
       id: "general",
@@ -289,6 +325,37 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
 
         {activeTab === "providers" ? (
           <>
+          <div className="providers-health-bar">
+            <button
+              className={isProviderHealthChecking ? "action-button compact is-loading" : "action-button compact"}
+              type="button"
+              disabled={isProviderHealthChecking || providerEntries.length === 0}
+              onClick={runProvidersHealthCheck}
+            >
+              {isProviderHealthChecking ? <LoaderCircle size={14} className="button-spinner" /> : <Power size={14} />}
+              <span>{isProviderHealthChecking ? t(locale, "providerHealthChecking") : t(locale, "providerHealthCheck")}</span>
+            </button>
+            {providerHealthResults ? (
+              providerHealthResults.length === 0 ? (
+                <span className="providers-health-empty">{t(locale, "providerHealthEmpty")}</span>
+              ) : (
+                <ul className="providers-health-list">
+                  {providerHealthResults.map((result) => (
+                    <li
+                      key={result.providerName}
+                      className={result.ok ? "providers-health-item ok" : "providers-health-item fail"}
+                    >
+                      <span className="providers-health-dot" aria-hidden="true" />
+                      <span className="providers-health-name">{result.providerName}</span>
+                      <span className="providers-health-reason">
+                        {result.ok ? providerHealthReasonLabel(result) : `${t(locale, "providerHealthFail")} · ${providerHealthReasonLabel(result)}`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )
+            ) : null}
+          </div>
           <SplitLayout
             listTitle={t(locale, "providers")}
             listItems={providerEntries.map(([name]) => name)}
@@ -1564,6 +1631,7 @@ function DoctorReportPanel(props: {
           ))}
         </div>
       ) : null}
+      <DoctorDriftList locale={props.locale} drift={report.drift} />
     </div>
   );
 }

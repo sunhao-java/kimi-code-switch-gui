@@ -241,6 +241,12 @@ export interface DoctorIssue {
   suggestedAction?: string;
 }
 
+export interface ConfigDriftEntry {
+  file: ManagedFileId;
+  path: string;
+  key: string;
+}
+
 export interface ConfigDoctorReport {
   ok: boolean;
   generatedAt: string;
@@ -248,6 +254,7 @@ export interface ConfigDoctorReport {
   errorCount: number;
   warningCount: number;
   infoCount: number;
+  drift?: ConfigDriftEntry[];
 }
 
 export interface ExternalChangeDetail {

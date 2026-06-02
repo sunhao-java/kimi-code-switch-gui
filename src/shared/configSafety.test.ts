@@ -6,6 +6,7 @@ import {
   buildConfigDoctorReport,
   buildManagedDocuments,
   buildRedactedPreviewBundle,
+  detectUnknownFields,
   redactAppStateSecrets,
   redactDocumentText,
 } from "./configSafety";
@@ -208,5 +209,127 @@ describe("configSafety", () => {
     expect(issueIds).toContain("webdav.password.missing");
     expect(issueIds).toContain("webdav.url.protocol");
     expect(issueIds).toContain("webdav.path.invalid");
+  });
+
+  describe("detectUnknownFields (config drift)", () => {
+    it("returns no drift when every field is known", () => {
+      const drift = detectUnknownFields({
+        config: {
+          default_model: "kimi_gateway/kimi-k2.5",
+          theme: "dark",
+          models: { "kimi_gateway/kimi-k2.5": { provider: "kimi_gateway", model: "kimi-k2.5", max_context_size: 1024, capabilities: [] } },
+          providers: { kimi_gateway: { type: "kimi", base_url: "https://api.example.test", api_key: "sk-x" } },
+          loop_control: { anything: { goes: true } },
+        },
+        profiles: {
+          active_profile: "default",
+          profiles: { default: { name: "default", label: "Default", default_model: "kimi_gateway/kimi-k2.5", theme: "dark" } },
+        },
+        mcp: { mcpServers: { gateway: { enabled: true, transport: "stdio", command: "npx", args: [] } } },
+      });
+
+      expect(drift).toEqual([]);
+    });
+
+    it("detects unknown top-level fields per file", () => {
+      const drift = detectUnknownFields({
+        config: {
+          default_model: "a",
+          future_feature_flag: true,
+          another_new_top_key: "x",
+        },
+      });
+
+      const keys = drift.map((entry) => entry.key);
+      expect(keys).toContain("future_feature_flag");
+      expect(keys).toContain("another_new_top_key");
+      expect(keys).not.toContain("default_model");
+      expect(drift.every((entry) => entry.file === "config")).toBe(true);
+      expect(drift.every((entry) => entry.path === "(root)")).toBe(true);
+    });
+
+    it("detects unknown nested fields inside known maps", () => {
+      const drift = detectUnknownFields({
+        config: {
+          providers: {
+            kimi_gateway: { type: "kimi", base_url: "https://x", api_key: "sk", region: "us-east" },
+          },
+          models: {
+            "kimi_gateway/k2": { provider: "kimi_gateway", model: "k2", max_context_size: 1, capabilities: [], beta_flag: true },
+          },
+        },
+      });
+
+      const providerDrift = drift.find((entry) => entry.key === "region");
+      const modelDrift = drift.find((entry) => entry.key === "beta_flag");
+      expect(providerDrift?.path).toBe("providers.kimi_gateway");
+      expect(modelDrift?.path).toBe("models.kimi_gateway/k2");
+    });
+
+    it("detects unknown profile fields under the profiles map", () => {
+      const drift = detectUnknownFields({
+        profiles: {
+          active_profile: "default",
+          profiles: {
+            default: { name: "default", label: "Default", default_model: "m", experimental_voice: true },
+          },
+        },
+      });
+
+      const entry = drift.find((item) => item.key === "experimental_voice");
+      expect(entry?.file).toBe("profiles");
+      expect(entry?.path).toBe("profiles.default");
+    });
+
+    it("treats free-form record fields and MCP server bodies as open (no false positives)", () => {
+      const drift = detectUnknownFields({
+        config: {
+          background: { whatever: { deeply: { nested: 1 } } },
+          notifications: { brand_new_channel: true },
+        },
+        mcp: {
+          mcpServers: {
+            gateway: { enabled: true, transport: "stdio", command: "x", args: [], unknown_server_opt: 1 },
+          },
+        },
+      });
+
+      expect(drift).toEqual([]);
+    });
+
+    it("aggregates drift across multiple files", () => {
+      const drift = detectUnknownFields({
+        config: { surprise_key: 1 },
+        profiles: { active_profile: "default", profiles: {}, stray_profiles_key: true },
+      });
+
+      const files = new Set(drift.map((entry) => entry.file));
+      expect(files.has("config")).toBe(true);
+      expect(files.has("profiles")).toBe(true);
+    });
+
+    it("ignores null, undefined, and non-object raw documents", () => {
+      const drift = detectUnknownFields({
+        config: null,
+        profiles: undefined,
+        mcp: "not-an-object" as unknown,
+      });
+
+      expect(drift).toEqual([]);
+    });
+
+    it("surfaces drift through buildConfigDoctorReport when raw docs are provided", () => {
+      const state = createState();
+      const report = buildConfigDoctorReport(state, {
+        config: { default_model: "kimi_gateway/kimi-k2.5", unknown_cli_field: true },
+      });
+
+      expect(report.drift?.some((entry) => entry.key === "unknown_cli_field")).toBe(true);
+    });
+
+    it("keeps drift empty and backward compatible when raw docs are omitted", () => {
+      const report = buildConfigDoctorReport(createState());
+      expect(report.drift).toEqual([]);
+    });
   });
 });

@@ -11,7 +11,7 @@ import type { SkillsScanReport } from "@shared/skillsStore";
 import type {
   AppState,
   AppearanceMode, AppearanceTheme, BackupDestinationType, BackupFrequency, BackupStrategy,
-  CloseBehavior, DisplayOpenMode, Locale,
+  CloseBehavior, ConfigDriftEntry, DisplayOpenMode, Locale,
   McpServerConfig, McpTransport, ModelPricing, Profile, ProfileConnectivityTestResult, UiFontSize,
 } from "@shared/types";
 import { resolveModelPricing } from "@shared/pricing";
@@ -933,6 +933,35 @@ export function applyUiFontSize(size: UiFontSize): void {
 
 export function formatMessage(template: string, values: Record<string, string | number>): string {
   return template.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key] ?? ""));
+}
+
+export function DoctorDriftList(props: {
+  locale: Locale;
+  drift: ConfigDriftEntry[] | undefined;
+}): JSX.Element | null {
+  const drift = props.drift ?? [];
+  if (!drift.length) {
+    return null;
+  }
+  return (
+    <div className="doctor-issues doctor-drift">
+      <div className="doctor-issue info">
+        <span>info</span>
+        <div>
+          <strong>{t(props.locale, "driftTitle")}</strong>
+          {drift.map((entry) => (
+            <p key={`${entry.file}.${entry.path}.${entry.key}`}>
+              {formatMessage(t(props.locale, "driftUnknownField"), {
+                file: entry.file,
+                path: entry.path,
+                key: entry.key,
+              })}
+            </p>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function formatSkillPathLabel(

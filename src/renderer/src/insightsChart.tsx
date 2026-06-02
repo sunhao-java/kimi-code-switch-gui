@@ -19,13 +19,22 @@ interface TrendChartProps {
   data: TrendChartPoint[];
   metric: "tokens" | "calls";
   chartType: TrendChartType;
+  /** Optional callback fired when a data point is clicked (drill-down). */
+  onPointClick?: (point: TrendChartPoint, index: number) => void;
+  /** Localized labels for the legend / interaction hint (falls back to zh-CN). */
+  labels?: { legend?: string; metricLabel?: string; clickHint?: string };
 }
 
 const PADDING = { top: 24, right: 24, bottom: 32, left: 56 };
 const VIEW_WIDTH = 960;
 const HEIGHT = 300;
-export function TrendChart({ data, metric, chartType }: TrendChartProps): JSX.Element {
+export function TrendChart({ data, metric, chartType, onPointClick, labels }: TrendChartProps): JSX.Element {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+
+  const legendLabel = labels?.legend ?? "图例";
+  const clickHint = labels?.clickHint ?? "点击数据点查看当日明细";
+  const metricLabel = labels?.metricLabel ?? (metric === "tokens" ? "Token 消耗" : "调用次数");
 
   const values = useMemo(
     () => data.map((d) => (metric === "tokens" ? d.tokens : d.calls)),
@@ -56,6 +65,14 @@ export function TrendChart({ data, metric, chartType }: TrendChartProps): JSX.El
   }, [data, metric, maxVal]);
 
   if (data.length === 0) return <></>;
+
+  // Clicked point is the highlighted "active" point; guard against stale index
+  // after data/metric changes shrink the series.
+  const clickedIndex = activeIndex !== null && activeIndex < data.length ? activeIndex : null;
+  const handlePointClick = (i: number): void => {
+    setActiveIndex((prev) => (prev === i ? null : i));
+    onPointClick?.(data[i], i);
+  };
 
   const hovered = hoverIndex !== null ? data[hoverIndex] : null;
   const hoveredValue = hovered ? (metric === "tokens" ? hovered.tokens : hovered.calls) : 0;
@@ -101,6 +118,7 @@ export function TrendChart({ data, metric, chartType }: TrendChartProps): JSX.El
             const y = yToPx(v);
             const h = Math.max(PADDING.top + chartHeight - y, 2);
             const active = hoverIndex === i;
+            const selected = clickedIndex === i;
             return (
               <rect
                 key={i}
@@ -110,8 +128,10 @@ export function TrendChart({ data, metric, chartType }: TrendChartProps): JSX.El
                 height={h}
                 rx={4}
                 fill="url(#trend-bar-grad)"
-                opacity={hoverIndex === null || active ? 1 : 0.55}
-                className="insights-chart-bar"
+                opacity={hoverIndex === null || active || selected ? 1 : 0.55}
+                stroke={selected ? "rgba(var(--primary-rgb), 1)" : "none"}
+                strokeWidth={selected ? 2 : 0}
+                className={`insights-chart-bar${selected ? " selected" : ""}`}
               />
             );
           })}
@@ -133,16 +153,17 @@ export function TrendChart({ data, metric, chartType }: TrendChartProps): JSX.El
             {data.map((d, i) => {
               const v = metric === "tokens" ? d.tokens : d.calls;
               const active = hoverIndex === i;
+              const selected = clickedIndex === i;
               return (
                 <circle
                   key={i}
                   cx={xToPx(i)}
                   cy={yToPx(v)}
-                  r={active ? 6 : 4}
-                  fill="white"
+                  r={selected ? 7 : active ? 6 : 4}
+                  fill={selected ? "rgba(var(--primary-rgb), 1)" : "white"}
                   stroke="rgba(var(--primary-rgb), 1)"
                   strokeWidth={2}
-                  className="insights-chart-point"
+                  className={`insights-chart-point${selected ? " selected" : ""}`}
                 />
               );
             })}
@@ -159,6 +180,7 @@ export function TrendChart({ data, metric, chartType }: TrendChartProps): JSX.El
               fill="transparent"
               onMouseEnter={() => setHoverIndex(i)}
               onMouseLeave={() => setHoverIndex(null)}
+              onClick={() => handlePointClick(i)}
               style={{ cursor: "pointer" }}
             />
           ))}
@@ -186,6 +208,15 @@ export function TrendChart({ data, metric, chartType }: TrendChartProps): JSX.El
           />
         )}
       </svg>
+
+      <div className="insights-chart-legend">
+        <span className="insights-chart-legend-title">{legendLabel}</span>
+        <span className="insights-chart-legend-item">
+          <span className="insights-chart-legend-swatch" />
+          <span className="insights-chart-legend-label">{metricLabel}</span>
+        </span>
+        <span className="insights-chart-legend-hint">{clickHint}</span>
+      </div>
 
       {hovered && (
         <div
