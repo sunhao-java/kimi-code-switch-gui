@@ -1,4 +1,6 @@
-import type { InsightsSettings, InsightsStatus, ProxyHealth, ProxyState } from "./usageTypes";
+import { computeEventCost, resolveModelPricing } from "./pricing";
+import type { ModelConfig, ModelPricing } from "./types";
+import type { InsightsSettings, InsightsStatus, ProxyHealth, ProxyState, UsageEvent } from "./usageTypes";
 
 export const INSIGHTS_PORT_MIN = 1024;
 export const INSIGHTS_PORT_MAX = 65535;
@@ -126,4 +128,49 @@ export function pickPreferredPort(settings: InsightsSettings): number | null {
     return settings.insights_proxy_port;
   }
   return settings.insights_last_known_port;
+}
+
+/**
+ * Resolves the pricing to apply for an event's model. Looks up the model
+ * definition in `models` (keyed by model id) so a user-defined `pricing`
+ * override is honored; falls back to the built-in default table by the event's
+ * `model` string. Returns `null` when no price is known.
+ *
+ * Pure function: never mutates inputs.
+ */
+export function resolveEventPricing(
+  event: Pick<UsageEvent, "model">,
+  models: Record<string, ModelConfig> = {},
+): ModelPricing | null {
+  const configured = models[event.model];
+  if (configured) {
+    return resolveModelPricing(configured);
+  }
+  return resolveModelPricing({ model: event.model });
+}
+
+/**
+ * Sums the estimated cost across a set of usage events, resolving pricing per
+ * event's model. Cost is computed at read time (tokens × current rate), never
+ * read from a stored/固化 value. Returns `null` when not a single event yields a
+ * known cost — so the caller can distinguish "no price known anywhere" from a
+ * genuine zero — and otherwise returns the sum of the events whose cost is
+ * known.
+ *
+ * Pure function: never mutates inputs.
+ */
+export function sumEventCost(
+  events: ReadonlyArray<UsageEvent>,
+  models: Record<string, ModelConfig> = {},
+): number | null {
+  let total = 0;
+  let anyKnown = false;
+  for (const event of events) {
+    const cost = computeEventCost(event, resolveEventPricing(event, models));
+    if (cost !== null) {
+      total += cost;
+      anyKnown = true;
+    }
+  }
+  return anyKnown ? total : null;
 }

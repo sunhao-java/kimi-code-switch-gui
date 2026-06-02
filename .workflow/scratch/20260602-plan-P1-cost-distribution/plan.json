@@ -1,0 +1,72 @@
+{
+  "summary": "里程碑 v2.1 Phase 1（按澄清结果重塑）：成本估算端到端落地（provider/model 定价：用户可编辑 + 内置默认，计算并展示 cost_estimate），外加未签名 macOS 分发体验优化。REQ-202 Windows 签名本期延后；REQ-201 降级为优化现状提示（不做 CI 公证）。",
+  "approach": "成本估算分两层（数据→UI，有真实依赖故分两 wave）：数据层在 ModelConfig 加定价字段 + 新建内置默认价表 src/shared/pricing.ts（用户配置覆盖默认），usageStore 按 tokens×单价计算 cost，DailyAggregate 接口补 cost_estimate_sum（DB schema 已有该列）；UI 层在设置/Models 加定价编辑器、Insights 仪表盘展示成本。分发优化独立并行：完善 homebrew cask 去隔离 caveat + README 中英首次打开指引。",
+  "task_ids": ["TASK-001", "TASK-002", "TASK-003"],
+  "task_count": 3,
+  "complexity": "medium-large",
+  "estimated_time": "1.5-2.5 天",
+  "recommended_execution": "Agent",
+
+  "waves": [
+    { "wave": 1, "phase": "P1: 成本估算 + 分发优化", "tasks": ["TASK-001", "TASK-003"] },
+    { "wave": 2, "phase": "P1: 成本估算 UI", "tasks": ["TASK-002"] }
+  ],
+
+  "data_flow": {
+    "diagram": "tokens(UsageEvent) + pricing(ModelConfig/默认表) --TASK-001--> cost_estimate / cost_estimate_sum --TASK-002--> Insights 仪表盘 + 设置定价编辑",
+    "stages": ["定价模型与计算(数据)", "定价编辑 + 成本展示(UI)"]
+  },
+
+  "design_decisions": [
+    "定价来源：用户可编辑 + 内置默认（澄清结论）。ModelConfig 加 pricing 字段；src/shared/pricing.ts 提供常见模型默认值；用户值覆盖默认",
+    "cost 在读取/聚合时按 tokens×当前单价计算（而非 ingest 时固化），因定价用户可改，读时计算避免 stale；DB 的 cost_estimate 列保留为可选缓存",
+    "REQ-202 Windows 签名本期延后（澄清结论）——移出本计划，需回写 roadmap M2",
+    "REQ-201 降级：不做 Apple 公证（无证书），仅优化未签名分发的首次打开体验",
+    "成本估算数据→UI 有真实依赖，故 TASK-002 依赖 TASK-001，分两 wave"
+  ],
+
+  "shared_context": {
+    "patterns": [
+      "已预建：usageDb schema 含 cost_estimate / cost_estimate_sum / pricing_version 列",
+      "configStore 纯函数 + TOML round-trip；ModelConfig 在 src/shared/types.ts",
+      "Insights 渲染在 src/renderer/src/insightsComponents.tsx；i18n key-value 在 i18n.ts（6 语言）"
+    ],
+    "conventions": ["测试与源码同目录 *.test.ts；shared 层纯逻辑有覆盖率门禁(80/55)"],
+    "dependencies": ["cost_estimate 当前恒 null（usageLogWatcher.ts:189）", "DailyAggregate TS 接口缺 cost_estimate_sum（DB 已有列）"]
+  },
+
+  "confidence": {
+    "overall": 0.82,
+    "dimensions": {
+      "requirements_coverage": 1.0,
+      "task_quality": 0.85,
+      "dependency_correctness": 0.9,
+      "estimation_accuracy": 0.68,
+      "collision_safety": 0.9
+    },
+    "weakest_dimension": "estimation_accuracy",
+    "pressure_pass": {
+      "task": "TASK-001",
+      "result": "PASS",
+      "note": "read_first 含 types.ts/configStore/usageStore/usageDb/usageTypes + 现有测试范式；convergence 全 grep/exit-code 可验（pricing.ts 存在、cost 计算非 null、cost_estimate_sum 入接口、npm test 0）；action 指明字段名与计算公式"
+    },
+    "readiness_gate": "PASS",
+    "residual_risks": [
+      "内置默认价表的模型覆盖范围需执行时确定（先覆盖 kimi/常见 OpenAI/Anthropic 兼容模型）",
+      "成本展示的图表复用 vs 新增需在 TASK-002 按现有 Insights 组件确认",
+      "roadmap M2 需回写：REQ-202 延后、REQ-201 降级"
+    ]
+  },
+
+  "_metadata": {
+    "timestamp": "2026-06-02T00:00:00.000Z",
+    "source": "maestro-plan (direct, grounded, post-clarification)",
+    "planning_mode": "full",
+    "plan_type": "feature",
+    "schema_version": "2.0",
+    "scope": "phase",
+    "milestone": "v2.1",
+    "phase": 1,
+    "git_commit": null
+  }
+}

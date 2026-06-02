@@ -35,11 +35,19 @@ export interface ProviderConfig {
   api_key: string;
 }
 
+export interface ModelPricing {
+  input_per_mtok: number;
+  output_per_mtok: number;
+  cache_read_per_mtok?: number;
+  cache_creation_per_mtok?: number;
+}
+
 export interface ModelConfig {
   provider: string;
   model: string;
   max_context_size: number;
   capabilities: string[];
+  pricing?: ModelPricing;
 }
 
 export interface MainConfig {

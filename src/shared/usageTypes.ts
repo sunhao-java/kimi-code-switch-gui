@@ -79,6 +79,7 @@ export interface DailyAggregate {
   reasoning_tokens_sum: number;
   latency_ms_sum: number;
   latency_ms_max: number;
+  cost_estimate_sum: number | null;
 }
 
 export interface OverviewSlice {

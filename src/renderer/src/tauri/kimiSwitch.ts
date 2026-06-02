@@ -17,7 +17,8 @@ import {
 import { buildConfigDoctorReport, buildRedactedPreviewBundle } from "@shared/configSafety";
 import { scanSkills } from "@shared/skillsStore";
 import { compareReleaseVersions } from "@shared/versionUtils";
-import type { AppState, PanelSettings, PreviewBundle, OpenKimiTerminalRequest, FileSnapshotBundle } from "@shared/types";
+import { computeEventCost, resolveModelPricing } from "@shared/pricing";
+import type { AppState, ModelConfig, PanelSettings, PreviewBundle, OpenKimiTerminalRequest, FileSnapshotBundle } from "@shared/types";
 
 import { tauriFileAccess, pathExists } from "./fileAccess";
 import * as usageDb from "./usageDb";
@@ -43,6 +44,57 @@ let currentAppState: AppState | null = null;
 
 function activeProfile(): string {
   return currentAppState?.activeProfile ?? "default";
+}
+
+/**
+ * Compute the estimated cost of a per-model token-sum row using the model's
+ * *current* pricing (user override → built-in default → null). Cost is derived
+ * at read time so changing a model's price re-prices history. Returns `null`
+ * when no price is known for the model.
+ */
+function costForModelTokens(row: usageDb.ModelTokenSums, models: Record<string, ModelConfig>): number | null {
+  const configured = models[row.model];
+  const pricing = configured
+    ? resolveModelPricing(configured)
+    : resolveModelPricing({ model: row.model });
+  return computeEventCost(
+    {
+      prompt_tokens: row.prompt_tokens,
+      completion_tokens: row.completion_tokens,
+      cache_read_tokens: row.cache_read_tokens,
+      cache_creation_tokens: row.cache_creation_tokens,
+      reasoning_tokens: row.reasoning_tokens,
+    },
+    pricing,
+  );
+}
+
+/**
+ * Aggregates per-model token sums into a cost map keyed by a chosen dimension
+ * (`""` for the grand total, the day string for a daily bucket, or the model
+ * id). A key's cost is `null` only when not a single contributing model has a
+ * known price — so the UI can show "未设定价" instead of a misleading 0.
+ */
+function aggregateCost(
+  rows: usageDb.ModelTokenSums[],
+  models: Record<string, ModelConfig>,
+  keyOf: (row: usageDb.ModelTokenSums) => string,
+): Record<string, number | null> {
+  const out: Record<string, { total: number; anyKnown: boolean }> = {};
+  for (const row of rows) {
+    const key = keyOf(row);
+    const cost = costForModelTokens(row, models);
+    const bucket = out[key] ?? (out[key] = { total: 0, anyKnown: false });
+    if (cost !== null) {
+      bucket.total += cost;
+      bucket.anyKnown = true;
+    }
+  }
+  const result: Record<string, number | null> = {};
+  for (const [key, { total, anyKnown }] of Object.entries(out)) {
+    result[key] = anyKnown ? total : null;
+  }
+  return result;
 }
 
 async function ensureUsageRuntime(): Promise<void> {
@@ -268,6 +320,19 @@ export const kimiSwitchTauri = {
   usageQueryEvents: async (args: { filter: never; cursor: string | null; pageSize: number }) => {
     if (!usageOpen) return { ok: true as const, page: { rows: [], nextCursor: null } };
     return { ok: true as const, page: await usageDb.queryEvents(args.filter, args.cursor, args.pageSize) };
+  },
+  usageQueryCost: async (range: never) => {
+    const empty = { ok: true as const, total: null as number | null, byDay: {} as Record<string, number | null>, byModel: {} as Record<string, number | null> };
+    if (!usageOpen) return empty;
+    const models = currentAppState?.mainConfig.models ?? {};
+    const [modelSums, modelDaySums] = await Promise.all([
+      usageDb.queryModelTokenSums(range, false),
+      usageDb.queryModelTokenSums(range, true),
+    ]);
+    const byModel = aggregateCost(modelSums, models, (r) => r.model);
+    const byDay = aggregateCost(modelDaySums, models, (r) => r.day);
+    const totalMap = aggregateCost(modelSums, models, () => "");
+    return { ok: true as const, total: totalMap[""] ?? null, byDay, byModel };
   },
   usageGetStorageInfo: async () => {
     const dbStat = await invoke<{ size: number } | null>("file_stat", { path: USAGE_DB_PATH });

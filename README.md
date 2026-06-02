@@ -190,6 +190,26 @@ npm run dist:win
 
 构建产物默认输出到 `release/`。
 
+## macOS 首次打开
+
+本应用是个人维护的免费工具，秉持隐私优先、零遥测的原则，且未购买 Apple 开发者证书做签名与公证。因此从 GitHub Release 下载的 DMG 属于**未签名 / 未公证**应用，首次打开时 macOS 可能提示「已损坏，无法打开」或「无法验证开发者」。这并非应用真的损坏，而是 Gatekeeper 对未公证应用附加了隔离（quarantine）属性。
+
+去隔离后即可正常打开，二选一：
+
+- 安装到 `/Applications` 后，执行去隔离命令：
+
+  ```bash
+  sudo xattr -rd com.apple.quarantine "/Applications/Kimi Code Switch GUI.app"
+  ```
+
+- 或使用 Homebrew cask 安装时直接带上 `--no-quarantine`：
+
+  ```bash
+  brew install --cask --no-quarantine kimi-code-switch-gui
+  ```
+
+> English: This is a free, privacy-first personal tool distributed without an Apple Developer certificate (no code signing / notarization). macOS may show "App is damaged" or "cannot verify developer" on first launch — the app is fine, it just carries Gatekeeper's quarantine attribute. Remove it with `sudo xattr -rd com.apple.quarantine "/Applications/Kimi Code Switch GUI.app"`, or install via `brew install --cask --no-quarantine kimi-code-switch-gui`.
+
 ## 技术栈
 
 - Electron

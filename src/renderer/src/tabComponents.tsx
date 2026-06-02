@@ -12,8 +12,9 @@ import type {
   AppState,
   AppearanceMode, AppearanceTheme, BackupDestinationType, BackupFrequency, BackupStrategy,
   CloseBehavior, DisplayOpenMode, Locale,
-  McpServerConfig, McpTransport, Profile, ProfileConnectivityTestResult, UiFontSize,
+  McpServerConfig, McpTransport, ModelPricing, Profile, ProfileConnectivityTestResult, UiFontSize,
 } from "@shared/types";
+import { resolveModelPricing } from "@shared/pricing";
 
 import { getApi } from "./appHelpers";
 import {
@@ -208,6 +209,7 @@ export function ModelForm(props: {
     model: string;
     max_context_size: number;
     capabilities: string[];
+    pricing?: ModelPricing;
   };
   onChange: (
     name: string,
@@ -216,6 +218,7 @@ export function ModelForm(props: {
       model: string;
       max_context_size: number;
       capabilities: string[];
+      pricing?: ModelPricing;
     }>,
   ) => void;
   onSave: () => void;
@@ -229,6 +232,12 @@ export function ModelForm(props: {
     props.value.capabilities,
     props.locale,
   );
+
+  const handlePricingChange = (field: keyof ModelPricing, raw: string): void => {
+    props.onChange(props.name, {
+      pricing: nextPricingFromInput(props.value.pricing, field, raw),
+    });
+  };
 
   return (
     <section className="glass-panel form-panel">
@@ -258,6 +267,12 @@ export function ModelForm(props: {
         emptyLabel={t(props.locale, "formCapabilitiesEmpty")}
         popoverClassName="field-select-popover-full"
       />
+      <ModelPricingEditor
+        locale={props.locale}
+        model={props.value.model}
+        pricing={props.value.pricing}
+        onChange={handlePricingChange}
+      />
       <ActionFooter
         onSave={props.onSave}
         onDelete={props.onDelete}
@@ -265,6 +280,94 @@ export function ModelForm(props: {
         deleteLabel={t(props.locale, "delete")}
       />
     </section>
+  );
+}
+
+const PRICING_FIELDS: ReadonlyArray<{ field: keyof ModelPricing; labelKey: string }> = [
+  { field: "input_per_mtok", labelKey: "pricingInput" },
+  { field: "output_per_mtok", labelKey: "pricingOutput" },
+  { field: "cache_read_per_mtok", labelKey: "pricingCacheRead" },
+  { field: "cache_creation_per_mtok", labelKey: "pricingCacheCreation" },
+];
+
+/**
+ * Builds the next `pricing` value when a single per-1M-token rate input changes.
+ * Empty / invalid input clears that field; when every field ends up empty the
+ * whole `pricing` object is dropped (returns `undefined`) so the model falls
+ * back to the built-in default table.
+ */
+export function nextPricingFromInput(
+  current: ModelPricing | undefined,
+  field: keyof ModelPricing,
+  raw: string,
+): ModelPricing | undefined {
+  const trimmed = raw.trim();
+  const parsed = trimmed === "" ? undefined : Number(trimmed);
+  const value = parsed !== undefined && Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+
+  const draft: Partial<ModelPricing> = {
+    input_per_mtok: current?.input_per_mtok,
+    output_per_mtok: current?.output_per_mtok,
+    cache_read_per_mtok: current?.cache_read_per_mtok,
+    cache_creation_per_mtok: current?.cache_creation_per_mtok,
+  };
+  if (value === undefined) {
+    delete draft[field];
+  } else {
+    draft[field] = value;
+  }
+
+  const hasAny = Object.values(draft).some((v) => v !== undefined);
+  if (!hasAny) return undefined;
+  // ModelPricing requires input/output; default missing required rates to 0 so
+  // the partial override is still a valid object until the user fills them in.
+  return {
+    input_per_mtok: draft.input_per_mtok ?? 0,
+    output_per_mtok: draft.output_per_mtok ?? 0,
+    ...(draft.cache_read_per_mtok !== undefined ? { cache_read_per_mtok: draft.cache_read_per_mtok } : {}),
+    ...(draft.cache_creation_per_mtok !== undefined ? { cache_creation_per_mtok: draft.cache_creation_per_mtok } : {}),
+  };
+}
+
+function ModelPricingEditor(props: {
+  locale: Locale;
+  model: string;
+  pricing?: ModelPricing;
+  onChange: (field: keyof ModelPricing, raw: string) => void;
+}): JSX.Element {
+  // Resolve the effective default (built-in table) so blank inputs can hint the
+  // fallback rate the cost estimate will actually use.
+  const defaults = resolveModelPricing({ model: props.model });
+  return (
+    <div className="model-pricing-editor">
+      <div className="model-pricing-head">{t(props.locale, "pricingTitle")}</div>
+      <div className="model-pricing-grid">
+        {PRICING_FIELDS.map(({ field, labelKey }) => {
+          const overridden = props.pricing?.[field];
+          const fallback = defaults?.[field];
+          const placeholder =
+            fallback !== undefined
+              ? formatMessage(t(props.locale, "pricingDefaultPlaceholder"), { value: fallback })
+              : "";
+          return (
+            <label key={field} className="model-pricing-field">
+              <span>{t(props.locale, labelKey)}</span>
+              <div className="pricing-input">
+                <span className="pricing-affix">$</span>
+                <input
+                  inputMode="decimal"
+                  value={overridden !== undefined ? String(overridden) : ""}
+                  placeholder={placeholder}
+                  onChange={(event) => props.onChange(field, event.target.value)}
+                />
+                <span className="pricing-affix pricing-affix-suffix">/1M</span>
+              </div>
+            </label>
+          );
+        })}
+      </div>
+      <p className="model-pricing-hint">{t(props.locale, "pricingHint")}</p>
+    </div>
   );
 }
 

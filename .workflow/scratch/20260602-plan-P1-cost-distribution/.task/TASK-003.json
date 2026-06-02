@@ -1,0 +1,66 @@
+{
+  "id": "TASK-003",
+  "title": "未签名 macOS 分发体验优化（不做公证）",
+  "description": "无 Apple 证书前提下，优化未签名 DMG 的首次打开体验：完善 homebrew cask 去隔离 caveat、README 中英首次打开指引，降低\"已损坏\"劝退。REQ-201 降级版。",
+
+  "issue_id": null,
+  "issue_refs": [],
+  "type": "docs",
+  "priority": "medium",
+  "effort": "small",
+  "action": "1) 检查 scripts/render_homebrew_cask.py 渲染的 cask caveat：确保包含清晰的去隔离步骤 `sudo xattr -rd com.apple.quarantine \"/Applications/Kimi Code Switch GUI.app\"` 与 `brew install --cask --no-quarantine kimi-code-switch-gui` 两种方式（当前模板已有，校对措辞与准确性即可）。2) 在 README.md 增加\"macOS 首次打开\"小节（中文为主，附 en），说明未签名应用的去隔离方法与原因（隐私优先、未付费公证），与 cask caveat 一致。3) 可选：在 about 页或文档补一句指向该说明。全程不引入签名 CI、不改 tauri.conf.json 签名配置。",
+  "status": "completed",
+  "completed_at": "2026-06-02T00:00:00Z",
+  "actual_duration": null,
+
+  "scope": "docs",
+  "focus_paths": ["README.md", "scripts/render_homebrew_cask.py"],
+
+  "read_first": [
+    "scripts/render_homebrew_cask.py",
+    "README.md"
+  ],
+
+  "depends_on": [],
+  "wave": 1,
+  "parallel_group": "B",
+  "execution_group": null,
+  "executor": "agent",
+
+  "convergence": {
+    "criteria": [
+      "scripts/render_homebrew_cask.py contains 'com.apple.quarantine'",
+      "scripts/render_homebrew_cask.py contains 'no-quarantine'",
+      "README.md contains 'quarantine' or 'xattr' or '去隔离'",
+      "grep -in 'macOS' README.md matches first-open guidance section"
+    ],
+    "verification": "grep 校验 cask caveat 与 README 去隔离指引齐全且一致",
+    "definition_of_done": "未签名 DMG 用户能从 cask caveat 或 README 一眼看到去隔离方法，\"已损坏\"劝退路径有明确解法。"
+  },
+
+  "files": [
+    { "path": "scripts/render_homebrew_cask.py", "action": "modify", "target": "cask caveat", "change": "校对/完善 xattr 去隔离 + --no-quarantine 两种指引措辞" },
+    { "path": "README.md", "action": "modify", "target": "macOS 首次打开小节", "change": "新增中英去隔离指引，与 cask caveat 一致" }
+  ],
+
+  "implementation": [
+    "读 render_homebrew_cask.py 现有 caveats（已含 xattr/--no-quarantine），校对准确性",
+    "在 README.md 加\"macOS 首次打开\"小节，说明去隔离方法与原因",
+    "grep 自检 cask 与 README 措辞一致"
+  ],
+
+  "test": { "commands": ["grep -in 'quarantine\\|xattr\\|去隔离' README.md scripts/render_homebrew_cask.py"], "unit": [], "integration": [], "success_metrics": ["cask + README 去隔离指引齐全一致"] },
+
+  "reference": { "pattern": "现有 cask caveat（render_homebrew_cask.py）", "files": ["scripts/render_homebrew_cask.py"], "examples": null },
+
+  "rationale": {
+    "chosen_approach": "无证书下的最高 ROI：把已知去隔离方法讲清楚，降低首次打开劝退",
+    "decision_factors": ["无 Apple Developer 证书（澄清结论）", "公证留待有证书后的里程碑"],
+    "tradeoffs": "不消除根因（仍未签名），仅降低摩擦"
+  },
+
+  "risks": [],
+  "code_skeleton": null,
+  "doc_context": { "affected_features": ["分发/安装"], "affected_components": ["README.md", "scripts/render_homebrew_cask.py"], "affected_requirements": ["REQ-201(降级)"], "adr_ids": [] },
+  "meta": { "estimated_time": "1-2 小时", "risk": "low", "autonomous": true, "checkpoint": false }
+}

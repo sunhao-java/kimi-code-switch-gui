@@ -1,0 +1,55 @@
+{
+  "phase": 1,
+  "milestone": "v2.1",
+  "status": "passed",
+  "verified_at": "2026-06-02T15:35:00+0800",
+  "verifier": "maestro-verify (fresh evidence)",
+  "coverage_score": 1.0,
+  "must_haves": {
+    "truths": [
+      {
+        "claim": "REQ-203 成本估算数据层（定价模型 + 计算）",
+        "status": "verified",
+        "evidence": "pricing.ts 存在含 computeEventCost + DEFAULT_MODEL_PRICING; types.ts ModelConfig.pricing; usageTypes DailyAggregate.cost_estimate_sum; pricing.test.ts (100% 覆盖); npm test 0 (364 tests)"
+      },
+      {
+        "claim": "REQ-203 成本估算 UI（定价编辑 + 成本展示）",
+        "status": "verified",
+        "evidence": "tabComponents/insightsComponents 含 pricing; insights cost 展示 26 处; i18n costEstimate×6 (6 语言); build:web EXIT 0; 根 tsc EXIT 0; npm test 0"
+      },
+      {
+        "claim": "REQ-201（降级）未签名 macOS 分发体验优化",
+        "status": "verified",
+        "evidence": "cask caveat 含 com.apple.quarantine + no-quarantine; README 含『macOS 首次打开』中英去隔离指引"
+      }
+    ],
+    "artifacts": [
+      { "path": "src/shared/pricing.ts + pricing.test.ts", "status": "exists", "substantive": true },
+      { "path": "src/shared/types.ts (ModelConfig.pricing) + usageTypes.ts (cost_estimate_sum)", "status": "exists", "substantive": true },
+      { "path": "src/renderer/src/{tabComponents,insightsComponents}.tsx + i18n.ts", "status": "exists", "substantive": true },
+      { "path": "src/renderer/src/tauri/kimiSwitch.ts (costForModelTokens/aggregateCost)", "status": "exists", "substantive": true },
+      { "path": "README.md (macOS 首次打开) + scripts/render_homebrew_cask.py (caveat)", "status": "exists", "substantive": true }
+    ],
+    "key_links": [
+      { "from": "tokens(UsageEvent) + pricing(ModelConfig/默认) -> computeEventCost -> cost", "status": "wired" },
+      { "from": "Models 定价编辑 -> ModelConfig.pricing -> Insights 成本展示", "status": "wired" }
+    ]
+  },
+  "gaps": [],
+  "constraint_violations": [],
+  "antipatterns": [],
+  "fix_plans": [],
+  "human_verification": [
+    { "id": "HV-001", "description": "界面手动确认：Models 可编辑各 model 单价并持久化；Insights 仪表盘按成本展示、无定价时显示『未设定价』而非 0", "severity": "low" }
+  ],
+  "coverage": {
+    "frontend": "npm test 23 files / 364 tests 全绿, 门禁通过; pricing.ts 100%",
+    "compile": "build:web EXIT 0 (vite/esbuild 编译全部 tsx); 根 tsc -p tsconfig.json EXIT 0",
+    "note": "tsc -p tsconfig.web.json 不作为判据（reference 成员单独编译有预存噪音，与本期无关）"
+  },
+  "residual_notes": [
+    "roadmap M2 需回写：REQ-202(Windows 签名)延后、REQ-201 降级",
+    "README 主体仍含 Electron 残留（技术栈/目录结构/dev:electron），属既有陈旧，建议后续单独同步",
+    "成本展示的界面级效果建议手动 UAT 确认（HV-001）"
+  ]
+}

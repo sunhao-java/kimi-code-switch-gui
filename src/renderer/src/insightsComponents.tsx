@@ -412,6 +412,9 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
   const [breakdownDataModel, setBreakdownDataModel] = useState<Array<{ name: string; calls: number; tokens: number; avgLatency: number }>>([]);
   const [breakdownDataProfile, setBreakdownDataProfile] = useState<Array<{ name: string; calls: number; tokens: number; avgLatency: number }>>([]);
   const [sessionsData, setSessionsData] = useState<Array<{ sessionId: string; calls: number; tokens: number; duration: string; profile: string; models: string; avgLatency: number; errors: number; startedAt: number }>>([]);
+  const [costTotal, setCostTotal] = useState<number | null>(null);
+  const [costByDay, setCostByDay] = useState<Record<string, number | null>>({});
+  const [costByModel, setCostByModel] = useState<Record<string, number | null>>({});
   const [timeRangeKey, setTimeRangeKey] = useState<string>(initialPrefs.timeRangeKey);
   const [customFrom, setCustomFrom] = useState(initialPrefs.customFrom);
   const [customTo, setCustomTo] = useState(initialPrefs.customTo);
@@ -447,12 +450,13 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
     setLoading(true);
     const range = getTimeRange() as never;
     try {
-      const [overviewRes, trendRes, breakdownModelRes, breakdownProfileRes, sessionsRes] = await Promise.allSettled([
+      const [overviewRes, trendRes, breakdownModelRes, breakdownProfileRes, sessionsRes, costRes] = await Promise.allSettled([
         window.kimiSwitch.usageQueryOverview(range),
         window.kimiSwitch.usageQueryTrend({ range, bucket: "day", groupBy: null }),
         window.kimiSwitch.usageQueryBreakdown({ dim: "model", range, limit: 20, orderBy: "tokens" }),
         window.kimiSwitch.usageQueryBreakdown({ dim: "profile", range, limit: 20, orderBy: "tokens" }),
         window.kimiSwitch.usageQuerySessions({ range, limit: 20 }),
+        window.kimiSwitch.usageQueryCost(range),
       ]);
       if (overviewRes.status === "fulfilled" && overviewRes.value.ok) setOverview(overviewRes.value.slice);
       if (trendRes.status === "fulfilled" && trendRes.value.ok) {
@@ -476,6 +480,11 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
           errors: r.errors,
           startedAt: r.started_utc,
         })));
+      }
+      if (costRes.status === "fulfilled" && costRes.value.ok) {
+        setCostTotal(costRes.value.total);
+        setCostByDay(costRes.value.byDay);
+        setCostByModel(costRes.value.byModel);
       }
     } catch (err) {
       showToast(`加载数据失败: ${String(err)}`, "error");
@@ -566,6 +575,7 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
             <OverviewMetricCard icon={<Database size={20} />} label={t(locale, "insightsReasoningTokens")} value={overview ? formatNumber(overview.reasoningTokens) : "-"} color="orange" />
             <OverviewMetricCard icon={<Activity size={20} />} label={t(locale, "insightsAvgLatency")} value={overview ? `${Math.round(overview.avgLatencyMs)} ms` : "-"} color="cyan" />
             <OverviewMetricCard icon={<AlertCircle size={20} />} label={t(locale, "insightsErrorRate")} value={overview ? `${(overview.errorRate * 100).toFixed(1)}%` : "-"} color="red" />
+            <OverviewMetricCard icon={<TrendingUp size={20} />} label={t(locale, "costEstimate")} value={formatCost(costTotal, locale)} color="green" />
           </div>
         )}
 
@@ -605,7 +615,13 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
             {trendData.length === 0 ? (
               <div className="insights-coming-soon"><TrendingUp size={48} /><h3>暂无趋势数据</h3><p>使用 kimi-cli 发起请求后，趋势数据将在此展示。</p></div>
             ) : (
-              <TrendChart data={trendData} metric={trendMetric} chartType={trendChartType} />
+              <>
+                <div className="insights-trend-cost-summary">
+                  <span className="insights-trend-cost-label">{t(locale, "costEstimate")}</span>
+                  <span className="insights-trend-cost-value">{formatCost(costTotal, locale)}</span>
+                </div>
+                <TrendChart data={trendData} metric={trendMetric} chartType={trendChartType} />
+              </>
             )}
           </div>
         )}
@@ -620,6 +636,7 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
                 view={breakdownModelView}
                 onViewChange={setBreakdownModelView}
                 locale={locale}
+                costByName={costByModel}
               />
               <BreakdownCard
                 title={t(locale, "insightsBreakdownByProfile")}
@@ -716,10 +733,12 @@ interface BreakdownCardProps {
   view: BreakdownView;
   onViewChange: (v: BreakdownView) => void;
   locale: Locale;
+  costByName?: Record<string, number | null>;
 }
 
-function BreakdownCard({ title, data, view, onViewChange, locale }: BreakdownCardProps): JSX.Element {
+function BreakdownCard({ title, data, view, onViewChange, locale, costByName }: BreakdownCardProps): JSX.Element {
   const pieData: PieDatum[] = data.map((r) => ({ name: r.name || "(未知)", value: r.tokens }));
+  const showCost = costByName !== undefined;
 
   return (
     <div className="insights-breakdown-card">
@@ -764,6 +783,7 @@ function BreakdownCard({ title, data, view, onViewChange, locale }: BreakdownCar
             <span className="insights-table-cell num">Token 总量</span>
             <span className="insights-table-cell num">占比</span>
             <span className="insights-table-cell num">平均延迟</span>
+            {showCost && <span className="insights-table-cell num">{t(locale, "insightsCostColumn")}</span>}
           </div>
           {data.map((row, i) => {
             const totalTokens = data.reduce((sum, r) => sum + r.tokens, 0) || 1;
@@ -775,6 +795,9 @@ function BreakdownCard({ title, data, view, onViewChange, locale }: BreakdownCar
                 <span className="insights-table-cell num">{formatNumber(row.tokens)}</span>
                 <span className="insights-table-cell num">{pct}%</span>
                 <span className="insights-table-cell num">{Math.round(row.avgLatency)} ms</span>
+                {showCost && (
+                  <span className="insights-table-cell num">{formatCost(costByName?.[row.name] ?? null, locale)}</span>
+                )}
               </div>
             );
           })}
@@ -815,6 +838,18 @@ function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
+}
+
+/**
+ * Formats an estimated cost (USD) for display. A `null` cost means no pricing is
+ * known for the underlying model(s) — we render the localized "not priced"
+ * placeholder rather than "$0.00", which would mislead the user into thinking
+ * the work was free. Sub-cent non-zero costs show as "<$0.01".
+ */
+function formatCost(cost: number | null, locale: Locale): string {
+  if (cost === null) return t(locale, "costUnknown");
+  if (cost > 0 && cost < 0.01) return "<$0.01";
+  return `$${cost.toFixed(2)}`;
 }
 
 function formatTimestamp(ms: number): string {

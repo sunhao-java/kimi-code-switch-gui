@@ -11,8 +11,48 @@ import {
   normalizeLastKnownPort,
   normalizeStatus,
   pickPreferredPort,
+  resolveEventPricing,
   shouldShowFirstRunDialog,
+  sumEventCost,
 } from "./usageStore";
+import type { ModelConfig } from "./types";
+import type { UsageEvent } from "./usageTypes";
+
+function makeUsageEvent(overrides: Partial<UsageEvent> = {}): UsageEvent {
+  return {
+    request_id: "r1",
+    ts: 0,
+    ts_end: null,
+    profile: "default",
+    provider: "moonshot",
+    model: "kimi-k2",
+    prompt_tokens: 0,
+    completion_tokens: 0,
+    cache_read_tokens: 0,
+    cache_creation_tokens: 0,
+    reasoning_tokens: 0,
+    latency_ms: 0,
+    proxy_overhead_ms: 0,
+    error_code: null,
+    error_message: null,
+    http_status: 200,
+    session_hint: null,
+    cost_estimate: null,
+    pricing_version: null,
+    metadata_json: null,
+    ...overrides,
+  };
+}
+
+function makeModel(overrides: Partial<ModelConfig> = {}): ModelConfig {
+  return {
+    provider: "moonshot",
+    model: "kimi-k2",
+    max_context_size: 128000,
+    capabilities: [],
+    ...overrides,
+  };
+}
 
 describe("usageStore", () => {
   describe("getInsightsDefaults", () => {
@@ -176,6 +216,61 @@ describe("usageStore", () => {
 
     it("returns null when auto and no last known", () => {
       expect(pickPreferredPort(getInsightsDefaults())).toBeNull();
+    });
+  });
+
+  describe("resolveEventPricing", () => {
+    it("uses a configured model's user pricing override", () => {
+      const models = {
+        "kimi-k2": makeModel({ pricing: { input_per_mtok: 7, output_per_mtok: 9 } }),
+      };
+      const pricing = resolveEventPricing(makeUsageEvent({ model: "kimi-k2" }), models);
+      expect(pricing).toEqual({ input_per_mtok: 7, output_per_mtok: 9 });
+    });
+
+    it("falls back to the default table when model is configured without pricing", () => {
+      const models = { "kimi-k2": makeModel() };
+      const pricing = resolveEventPricing(makeUsageEvent({ model: "kimi-k2" }), models);
+      expect(pricing?.input_per_mtok).toBeGreaterThan(0);
+    });
+
+    it("falls back to the default table when model is not configured", () => {
+      const pricing = resolveEventPricing(makeUsageEvent({ model: "gpt-4o" }));
+      expect(pricing?.output_per_mtok).toBeGreaterThan(0);
+    });
+
+    it("returns null for an unknown, unconfigured model", () => {
+      expect(resolveEventPricing(makeUsageEvent({ model: "no-such-model" }))).toBeNull();
+    });
+  });
+
+  describe("sumEventCost", () => {
+    it("returns null when no event has a known price", () => {
+      const events = [makeUsageEvent({ model: "no-such-model", prompt_tokens: 1000 })];
+      expect(sumEventCost(events)).toBeNull();
+    });
+
+    it("returns null for an empty event list", () => {
+      expect(sumEventCost([])).toBeNull();
+    });
+
+    it("sums known costs and skips unknown-priced events", () => {
+      const models = {
+        priced: makeModel({ model: "priced", pricing: { input_per_mtok: 1_000_000, output_per_mtok: 0 } }),
+      };
+      const events = [
+        makeUsageEvent({ model: "priced", prompt_tokens: 1 }), // 1 * 1M / 1M = 1
+        makeUsageEvent({ model: "priced", prompt_tokens: 2 }), // 2
+        makeUsageEvent({ model: "unknown-model", prompt_tokens: 5 }), // skipped (null)
+      ];
+      expect(sumEventCost(events, models)).toBeCloseTo(3, 10);
+    });
+
+    it("returns 0 when a known-priced event has zero tokens", () => {
+      const models = {
+        free: makeModel({ model: "free", pricing: { input_per_mtok: 5, output_per_mtok: 5 } }),
+      };
+      expect(sumEventCost([makeUsageEvent({ model: "free" })], models)).toBe(0);
     });
   });
 });

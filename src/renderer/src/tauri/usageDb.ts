@@ -323,6 +323,47 @@ export async function queryBreakdown(dim: "profile" | "model", range: TimeRange,
   }));
 }
 
+/**
+ * Per-model token-type sums over a range, optionally bucketed by day. Returned
+ * rows carry the raw token dimensions so the caller can compute cost at read
+ * time with the model's *current* pricing (cost is never read from a stored
+ * value). `day` is an empty string when `byDay` is false.
+ */
+export interface ModelTokenSums {
+  model: string;
+  day: string;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cache_read_tokens: number;
+  cache_creation_tokens: number;
+  reasoning_tokens: number;
+}
+
+export async function queryModelTokenSums(range: TimeRange, byDay: boolean): Promise<ModelTokenSums[]> {
+  const b = computeBounds(range);
+  const dayCol = byDay ? "day_utc" : "''";
+  const rows = await query(
+    `SELECT model AS model, ${dayCol} AS day,
+       SUM(prompt_tokens_sum) AS prompt_tokens,
+       SUM(completion_tokens_sum) AS completion_tokens,
+       SUM(cache_read_tokens_sum) AS cache_read_tokens,
+       SUM(cache_creation_tokens_sum) AS cache_creation_tokens,
+       SUM(reasoning_tokens_sum) AS reasoning_tokens
+     FROM daily_aggregate WHERE day_utc BETWEEN @from_day AND @to_day
+     GROUP BY model${byDay ? ", day_utc" : ""}`,
+    { from_day: b.fromDay, to_day: b.toDay },
+  );
+  return rows.map((r) => ({
+    model: str(r.model),
+    day: str(r.day),
+    prompt_tokens: num(r.prompt_tokens),
+    completion_tokens: num(r.completion_tokens),
+    cache_read_tokens: num(r.cache_read_tokens),
+    cache_creation_tokens: num(r.cache_creation_tokens),
+    reasoning_tokens: num(r.reasoning_tokens),
+  }));
+}
+
 export async function queryHeaviestSessions(range: TimeRange, limit: number): Promise<SessionRow[]> {
   const b = computeBounds(range);
   const rows = await query(
