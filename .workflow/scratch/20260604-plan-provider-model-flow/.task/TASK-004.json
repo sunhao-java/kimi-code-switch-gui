@@ -1,0 +1,32 @@
+{
+  "task_id": "TASK-004",
+  "title": "Provider 卡片引用计数徽标",
+  "description": "Provider 卡片右上角显示'被 N 个模型引用'徽标，点击跳转到 Models Tab 并高亮相关 Model",
+  "priority": "high",
+  "wave": 3,
+  "estimated_effort": "2h",
+  "acceptance_criteria": [
+    "Provider 卡片显示引用计数徽标（Link 图标 + 数字）",
+    "徽标颜色：0 引用灰色，≥1 引用蓝色",
+    "点击徽标跳转到 Models Tab，并高亮引用该 Provider 的 Model",
+    "高亮效果：卡片边框变色或背景高亮 2 秒后恢复"
+  ],
+  "implementation_notes": [
+    "SplitLayout renderItemAction 调用 getProviderReferences(state, provider.name)",
+    "渲染 <ReferenceBadge count={refs.length} icon={Link} onClick={handleJump} />",
+    "handleJump: setActiveTab('models') + setHighlightedModels(refs.map(r => r.name)) + setTimeout(() => setHighlightedModels([]), 2000)",
+    "CSS: .reference-badge { background: var(--gray-100); padding: 4px 8px; border-radius: 4px; }",
+    ".reference-badge.has-refs { background: var(--blue-100); color: var(--blue-700); }"
+  ],
+  "files_to_modify": [
+    "src/renderer/src/TabPanels.tsx (Providers Tab renderItemAction)",
+    "src/renderer/src/components/ReferenceBadge.tsx (新增)",
+    "src/renderer/src/components.css (新增 .reference-badge)",
+    "src/renderer/src/i18n.ts"
+  ],
+  "dependencies": ["TASK-001"],
+  "blocked_by": ["TASK-001"],
+  "blocks": ["TASK-008"],
+  "related_features": ["F-004"],
+  "test_strategy": "手动测试跳转和高亮效果"
+}

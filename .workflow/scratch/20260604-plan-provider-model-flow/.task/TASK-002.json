@@ -1,0 +1,30 @@
+{
+  "task_id": "TASK-002",
+  "title": "空状态引导 - 依赖项缺失时禁用添加按钮",
+  "description": "当 Provider 列表为空时，禁用 Model/Profile Tab 的添加按钮，并显示 tooltip 提示用户先添加 Provider",
+  "priority": "high",
+  "wave": 2,
+  "estimated_effort": "1h",
+  "acceptance_criteria": [
+    "Provider 为空时，Models Tab 添加按钮 disabled",
+    "Provider 为空且 Model 为空时，Profiles Tab 添加按钮 disabled",
+    "Hover 禁用按钮显示 tooltip：'请先添加 Provider' / '请先添加 Model'",
+    "添加 Provider 后，Models Tab 添加按钮自动启用"
+  ],
+  "implementation_notes": [
+    "在 TabPanels.tsx 中计算 hasProviders = Object.keys(state.mainConfig.providers).length > 0",
+    "计算 hasModels = Object.keys(state.mainConfig.models).length > 0",
+    "Models Tab: addButton disabled={!hasProviders}，title={!hasProviders ? t('tooltip.addProviderFirst') : ''}",
+    "Profiles Tab: addButton disabled={!hasModels}，title={!hasModels ? t('tooltip.addModelFirst') : ''}",
+    "使用 HTML title 属性作为 tooltip（简单实现）"
+  ],
+  "files_to_modify": [
+    "src/renderer/src/TabPanels.tsx",
+    "src/renderer/src/i18n.ts (新增 tooltip.addProviderFirst / tooltip.addModelFirst)"
+  ],
+  "dependencies": ["TASK-001"],
+  "blocked_by": ["TASK-001"],
+  "blocks": ["TASK-007"],
+  "related_features": ["F-002"],
+  "test_strategy": "手动测试空状态和添加后启用流程"
+}

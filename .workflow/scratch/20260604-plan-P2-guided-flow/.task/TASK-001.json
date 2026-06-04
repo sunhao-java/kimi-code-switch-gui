@@ -1,0 +1,108 @@
+{
+  "id": "TASK-001",
+  "title": "引导式顺序添加与空状态引导",
+  "description": "实现 REQ-401(顺序引导) + REQ-404(空状态引导)。在 TabPanels 添加 Model/Profile 时，检测 providers/models 是否为空，为空则禁用按钮并显示引导；替换通用 EmptyState 为场景化 GuidedEmptyState 组件，携带上下文（如"请先添加 Provider"）；Model 表单的 provider 下拉列表为空时显示内联提示；Profile 表单的 default_model 下拉列表为空时显示内联提示。同步补齐所有新增 i18n key 的 6 语言翻译。",
+  "type": "feature",
+  "priority": "high",
+  "effort": "medium",
+  "action": "实现引导式添加流程：(1) TabPanels.tsx 的 onAdd 回调中，Model 添加前检查 providers 列表为空则禁用按钮显示 tooltip 提示；Profile 添加前检查 models 列表为空则禁用按钮显示 tooltip；(2) layoutComponents.tsx 新增 GuidedEmptyState 组件，接收 context 参数（provider/model/profile），渲染场景化引导文案；(3) TabPanels.tsx 替换 4 处 EmptyState 为 GuidedEmptyState，传入对应 context；(4) ModelForm/ProfileForm 的下拉列表为空时，显示内联引导提示（Select 组件 placeholder 或禁用态 hint）；(5) i18n.ts 新增 key: guidedEmptyProvider/guidedEmptyModel/guidedEmptyProfile/errorCreateProviderFirst/errorCreateModelFirst/providerListEmpty/modelListEmpty，补齐 6 语言。",
+  "scope": "src/renderer/src/",
+  "focus_paths": [
+    "src/renderer/src/tabs/TabPanels.tsx",
+    "src/renderer/src/layoutComponents.tsx",
+    "src/renderer/src/tabComponents.tsx",
+    "src/renderer/src/i18n.ts"
+  ],
+  "depends_on": [],
+  "parallel_group": null,
+  "convergence": {
+    "criteria": [
+      "grep 'guidedEmptyProvider\\|guidedEmptyModel\\|guidedEmptyProfile' src/renderer/src/i18n.ts 返回 6 语言的定义",
+      "grep 'GuidedEmptyState' src/renderer/src/layoutComponents.tsx 返回组件定义",
+      "grep 'GuidedEmptyState.*context=' src/renderer/src/tabs/TabPanels.tsx 返回 4 处使用（providers/models/profiles/mcp 各一处）",
+      "grep 'disabled={.*\\.length === 0}' src/renderer/src/tabs/TabPanels.tsx 返回 Model 和 Profile 添加按钮的禁用逻辑"
+    ],
+    "verification": "npm run build && grep -A2 'guidedEmpty' src/renderer/src/i18n.ts | wc -l 返回 18+ (6语言×3个key)",
+    "definition_of_done": "Model/Profile 添加按钮在依赖项为空时禁用并显示 tooltip；空状态显示场景化引导文案；所有新增 i18n key 补齐 6 语言"
+  },
+  "files": [
+    {
+      "path": "src/renderer/src/tabs/TabPanels.tsx",
+      "action": "modify",
+      "target": "Models tab onAdd (L499-524) 和 Profiles tab onAdd (L580-605)",
+      "change": "在 addButtonTitle 中检查依赖项为空时添加禁用态提示；替换 EmptyState 为 GuidedEmptyState 并传入 context 参数"
+    },
+    {
+      "path": "src/renderer/src/layoutComponents.tsx",
+      "action": "modify",
+      "target": "EmptyState 组件 (L104-111)",
+      "change": "新增 GuidedEmptyState 组件，接收 context: 'provider' | 'model' | 'profile' | 'mcp'，渲染不同引导文案"
+    },
+    {
+      "path": "src/renderer/src/tabComponents.tsx",
+      "action": "modify",
+      "target": "ModelForm (L203-284) 和 ProfileForm (L519-586) 的 SelectField",
+      "change": "provider/model 下拉列表为空时，显示内联提示或 placeholder 引导"
+    },
+    {
+      "path": "src/renderer/src/i18n.ts",
+      "action": "modify",
+      "target": "baseMessages 对象",
+      "change": "新增 guidedEmptyProvider/guidedEmptyModel/guidedEmptyProfile/providerListEmpty/modelListEmpty 等 key，补齐 6 语言（zh-CN 原文，zh-TW 用 toTraditionalChinese 转换，en-US/ja-JP/de-DE/es-ES 翻译）"
+    }
+  ],
+  "implementation": [
+    "读取 TabPanels.tsx L466-564（Models tab）和 L566-783（Profiles tab），理解现有 onAdd 逻辑与 EmptyState 使用",
+    "读取 layoutComponents.tsx L104-111 EmptyState 组件，作为 GuidedEmptyState 的模板",
+    "在 layoutComponents.tsx 新增 GuidedEmptyState 组件：接收 locale 和 context 参数，根据 context 渲染不同 i18n key",
+    "在 TabPanels.tsx 替换 4 处 <EmptyState locale={locale} /> 为 <GuidedEmptyState locale={locale} context=\"provider|model|profile|mcp\" />",
+    "在 TabPanels.tsx Models tab 的 addButton，添加 disabled={providerEntries.length === 0}，title 中检测为空时显示引导提示",
+    "在 TabPanels.tsx Profiles tab 的 addButton，添加 disabled={modelEntries.length === 0}，title 中检测为空时显示引导提示",
+    "在 tabComponents.tsx ModelForm 的 provider SelectField，添加 placeholder 或 hint 提示（当 props.providers.length === 0）",
+    "在 tabComponents.tsx ProfileForm 的 default_model SelectField，添加 placeholder 或 hint 提示（当 props.models.length === 0）",
+    "在 i18n.ts baseMessages 的 zh-CN 对象中新增 7+ 个 key（guidedEmptyProvider/guidedEmptyModel/guidedEmptyProfile/providerListEmpty/modelListEmpty/errorCreateProviderFirst/errorCreateModelFirst）",
+    "复制 zh-CN 的新 key 到 zh-TW 并用 toTraditionalChinese 转换；补齐 en-US/ja-JP/de-DE/es-ES 的翻译"
+  ],
+  "test": {
+    "commands": ["npm run build"],
+    "unit": [],
+    "integration": [],
+    "success_metrics": [
+      "TypeScript 编译通过",
+      "grep 返回的 i18n key 数量正确",
+      "启动 dev 环境，Provider 列表为空时，Model 添加按钮禁用且显示引导 tooltip"
+    ]
+  },
+  "reference": {
+    "pattern": "TabPanels.tsx L499-524 现有的 errorCreateProviderFirst 检查；EmptyState 组件的结构",
+    "files": [
+      "src/renderer/src/tabs/TabPanels.tsx",
+      "src/renderer/src/layoutComponents.tsx",
+      "src/renderer/src/i18n.ts"
+    ],
+    "examples": "errorCreateProviderFirst/errorCreateModelFirst 已有的 i18n key 作为参考"
+  },
+  "rationale": {
+    "chosen_approach": "替换 EmptyState 为 GuidedEmptyState 而非修改 EmptyState，保持组件单一职责；禁用按钮而非点击后弹窗，前置引导更友好",
+    "decision_factors": [
+      "现有 onAdd 已有 throw Error 逻辑，需前移到按钮禁用",
+      "EmptyState 是通用组件，不适合携带场景上下文",
+      "6 语言 i18n 是硬性要求，zh-TW 可通过 toTraditionalChinese 工具函数转换"
+    ],
+    "tradeoffs": "新增组件增加代码量，但保持了组件边界清晰；禁用按钮需要在多处检测列表长度，略显重复但逻辑直观"
+  },
+  "risks": [
+    "TabPanels.tsx 文件较大（1800+ 行），修改时需精确定位 EmptyState 出现位置",
+    "i18n key 补齐 6 语言，en-US/ja-JP/de-DE/es-ES 需要准确翻译"
+  ],
+  "meta": {
+    "status": "pending",
+    "estimated_time": "60-90min",
+    "risk": "low",
+    "autonomous": true,
+    "checkpoint": false,
+    "wave": 1,
+    "execution_group": null,
+    "executor": "agent"
+  }
+}

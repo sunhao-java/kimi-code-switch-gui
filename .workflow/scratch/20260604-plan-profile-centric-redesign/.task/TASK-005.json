@@ -1,0 +1,48 @@
+{
+  "task_id": "TASK-005",
+  "title": "App.tsx 集成视图模式切换和高级配置封装",
+  "type": "implementation",
+  "description": "修改 App.tsx 实现视图模式切换(简单模式显示 ProfileCentricView,高级模式显示三 Tab),创建 AdvancedConfigView 封装现有三 Tab 为可折叠区,集成向导和级联对话框的打开/关闭逻辑。",
+  "action": "1. 在 App.tsx 添加 useState viewMode: 'simple'|'advanced',默认 'simple'。2. 创建 AdvancedConfigView.tsx 接收 currentTab 和三 Tab 的内容作为 children,渲染为可折叠面板(初始展开),包含 [← 返回简单模式] 按钮。3. App.tsx 条件渲染:viewMode==='simple' 渲染 ProfileCentricView(传入 profiles/activeProfile/onSwitch/onAddNew/onShowAdvanced),viewMode==='advanced' 渲染 AdvancedConfigView(包裹现有 TabPanels)。4. 集成向导:useState showWizard,ProfileCentricView 的 onAddNew 设置 showWizard=true,向导 onComplete/onCancel 设置 showWizard=false。5. 集成级联对话框:在 Providers/Models Tab 的删除按钮 onClick 调用 getCascadePreview,如果有依赖则显示 CascadeDeleteDialog,onConfirm 执行级联删除逻辑。",
+  "implementation": [
+    "App.tsx 添加 useState<'simple'|'advanced'>([viewMode, setViewMode], 'simple')",
+    "App.tsx 添加 useState<boolean>([showWizard, setShowWizard], false)",
+    "App.tsx 添加 useState<{target, impact}|null>([cascadeDelete, setCascadeDelete], null)",
+    "创建 AdvancedConfigView.tsx:接收 props { currentTab, children, onBackToSimple },渲染 div.advanced-view 包含顶部 [← 返回简单模式] 按钮(onClick 调用 onBackToSimple)和 children(三 Tab 内容)",
+    "App.tsx 主渲染逻辑:{ viewMode === 'simple' ? <ProfileCentricView profiles={...} activeProfile={...} onSwitch={handleSwitch} onAddNew={() => setShowWizard(true)} onShowAdvanced={() => setViewMode('advanced')} /> : <AdvancedConfigView currentTab={currentTab} onBackToSimple={() => setViewMode('simple')}><TabPanels .../></AdvancedConfigView> }",
+    "App.tsx 向导渲染:{ showWizard && <AddAssistantWizard onComplete={handleWizardComplete} onCancel={() => setShowWizard(false)} /> }",
+    "App.tsx 级联对话框渲染:{ cascadeDelete && <CascadeDeleteDialog target={cascadeDelete.target} cascadeImpact={cascadeDelete.impact} onConfirm={handleCascadeConfirm} onCancel={() => setCascadeDelete(null)} /> }",
+    "Providers Tab 删除按钮 onClick:const impact = getCascadePreview(state, {type:'provider', name}); if (impact.affectedModels.length > 0 || impact.affectedProfiles.length > 0) { setCascadeDelete({target:{type:'provider',name}, impact}) } else { 直接删除 }",
+    "handleCascadeConfirm:if (strategy === 'cascade') { 删除 target + affectedModels + affectedProfiles } else { 仅删除 target },如果 isCurrentActive 自动切换到第一个可用 Profile"
+  ],
+  "files": [
+    "src/renderer/src/App.tsx",
+    "src/renderer/src/views/AdvancedConfigView.tsx"
+  ],
+  "read_first": [
+    "src/renderer/src/App.tsx",
+    "src/shared/configStore.ts",
+    "src/shared/configRelations.ts",
+    "src/renderer/src/views/ProfileCentricView.tsx",
+    "src/renderer/src/wizards/AddAssistantWizard.tsx",
+    "src/renderer/src/dialogs/CascadeDeleteDialog.tsx",
+    ".workflow/scratch/20260604-brainstorm-profile-centric-redesign/design-exploration.md"
+  ],
+  "depends_on": ["TASK-002", "TASK-003", "TASK-004"],
+  "complexity": "high",
+  "estimated_time": "90min",
+  "convergence": {
+    "criteria": [
+      "src/renderer/src/App.tsx 包含 useState viewMode",
+      "src/renderer/src/App.tsx 包含 useState showWizard",
+      "src/renderer/src/App.tsx 包含 useState cascadeDelete",
+      "src/renderer/src/views/AdvancedConfigView.tsx 文件存在",
+      "App.tsx 条件渲染 viewMode === 'simple' ? ProfileCentricView : AdvancedConfigView",
+      "App.tsx 渲染 showWizard && <AddAssistantWizard",
+      "App.tsx 渲染 cascadeDelete && <CascadeDeleteDialog",
+      "Providers Tab 删除逻辑调用 getCascadePreview"
+    ],
+    "verification_method": "grep + npm run dev 完整流程测试(简单模式切换/向导流程/级联删除)"
+  },
+  "wave": 3
+}

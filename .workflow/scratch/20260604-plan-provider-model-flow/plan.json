@@ -1,0 +1,80 @@
+{
+  "plan_id": "PLN-20260604-142418",
+  "title": "Provider/Model/Profile 流程简化与引用完整性",
+  "created_at": "2026-06-04T14:24:18+08:00",
+  "scope": "standalone",
+  "source": "brainstorm:20260604-brainstorm-provider-model-flow",
+  "context_dir": "/Users/sunhao/Documents/workspaces/lodsve/kimi-code-switch-gui/.workflow/scratch/20260604-brainstorm-provider-model-flow",
+  "output_dir": "/Users/sunhao/Documents/workspaces/lodsve/kimi-code-switch-gui/.workflow/scratch/20260604-plan-provider-model-flow",
+  "strategy": "incremental-with-validation",
+  "task_ids": [
+    "TASK-001",
+    "TASK-002",
+    "TASK-003",
+    "TASK-004",
+    "TASK-005",
+    "TASK-006",
+    "TASK-007",
+    "TASK-008"
+  ],
+  "waves": [
+    {
+      "wave_id": 1,
+      "name": "Foundation - 引用关系工具函数",
+      "tasks": ["TASK-001"],
+      "blocking": true,
+      "rationale": "所有后续功能依赖引用关系计算"
+    },
+    {
+      "wave_id": 2,
+      "name": "UI Logic - 引导与校验",
+      "tasks": ["TASK-002", "TASK-003"],
+      "blocking": false,
+      "rationale": "空状态引导和删除校验可并行开发"
+    },
+    {
+      "wave_id": 3,
+      "name": "Visualization - 关系可视化",
+      "tasks": ["TASK-004", "TASK-005", "TASK-006"],
+      "blocking": false,
+      "rationale": "引用计数徽标、Provider/Model 徽标并行开发"
+    },
+    {
+      "wave_id": 4,
+      "name": "Polish - 组件与 i18n",
+      "tasks": ["TASK-007", "TASK-008"],
+      "blocking": false,
+      "rationale": "场景化组件和国际化最后统一完成"
+    }
+  ],
+  "dependencies": {
+    "TASK-002": ["TASK-001"],
+    "TASK-003": ["TASK-001"],
+    "TASK-004": ["TASK-001"],
+    "TASK-005": ["TASK-001"],
+    "TASK-006": ["TASK-001"],
+    "TASK-007": ["TASK-002", "TASK-003"],
+    "TASK-008": ["TASK-002", "TASK-003", "TASK-004", "TASK-005", "TASK-006", "TASK-007"]
+  },
+  "risks": [
+    {
+      "id": "R-001",
+      "description": "i18n 工作量大（6 语言 × 20+ key）",
+      "mitigation": "使用 AI 翻译工具批量生成，人工校对关键术语",
+      "impact": "medium"
+    },
+    {
+      "id": "R-002",
+      "description": "跨 Tab 跳转高亮可能有时序问题",
+      "mitigation": "使用 useEffect + setTimeout 确保状态同步",
+      "impact": "low"
+    }
+  ],
+  "success_criteria": [
+    "引用关系工具函数单元测试覆盖率 100%",
+    "删除有引用的 Provider/Model 会弹窗阻止",
+    "Provider 卡片显示引用计数，点击跳转正常",
+    "Model 卡片显示所属 Provider，点击跳转正常",
+    "6 语言 i18n 全部补齐"
+  ]
+}

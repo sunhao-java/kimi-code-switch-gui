@@ -1,0 +1,30 @@
+{
+  "task_id": "TASK-005",
+  "title": "Model 卡片所属 Provider 徽标",
+  "description": "Model 卡片左上角显示所属 Provider 名称徽标，点击跳转到 Providers Tab 并高亮该 Provider",
+  "priority": "high",
+  "wave": 3,
+  "estimated_effort": "1.5h",
+  "acceptance_criteria": [
+    "Model 卡片显示所属 Provider 徽标（tag 图标 + Provider 名称）",
+    "点击徽标跳转到 Providers Tab，并高亮该 Provider",
+    "如果 Provider 不存在（数据不一致），徽标显示为红色警告"
+  ],
+  "implementation_notes": [
+    "SplitLayout renderItemAction 读取 model.provider",
+    "渲染 <ProviderBadge providerName={model.provider} onClick={handleJump} />",
+    "handleJump: setActiveTab('providers') + setHighlightedProvider(model.provider) + setTimeout清除",
+    "校验：if (!state.mainConfig.providers[model.provider]) 显示警告样式"
+  ],
+  "files_to_modify": [
+    "src/renderer/src/TabPanels.tsx (Models Tab renderItemAction)",
+    "src/renderer/src/components/ProviderBadge.tsx (新增)",
+    "src/renderer/src/components.css",
+    "src/renderer/src/i18n.ts"
+  ],
+  "dependencies": ["TASK-001"],
+  "blocked_by": ["TASK-001"],
+  "blocks": ["TASK-008"],
+  "related_features": ["F-005"],
+  "test_strategy": "手动测试跳转和不存在 Provider 的警告样式"
+}

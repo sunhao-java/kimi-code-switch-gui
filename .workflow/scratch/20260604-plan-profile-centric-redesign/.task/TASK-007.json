@@ -1,0 +1,43 @@
+{
+  "task_id": "TASK-007",
+  "title": "测试覆盖:单元测试和集成测试",
+  "type": "implementation",
+  "description": "编写单元测试(getCascadePreview 逻辑、向导状态机)和集成测试(端到端向导流程、级联删除流程),确保代码覆盖率 ≥80%。",
+  "action": "1. 扩展 src/shared/configRelations.test.ts 添加 getCascadePreview 单元测试:测试删除 Provider 时正确返回 affectedModels/affectedProfiles,测试 isCurrentActive 判断,测试无依赖场景。2. 创建 src/renderer/src/wizards/AddAssistantWizard.test.tsx 测试向导状态机:测试 step 1→2→3 转换,测试 formData 更新,测试 onComplete 调用 configStore 函数。3. 创建集成测试 src/renderer/src/App.integration.test.tsx:测试完整向导流程(选择来源 → 填表 → 完成 → 生成 TOML),测试级联删除流程(删除有依赖的 Provider → 弹窗 → 确认级联 → 验证数据清理)。4. 运行 npm test 确保覆盖率达标。",
+  "implementation": [
+    "扩展 configRelations.test.ts:describe('getCascadePreview', () => { test('删除有依赖的 Provider', ...), test('删除无依赖的 Provider', ...), test('当前激活配置受影响', ...) })",
+    "创建 AddAssistantWizard.test.tsx:mock configStore 函数,render(<AddAssistantWizard ... />),fireEvent.click 选择来源,验证 step 状态,fireEvent.change 填写表单,验证 formData,fireEvent.click 完成按钮,验证 upsertProvider/upsertModel/upsertProfile 被调用",
+    "创建 App.integration.test.tsx:setup 完整 App 组件,测试向导流程(点击配置新助手 → 选择 OpenAI → 填写 API Key → 完成 → 验证 state.profiles 增加),测试级联删除流程(创建有依赖的 Provider → 点删除 → 验证弹窗显示 → 选择级联删除 → 验证 state 清理)",
+    "运行 npm test -- --coverage,检查 src/shared/configRelations.ts, src/renderer/src/wizards/, src/renderer/src/views/, src/renderer/src/dialogs/ 覆盖率",
+    "如果覆盖率 <80%,补充缺失的测试用例(边界情况、错误处理、空状态)"
+  ],
+  "files": [
+    "src/shared/configRelations.test.ts",
+    "src/renderer/src/wizards/AddAssistantWizard.test.tsx",
+    "src/renderer/src/App.integration.test.tsx"
+  ],
+  "read_first": [
+    "src/shared/configStore.test.ts",
+    "src/shared/configRelations.ts",
+    "src/renderer/src/wizards/AddAssistantWizard.tsx",
+    "src/renderer/src/App.tsx",
+    ".workflow/scratch/20260604-brainstorm-profile-centric-redesign/design-exploration.md"
+  ],
+  "depends_on": ["TASK-001", "TASK-002", "TASK-003", "TASK-004", "TASK-005"],
+  "complexity": "high",
+  "estimated_time": "120min",
+  "convergence": {
+    "criteria": [
+      "src/shared/configRelations.test.ts 包含 describe('getCascadePreview'",
+      "src/renderer/src/wizards/AddAssistantWizard.test.tsx 文件存在",
+      "src/renderer/src/App.integration.test.tsx 文件存在",
+      "npm test 退出码 0",
+      "npm test -- --coverage 输出显示 Statements >= 80%",
+      "npm test -- --coverage 输出显示 Branches >= 55%",
+      "npm test -- --coverage 输出显示 Functions >= 80%",
+      "npm test -- --coverage 输出显示 Lines >= 80%"
+    ],
+    "verification_method": "npm test -- --coverage 命令输出"
+  },
+  "wave": 5
+}

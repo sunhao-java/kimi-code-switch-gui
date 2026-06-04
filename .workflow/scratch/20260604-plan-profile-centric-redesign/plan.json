@@ -1,0 +1,50 @@
+{
+  "summary": "Profile 中心视图 + 向导式创建 + 级联删除引导 MVP 实现",
+  "approach": "信息架构重构:将 Profile 提升为主视图,三步向导消除认知负荷,级联预览替代删除拦截。保留三 Tab 作为高级配置,确保向后兼容。所有新增组件独立测试,端到端流程验证,6 语言 i18n 完整覆盖。",
+  "scope": "standalone",
+  "task_ids": ["TASK-001", "TASK-002", "TASK-003", "TASK-004", "TASK-005", "TASK-006", "TASK-007"],
+  "task_count": 7,
+  "complexity": "medium-high",
+  "waves": [
+    {
+      "wave": 1,
+      "label": "基础设施层",
+      "tasks": ["TASK-001"],
+      "rationale": "级联删除逻辑和预设配置是后续 UI 组件的依赖"
+    },
+    {
+      "wave": 2,
+      "label": "核心 UI 组件",
+      "tasks": ["TASK-002", "TASK-003", "TASK-004"],
+      "rationale": "Profile 视图、向导、级联对话框可并行开发,互不依赖"
+    },
+    {
+      "wave": 3,
+      "label": "集成与切换",
+      "tasks": ["TASK-005"],
+      "rationale": "App.tsx 集成依赖所有 UI 组件就绪"
+    },
+    {
+      "wave": 4,
+      "label": "国际化",
+      "tasks": ["TASK-006"],
+      "rationale": "所有 UI 文案确定后补全翻译"
+    },
+    {
+      "wave": 5,
+      "label": "质量保证",
+      "tasks": ["TASK-007"],
+      "rationale": "功能完成后补充测试覆盖"
+    }
+  ],
+  "confidence": {
+    "overall": 0.82,
+    "dimensions": {
+      "requirements_coverage": 0.85,
+      "task_quality": 0.88,
+      "dependency_correctness": 0.90,
+      "estimation_accuracy": 0.75,
+      "collision_safety": 0.80
+    }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "task_id": "TASK-004",
+  "title": "实现级联删除确认对话框",
+  "type": "implementation",
+  "description": "创建 CascadeDeleteDialog 组件,显示删除 Provider/Model 的影响预览(受影响的模型、配置、当前激活状态),提供级联删除和仅删除目标两个选项。",
+  "action": "创建 CascadeDeleteDialog.tsx 接收 props: { target: {type:'provider'|'model', name:string}, cascadeImpact: CascadeImpact, onConfirm: (strategy:'cascade'|'orphan')=>void, onCancel: ()=>void }。布局:⚠️ 警告标题,受影响的模型列表(affectedModels.map显示name),受影响的配置列表(affectedProfiles.map显示name,当前激活标⚡),单选按钮组:● 一并删除所有相关配置(推荐) / ○ 仅删除 {target.type},保留孤儿数据,底部[确认删除][取消]按钮。如果 isCurrentActive 显示额外警告'当前激活的配置将切换到备用配置'。模态对话框,使用 glass-panel + backdrop。",
+  "implementation": [
+    "创建 CascadeDeleteDialog.tsx,定义 Props 接口",
+    "对话框标题:⚠️ 该 {target.type === 'provider' ? 'Provider' : 'Model'} 正被 {cascadeImpact.affectedModels.length + cascadeImpact.affectedProfiles.length} 个对象使用",
+    "受影响的模型列表:仅当 target.type === 'provider' 时显示,cascadeImpact.affectedModels.map(m => <li key={m.name}>{m.name}</li>)",
+    "受影响的配置列表:cascadeImpact.affectedProfiles.map(p => <li key={p.name}>{p.name} {cascadeImpact.isCurrentActive && p.name === activeProfile ? '⚡当前激活' : ''}</li>)",
+    "单选按钮组:useState([strategy, setStrategy]),两个 radio input,默认选中 'cascade'",
+    "确认按钮:onClick 调用 props.onConfirm(strategy),取消按钮调用 props.onCancel",
+    "条件渲染:如果 cascadeImpact.isCurrentActive,显示额外 div.warning '删除后将自动切换到备用配置'",
+    "模态容器:fixed position,z-index 高于向导,Escape 调用 onCancel"
+  ],
+  "files": [
+    "src/renderer/src/dialogs/CascadeDeleteDialog.tsx"
+  ],
+  "read_first": [
+    "src/shared/types.ts",
+    "src/shared/configRelations.ts",
+    ".workflow/scratch/20260604-brainstorm-profile-centric-redesign/design-exploration.md",
+    "src/renderer/src/index.css"
+  ],
+  "depends_on": ["TASK-001"],
+  "complexity": "medium",
+  "estimated_time": "60min",
+  "convergence": {
+    "criteria": [
+      "src/renderer/src/dialogs/CascadeDeleteDialog.tsx 文件存在",
+      "CascadeDeleteDialog 导出 React.FC<Props>",
+      "组件包含 'affectedModels' 和 'affectedProfiles' 列表渲染",
+      "组件包含两个 radio input,value='cascade' 和 'orphan'",
+      "组件包含 [确认删除] 和 [取消] 按钮",
+      "对话框 className 包含 'dialog-modal' 且 position: fixed"
+    ],
+    "verification_method": "grep + npm run dev 目视检查"
+  },
+  "wave": 2
+}

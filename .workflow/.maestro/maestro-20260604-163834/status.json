@@ -1,0 +1,261 @@
+{
+  "session_id": "maestro-20260604-163834",
+  "source": "maestro",
+  "intent": "从产品交互设计探索落地实现：Profile 中心视图 + 向导式创建 + 级联删除引导",
+  "task_type": "brainstorm-driven",
+  "chain_name": "brainstorm-driven",
+  "ralph_protocol_version": "1",
+  "active_step_index": null,
+  "phase": null,
+  "phase_is_new": false,
+  "milestone": "v2.2",
+  "scope_verdict": null,
+  "analyze_macro_id": null,
+  "blueprint_id": null,
+  "auto_mode": false,
+  "cli_tool": "claude",
+  "context": {
+    "scratch_dir": ".workflow/scratch/20260604-brainstorm-profile-centric-redesign",
+    "plan_dir": ".workflow/scratch/20260604-plan-profile-centric-redesign",
+    "analysis_dir": null,
+    "brainstorm_dir": ".workflow/scratch/20260604-brainstorm-profile-centric-redesign",
+    "blueprint_dir": null,
+    "issue_id": null
+  },
+  "steps": [
+    {
+      "index": 0,
+      "skill": "maestro-plan",
+      "args": "--from brainstorm:.workflow/scratch/20260604-brainstorm-profile-centric-redesign",
+      "stage": "plan",
+      "scope": null,
+      "decision": null,
+      "command_scope": "global",
+      "command_path": "/Users/sunhao/.claude/commands/maestro-plan.md",
+      "milestone_id": null,
+      "source_artifact_ref": "brainstorm:.workflow/scratch/20260604-brainstorm-profile-centric-redesign",
+      "status": "completed",
+      "goal_ref": null,
+      "completion_confirmed": true,
+      "completion_status": "DONE",
+      "completion_evidence": ".workflow/scratch/20260604-plan-profile-centric-redesign/plan.json",
+      "completed_at": "2026-06-04T12:01:48.030Z",
+      "deferred_reads": [
+        "/Users/sunhao/.maestro/templates/plan.json",
+        "/Users/sunhao/.maestro/templates/task.json",
+        "/Users/sunhao/.maestro/templates/state.json"
+      ],
+      "load": {
+        "loaded_at": "2026-06-04T10:04:56.903Z",
+        "required_files": [
+          "/Users/sunhao/.maestro/workflows/plan.md"
+        ],
+        "deferred_files": [
+          "/Users/sunhao/.maestro/templates/plan.json",
+          "/Users/sunhao/.maestro/templates/task.json",
+          "/Users/sunhao/.maestro/templates/state.json"
+        ],
+        "resolve_version": "1"
+      },
+      "concerns": null
+    },
+    {
+      "index": 1,
+      "skill": "maestro-execute",
+      "args": "--from plan",
+      "stage": "execute",
+      "scope": null,
+      "decision": null,
+      "command_scope": "global",
+      "command_path": "/Users/sunhao/.claude/commands/maestro-execute.md",
+      "milestone_id": null,
+      "source_artifact_ref": null,
+      "status": "completed",
+      "goal_ref": null,
+      "completion_confirmed": true,
+      "completion_status": "DONE",
+      "completion_evidence": ".workflow/scratch/20260604-plan-profile-centric-redesign/plan.json",
+      "completed_at": "2026-06-04T12:49:09.068Z",
+      "deferred_reads": [
+        "/Users/sunhao/.maestro/templates/task.json",
+        "/Users/sunhao/.maestro/templates/state.json"
+      ],
+      "load": {
+        "loaded_at": "2026-06-04T12:01:53.160Z",
+        "required_files": [
+          "/Users/sunhao/.maestro/workflows/execute.md"
+        ],
+        "deferred_files": [
+          "/Users/sunhao/.maestro/templates/task.json",
+          "/Users/sunhao/.maestro/templates/state.json"
+        ],
+        "resolve_version": "1"
+      },
+      "concerns": null
+    },
+    {
+      "index": 2,
+      "skill": "maestro-verify",
+      "args": "--from execute",
+      "stage": "verify",
+      "scope": null,
+      "decision": null,
+      "command_scope": "global",
+      "command_path": "/Users/sunhao/.claude/commands/maestro-verify.md",
+      "milestone_id": null,
+      "source_artifact_ref": null,
+      "status": "pending",
+      "goal_ref": null,
+      "completion_confirmed": false,
+      "completion_status": null,
+      "completion_evidence": null,
+      "completed_at": null,
+      "deferred_reads": [],
+      "load": null
+    }
+  ],
+  "waves": [],
+  "current_step": 0,
+  "status": "running",
+  "boundary_contract": {
+    "in_scope": [
+      "Profile 中心视图 (ProfileCentricView 组件)",
+      "三步向导式创建流程 (AddAssistantWizard + Step1/2/3 子组件)",
+      "级联删除确认对话框 (CascadeDeleteDialog)",
+      "高级配置折叠区 (AdvancedConfigView 封装现有三 Tab)",
+      "App.tsx 视图模式切换逻辑",
+      "configRelations.ts 扩展 (getCascadePreview 函数)",
+      "sourcePresets.ts (OpenAI/Anthropic/Ollama 等预设配置)",
+      "6 语言 i18n 翻译 (~30 个新 key × 6 语言)",
+      "单元测试 (向导状态机 + 级联预览逻辑)",
+      "集成测试 (端到端向导流程 + 级联删除)"
+    ],
+    "out_of_scope": [
+      "关系图可视化 (标记为 Phase 2)",
+      "批量导入/导出 Provider/Model",
+      "配置迁移向导 (从旧版 GUI 或其他工具导入)",
+      "Ollama 自动扫描 (Step 2 本地模型自动发现)",
+      "API 自动测试连接并获取模型列表 (Step 2 增强功能)",
+      "完全移除三 Tab 代码 (保留为高级配置模式)",
+      "自定义图标选择器 (Step 3 可选功能,可用预设 emoji)",
+      "Profile 模板系统 (快速克隆已有配置)"
+    ],
+    "constraints": [
+      "TOML 配置格式不变 (kimi-code-cli 兼容性)",
+      "configStore.ts 纯函数逻辑不改 (已有 100% 测试覆盖)",
+      "向导生成的数据必须等价于手动三步创建",
+      "Provider name 用户不可见,自动生成格式: {source}-{timestamp}",
+      "Model name 用户不可见,自动生成格式: {source}-{model_id}",
+      "Profile name 是用户唯一关心的名称",
+      "现有三 Tab UI 保留,作为高级配置模式可访问",
+      "所有新增 UI 文案必须支持 zh-CN/zh-TW/en-US/ja-JP/de-DE/es-ES",
+      "不引入新的第三方 UI 库 (使用现有 lucide-react + 原生组件)",
+      "CSS 使用项目现有的 CSS 变量系统,不用 Tailwind"
+    ],
+    "assumptions": [
+      "用户不需要理解 Provider/Model/Profile 三层抽象",
+      "90% 用户只需要 Profile 切换 + 向导添加",
+      "10% 高级用户需要批量管理/调试 → 高级配置模式",
+      "向导 Step 2 可以先支持手动输入,自动发现作为未来增强",
+      "级联删除的默认选项是 '一并删除所有相关配置' (推荐选项)",
+      "删除最后一个 Profile 时需要警告,但不阻止 (允许空配置状态)"
+    ]
+  },
+  "execution_criteria": [
+    "✅ Profile 中心视图可正常显示当前激活配置和其他配置列表",
+    "✅ 点击 '配置新助手' 打开全屏模态向导",
+    "✅ 向导 Step 1 显示卡片式来源选择 (至少 OpenAI/Anthropic/Ollama/自定义)",
+    "✅ 向导 Step 2 根据 Step 1 选择动态切换表单字段",
+    "✅ 向导 Step 3 可输入配置名称,勾选 '完成后立即激活'",
+    "✅ 向导完成后调用 configStore 函数写入 TOML,数据等价于手动三步创建",
+    "✅ 向导完成后如果勾选了激活,Profile 自动切换到新配置",
+    "✅ Profile 视图可切换到高级配置模式,展开显示三 Tab",
+    "✅ 高级配置模式下删除有引用的 Provider,弹出级联预览对话框",
+    "✅ 级联预览对话框显示受影响的 Model 和 Profile 列表",
+    "✅ 级联预览对话框提供 '一并删除' 和 '仅删除 Provider' 两个选项",
+    "✅ 选择 '一并删除' 后,系统自动清理所有下游对象",
+    "✅ 如果当前激活的 Profile 受影响,删除后自动切换到备用 Profile",
+    "✅ 所有新增 UI 文案有 6 种语言翻译",
+    "✅ 向导状态机单元测试覆盖 (step 转换 + 验证)",
+    "✅ getCascadePreview 单元测试覆盖",
+    "✅ 端到端集成测试: 向导流程 Step 1→2→3→生成 TOML",
+    "✅ 端到端集成测试: 级联删除 Provider→验证下游清理+Profile切换",
+    "✅ npm run dev 手动验证所有流程无明显 bug",
+    "✅ 代码已 commit,符合项目规范 (feat: 前缀 + Co-Authored-By)"
+  ],
+  "task_decomposition": [
+    {
+      "id": "GOAL-001",
+      "title": "Profile 中心视图实现",
+      "description": "创建 ProfileCentricView 组件,显示当前激活配置、其他配置列表、配置新助手按钮、高级配置切换按钮",
+      "done_when": "Profile 中心视图可正常显示并响应交互,可切换激活配置,可打开向导",
+      "evidence": "src/renderer/src/views/ProfileCentricView.tsx 文件存在,npm run dev 启动后默认显示该视图",
+      "lifecycle": "plan → execute → verify",
+      "status": "pending",
+      "completion_confirmed": false
+    },
+    {
+      "id": "GOAL-002",
+      "title": "向导式创建流程实现",
+      "description": "创建 AddAssistantWizard 容器组件和 Step1/2/3 子组件,实现三步向导流程,包括来源预设 (sourcePresets.ts)",
+      "done_when": "向导可完整走完三步,Step 2 表单根据 Step 1 动态切换,Step 3 可命名并激活,完成后写入 TOML",
+      "evidence": "src/renderer/src/wizards/ 目录下相关文件存在,向导完成后生成的 TOML 数据等价于手动三步创建",
+      "lifecycle": "plan → execute → verify",
+      "status": "pending",
+      "completion_confirmed": false
+    },
+    {
+      "id": "GOAL-003",
+      "title": "级联删除引导实现",
+      "description": "扩展 configRelations.ts 添加 getCascadePreview 函数,创建 CascadeDeleteDialog 组件,实现级联删除确认流程",
+      "done_when": "删除有引用的 Provider/Model 时弹出级联预览,用户选择级联策略后系统正确清理数据",
+      "evidence": "src/shared/configRelations.ts 包含 getCascadePreview 函数,src/renderer/src/dialogs/CascadeDeleteDialog.tsx 存在,级联删除后 TOML 数据一致",
+      "lifecycle": "plan → execute → verify",
+      "status": "pending",
+      "completion_confirmed": false
+    },
+    {
+      "id": "GOAL-004",
+      "title": "高级配置模式集成",
+      "description": "创建 AdvancedConfigView 封装现有三 Tab,在 App.tsx 实现视图模式切换 (simple/advanced)",
+      "done_when": "Profile 视图可切换到高级配置模式,显示三 Tab,可切回简单模式",
+      "evidence": "src/renderer/src/views/AdvancedConfigView.tsx 存在,App.tsx 有 viewMode 状态和切换逻辑",
+      "lifecycle": "plan → execute → verify",
+      "status": "pending",
+      "completion_confirmed": false
+    },
+    {
+      "id": "GOAL-005",
+      "title": "i18n 翻译补全",
+      "description": "为所有新增 UI 文案添加 6 种语言翻译 (~30 个新 key)",
+      "done_when": "src/renderer/src/i18n.ts 包含所有新增 key 的 6 语言翻译,切换语言后 UI 文案正确显示",
+      "evidence": "i18n.ts 文件更新,包含 zh-CN/zh-TW/en-US/ja-JP/de-DE/es-ES 翻译,手动切换语言验证",
+      "lifecycle": "plan → execute → verify",
+      "status": "pending",
+      "completion_confirmed": false
+    },
+    {
+      "id": "GOAL-006",
+      "title": "测试覆盖",
+      "description": "编写单元测试 (向导状态机 + getCascadePreview) 和集成测试 (端到端向导流程 + 级联删除)",
+      "done_when": "npm test 通过,代码覆盖率 ≥80%,关键流程有集成测试覆盖",
+      "evidence": "测试文件存在,npm test 输出覆盖率报告 ≥80%",
+      "lifecycle": "plan → execute → verify",
+      "status": "pending",
+      "completion_confirmed": false
+    },
+    {
+      "id": "GOAL-007",
+      "title": "手动验证与提交",
+      "description": "npm run dev 手动验证所有流程,修复 bug,提交代码",
+      "done_when": "手动测试无明显 bug,代码已 commit 并符合项目规范",
+      "evidence": "git log 显示新 commit,commit message 符合 'feat: xxx' 格式并包含 Co-Authored-By 行",
+      "lifecycle": "verify",
+      "status": "pending",
+      "completion_confirmed": false
+    }
+  ],
+  "task_decomposition_all_done": false,
+  "created_at": "2026-06-04T08:38:34.000Z",
+  "updated_at": "2026-06-04T08:38:34.000Z"
+}

@@ -1,0 +1,31 @@
+{
+  "task_id": "TASK-007",
+  "title": "场景化空状态组件 GuidedEmptyState",
+  "description": "新增 GuidedEmptyState 组件，根据当前 Tab 和依赖状态显示场景化空状态提示",
+  "priority": "medium",
+  "wave": 4,
+  "estimated_effort": "1.5h",
+  "acceptance_criteria": [
+    "GuidedEmptyState 组件接受 context 参数：{ tab, missingDep, suggestedAction }",
+    "Providers Tab 空状态：'开始添加 Provider 来配置 AI 服务'",
+    "Models Tab 空状态（无 Provider）：'请先添加 Provider，然后可以添加 Model'",
+    "Models Tab 空状态（有 Provider）：'添加 Model 来使用已配置的 Provider'",
+    "Profiles Tab 空状态（无 Model）：'请先添加 Provider 和 Model，然后可以创建 Profile'"
+  ],
+  "implementation_notes": [
+    "新增 src/renderer/src/components/GuidedEmptyState.tsx",
+    "Props: { tab: 'providers'|'models'|'profiles', hasProviders: boolean, hasModels: boolean }",
+    "根据 tab + has* 组合渲染不同文案和图标",
+    "替换 TabPanels 中的通用 EmptyState"
+  ],
+  "files_to_modify": [
+    "src/renderer/src/components/GuidedEmptyState.tsx (新增)",
+    "src/renderer/src/TabPanels.tsx (替换 EmptyState)",
+    "src/renderer/src/i18n.ts (新增场景化文案)"
+  ],
+  "dependencies": ["TASK-002", "TASK-003"],
+  "blocked_by": ["TASK-002", "TASK-003"],
+  "blocks": ["TASK-008"],
+  "related_features": ["F-007"],
+  "test_strategy": "手动测试各种空状态组合"
+}
