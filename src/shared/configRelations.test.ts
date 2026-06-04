@@ -4,6 +4,7 @@ import {
   getModelReferences,
   canDeleteProvider,
   canDeleteModel,
+  getCascadePreview,
 } from './configRelations';
 import type { AppState, ModelConfig, Profile } from './types';
 
@@ -281,6 +282,99 @@ describe('configRelations', () => {
       const result = canDeleteModel(state, 'model1');
       expect(result.canDelete).toBe(false);
       expect(result.references).toHaveLength(2);
+    });
+  });
+
+  describe('getCascadePreview', () => {
+    const makeProfile = (name: string, model: string): Profile => ({
+      name,
+      label: name,
+      default_model: model,
+      default_thinking: false,
+      default_yolo: false,
+      default_plan_mode: false,
+      default_editor: '',
+      theme: 'dark',
+      show_thinking_stream: false,
+      merge_all_available_skills: false,
+    });
+
+    it('删除无依赖的 Provider 返回空影响', () => {
+      const state = createTestState();
+      const result = getCascadePreview(state, { type: 'provider', name: 'p1' });
+      expect(result.affectedModels).toEqual([]);
+      expect(result.affectedProfiles).toEqual([]);
+      expect(result.isCurrentActive).toBe(false);
+      expect(result.suggestedFallbackProfile).toBeNull();
+    });
+
+    it('删除有 Model 依赖的 Provider 返回 affectedModels', () => {
+      const models: Record<string, ModelConfig> = {
+        'm1': { provider: 'p1', model: 'gpt-4', max_context_size: 8192, capabilities: [] },
+        'm2': { provider: 'p1', model: 'gpt-3.5', max_context_size: 4096, capabilities: [] },
+        'm3': { provider: 'p2', model: 'claude', max_context_size: 100000, capabilities: [] },
+      };
+      const state = createTestState(models);
+      const result = getCascadePreview(state, { type: 'provider', name: 'p1' });
+      expect(result.affectedModels).toHaveLength(2);
+      expect(result.affectedModels.map((m) => m.name)).toEqual(['m1', 'm2']);
+    });
+
+    it('删除 Provider 时级联找到受影响的 Profile', () => {
+      const models: Record<string, ModelConfig> = {
+        'm1': { provider: 'p1', model: 'gpt-4', max_context_size: 8192, capabilities: [] },
+      };
+      const profiles: Record<string, Profile> = {
+        'daily': makeProfile('daily', 'm1'),
+        'safe': makeProfile('safe', 'm3'),
+      };
+      const state = createTestState(models, profiles);
+      const result = getCascadePreview(state, { type: 'provider', name: 'p1' });
+      expect(result.affectedModels).toHaveLength(1);
+      expect(result.affectedProfiles).toHaveLength(1);
+      expect(result.affectedProfiles[0].name).toBe('daily');
+    });
+
+    it('检测当前激活配置受影响并建议备选', () => {
+      const models: Record<string, ModelConfig> = {
+        'm1': { provider: 'p1', model: 'gpt-4', max_context_size: 8192, capabilities: [] },
+      };
+      const profiles: Record<string, Profile> = {
+        'daily': makeProfile('daily', 'm1'),
+        'safe': makeProfile('safe', 'm3'),
+      };
+      const state = createTestState(models, profiles);
+      state.activeProfile = 'daily';
+      const result = getCascadePreview(state, { type: 'provider', name: 'p1' });
+      expect(result.isCurrentActive).toBe(true);
+      expect(result.suggestedFallbackProfile).toBe('safe');
+    });
+
+    it('无备选配置时 suggestedFallbackProfile 为 null', () => {
+      const models: Record<string, ModelConfig> = {
+        'm1': { provider: 'p1', model: 'gpt-4', max_context_size: 8192, capabilities: [] },
+      };
+      const profiles: Record<string, Profile> = {
+        'daily': makeProfile('daily', 'm1'),
+      };
+      const state = createTestState(models, profiles);
+      state.activeProfile = 'daily';
+      const result = getCascadePreview(state, { type: 'provider', name: 'p1' });
+      expect(result.isCurrentActive).toBe(true);
+      expect(result.suggestedFallbackProfile).toBeNull();
+    });
+
+    it('删除 Model 仅返回受影响的 Profile', () => {
+      const profiles: Record<string, Profile> = {
+        'daily': makeProfile('daily', 'm1'),
+        'exp': makeProfile('exp', 'm1'),
+        'safe': makeProfile('safe', 'm2'),
+      };
+      const state = createTestState({}, profiles);
+      const result = getCascadePreview(state, { type: 'model', name: 'm1' });
+      expect(result.affectedModels).toEqual([]);
+      expect(result.affectedProfiles).toHaveLength(2);
+      expect(result.affectedProfiles.map((p) => p.name).sort()).toEqual(['daily', 'exp']);
     });
   });
 });

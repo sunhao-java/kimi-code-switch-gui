@@ -76,3 +76,49 @@ export function canDeleteModel(
     references,
   };
 }
+
+export interface CascadeImpact {
+  affectedModels: Array<{ name: string; model: ModelConfig }>;
+  affectedProfiles: Array<{ name: string; profile: Profile }>;
+  isCurrentActive: boolean;
+  suggestedFallbackProfile: string | null;
+}
+
+export function getCascadePreview(
+  state: AppState,
+  target: { type: 'provider' | 'model'; name: string },
+): CascadeImpact {
+  const affectedModels: CascadeImpact['affectedModels'] = [];
+  const affectedProfiles: CascadeImpact['affectedProfiles'] = [];
+
+  if (target.type === 'provider') {
+    for (const [name, model] of Object.entries(state.mainConfig.models)) {
+      if (model.provider === target.name) {
+        affectedModels.push({ name, model });
+      }
+    }
+    const affectedModelNames = new Set(affectedModels.map((m) => m.name));
+    for (const [name, profile] of Object.entries(state.profiles)) {
+      if (affectedModelNames.has(profile.default_model)) {
+        affectedProfiles.push({ name, profile });
+      }
+    }
+  } else {
+    for (const [name, profile] of Object.entries(state.profiles)) {
+      if (profile.default_model === target.name) {
+        affectedProfiles.push({ name, profile });
+      }
+    }
+  }
+
+  const isCurrentActive = affectedProfiles.some((p) => p.name === state.activeProfile);
+
+  let suggestedFallbackProfile: string | null = null;
+  if (isCurrentActive) {
+    const affectedNames = new Set(affectedProfiles.map((p) => p.name));
+    const fallback = Object.keys(state.profiles).find((n) => !affectedNames.has(n));
+    suggestedFallbackProfile = fallback ?? null;
+  }
+
+  return { affectedModels, affectedProfiles, isCurrentActive, suggestedFallbackProfile };
+}

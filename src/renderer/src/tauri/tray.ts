@@ -71,6 +71,7 @@ function buildMenu(state: AppState): MenuItemSpec[] {
 }
 
 let unlisten: UnlistenFn | null = null;
+let currentOnReload: (() => void) | null = null;
 
 /** 安装/刷新托盘。reloadState 用于动作后重建菜单。getState 提供最新 state。 */
 export async function setupTray(
@@ -83,6 +84,9 @@ export async function setupTray(
     return;
   }
   await invoke("set_tray", { enabled: true, menu: buildMenu(state), tooltip: "Kimi Code Switch GUI" });
+
+  // 更新 onReload 回调引用（每次 setupTray 调用时都更新，避免闭包捕获旧回调）
+  currentOnReload = onReload;
 
   if (!unlisten) {
     unlisten = await listen<string>("tray://command", async (event) => {
@@ -104,17 +108,17 @@ export async function setupTray(
         const reloaded = await loadAppState(tauriFileAccess);
         Object.assign(cur, reloaded);
         await invoke("set_tray", { enabled: true, menu: buildMenu(cur), tooltip: "Kimi Code Switch GUI" });
-        onReload();
+        currentOnReload?.();
       } else if (action.startsWith("locale:")) {
         cur.panelSettings.locale = action.slice("locale:".length) as Locale;
         await saveAppState(tauriFileAccess, cur);
         await invoke("set_tray", { enabled: true, menu: buildMenu(cur), tooltip: "Kimi Code Switch GUI" });
-        onReload();
+        currentOnReload?.();
       } else if (action.startsWith("theme:")) {
         cur.panelSettings.theme = action.slice("theme:".length) as AppState["panelSettings"]["theme"];
         await saveAppState(tauriFileAccess, cur);
         await invoke("set_tray", { enabled: true, menu: buildMenu(cur), tooltip: "Kimi Code Switch GUI" });
-        onReload();
+        currentOnReload?.();
       }
     });
   }

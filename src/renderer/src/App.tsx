@@ -11,6 +11,12 @@ import { formatAcceleratorForPlatform, getBrowserShortcutPlatform, normalizeShor
 import { CommandPalette } from "./commandPalette";
 import { QuickProfileSwitcher } from "./quickProfileSwitcher";
 import { TabPanels } from "./tabs/TabPanels";
+import { ProfileCentricView } from "./views/ProfileCentricView";
+import { AddAssistantWizard } from "./wizards/AddAssistantWizard";
+import { CascadeDeleteDialog } from "./dialogs/CascadeDeleteDialog";
+import { getCascadePreview } from "@shared/configRelations";
+import type { CascadeImpact } from "@shared/configRelations";
+import { deleteProvider, deleteModel, deleteProfile } from "@shared/configStore";
 import { useAppHandlers } from "./useAppHandlers";
 import { useShortcuts } from "./useShortcuts";
 import { TAB_ITEMS, ABOUT_TAB, LOCALE_OPTIONS, THEME_OPTIONS } from "./appOptions";
@@ -91,6 +97,8 @@ export function App(): JSX.Element {
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
+  const [cascadeTarget, setCascadeTarget] = useState<{ type: "provider" | "model"; name: string; impact: CascadeImpact } | null>(null);
 
   useShortcuts({
     shortcuts,
@@ -438,6 +446,22 @@ export function App(): JSX.Element {
         </header>
 
         <div className="content-scroll" role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`}>
+          {activeTab === "overview" ? (
+            <ProfileCentricView
+              state={state}
+              locale={locale}
+              onSwitch={(profileName) =>
+                updateState((draft) => {
+                  applyProfile(draft, profileName);
+                }, {
+                  historySummary: formatMessage(t(locale, "historyActivateProfile"), { name: profileName }),
+                })
+              }
+              onAddNew={() => setShowWizard(true)}
+              onShowAdvanced={() => runAfterUnsavedHandled(() => setActiveTab("providers"))}
+              onOpenTerminal={(profileName) => void openKimiInTerminal(profileName)}
+            />
+          ) : null}
           <TabPanels
             state={state}
             shortcuts={shortcuts}
@@ -593,6 +617,55 @@ export function App(): JSX.Element {
           locale={locale}
           onActivate={handleQuickSwitchActivate}
           onClose={() => setQuickSwitcherOpen(false)}
+        />
+      ) : null}
+      {showWizard ? (
+        <AddAssistantWizard
+          locale={locale}
+          state={state}
+          onComplete={(updater, profileName) => {
+            updateState(updater, {
+              persist: true,
+              recordHistory: true,
+              historySummary: formatMessage(t(locale, "historyWizardCreate"), { name: profileName }),
+            });
+            setShowWizard(false);
+          }}
+          onCancel={() => setShowWizard(false)}
+        />
+      ) : null}
+      {cascadeTarget ? (
+        <CascadeDeleteDialog
+          locale={locale}
+          targetType={cascadeTarget.type}
+          targetName={cascadeTarget.name}
+          impact={cascadeTarget.impact}
+          onConfirm={(strategy) => {
+            updateState((draft) => {
+              if (strategy === "cascade") {
+                for (const m of cascadeTarget.impact.affectedModels) {
+                  deleteModel(draft, m.name);
+                }
+                for (const p of cascadeTarget.impact.affectedProfiles) {
+                  deleteProfile(draft, p.name);
+                }
+              }
+              if (cascadeTarget.type === "provider") {
+                deleteProvider(draft, cascadeTarget.name);
+              } else {
+                deleteModel(draft, cascadeTarget.name);
+              }
+              if (cascadeTarget.impact.isCurrentActive && cascadeTarget.impact.suggestedFallbackProfile) {
+                applyProfile(draft, cascadeTarget.impact.suggestedFallbackProfile);
+              }
+            }, {
+              persist: true,
+              recordHistory: true,
+              historySummary: formatMessage(t(locale, "historyCascadeDelete"), { name: cascadeTarget.name }),
+            });
+            setCascadeTarget(null);
+          }}
+          onCancel={() => setCascadeTarget(null)}
         />
       ) : null}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
