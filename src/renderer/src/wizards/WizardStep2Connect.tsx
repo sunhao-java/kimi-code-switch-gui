@@ -20,6 +20,10 @@ interface Step2Props {
 export function WizardStep2Connect(props: Step2Props): JSX.Element {
   const { locale, source, initialData, onBack, onNext } = props;
   const [form, setForm] = useState<ConnectionFormData>(initialData);
+  const [customModel, setCustomModel] = useState(
+    source.commonModels.length === 0 ||
+    (form.modelId !== "" && !source.commonModels.includes(form.modelId)),
+  );
 
   const isValid = form.endpoint.trim().length > 0
     && form.modelId.trim().length > 0
@@ -55,25 +59,38 @@ export function WizardStep2Connect(props: Step2Props): JSX.Element {
 
         <label className="wizard-field">
           <span>{t(locale, "modelLabel")}</span>
-          {source.commonModels.length > 0 ? (
-            <select
-              value={form.modelId}
-              onChange={(e) => setForm({ ...form, modelId: e.target.value })}
-            >
-              <option value="">{t(locale, "selectModel")}</option>
-              {source.commonModels.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
-          ) : (
+          <select
+            value={customModel ? "__custom__" : form.modelId}
+            onChange={(e) => {
+              if (e.target.value === "__custom__") {
+                setCustomModel(true);
+                setForm({ ...form, modelId: "" });
+              } else {
+                setCustomModel(false);
+                setForm({ ...form, modelId: e.target.value });
+              }
+            }}
+          >
+            <option value="">{t(locale, "selectModel")}</option>
+            {source.commonModels.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+            <option value="__custom__">{t(locale, "customModelOption")}</option>
+          </select>
+        </label>
+
+        {customModel ? (
+          <label className="wizard-field">
+            <span>{t(locale, "customModelLabel")}</span>
             <input
               type="text"
               value={form.modelId}
               onChange={(e) => setForm({ ...form, modelId: e.target.value })}
               placeholder="model-id"
+              autoFocus
             />
-          )}
-        </label>
+          </label>
+        ) : null}
       </div>
 
       <div className="wizard-nav">

@@ -138,6 +138,21 @@
   order: 1;
 }
 
+/* 隐藏列表列（profiles tab 用左侧 ProfileCentricView 充当列表，仅保留编辑表单） */
+.split-layout-no-list {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* profiles tab：ProfileCentricView 作为左栏，编辑表单占右侧 */
+.content-scroll > .profile-centric-view {
+  flex: 0 0 clamp(320px, 32%, 440px);
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 2px 8px 2px 0;
+}
+
 
 /* ============ Responsive: 1024px (desktop) ============ */
 @media (max-width: 1024px) {

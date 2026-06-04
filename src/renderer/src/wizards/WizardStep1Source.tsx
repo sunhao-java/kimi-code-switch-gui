@@ -21,8 +21,9 @@ export function WizardStep1Source(props: Step1Props): JSX.Element {
             className="wizard-source-card glass-panel"
             onClick={() => props.onSelect(preset)}
           >
+            <span className="wizard-source-icon" style={{ background: preset.brandColor }}>{preset.iconLabel}</span>
             <strong>{preset.name}</strong>
-            <span>{preset.description}</span>
+            <span className="wizard-source-desc">{preset.description}</span>
           </button>
         ))}
       </div>

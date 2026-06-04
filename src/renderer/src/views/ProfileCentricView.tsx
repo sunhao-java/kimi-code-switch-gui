@@ -1,11 +1,17 @@
-import { Check, Plus, Settings, Terminal } from "lucide-react";
+import type { KeyboardEvent } from "react";
+import { Check, Plus, SlidersHorizontal, Star, Terminal } from "lucide-react";
 import type { AppState, Locale, Profile } from "@shared/types";
 import { t } from "../i18n";
 
 interface ProfileCentricViewProps {
   state: AppState;
   locale: Locale;
+  selectedProfile: string;
+  favorites: string[];
+  dirtyProfiles?: Set<string>;
+  onSelect: (profileName: string) => void;
   onSwitch: (profileName: string) => void;
+  onToggleFavorite: (profileName: string) => void;
   onAddNew: () => void;
   onShowAdvanced: () => void;
   onOpenTerminal: (profileName: string) => void;
@@ -17,46 +23,106 @@ function resolveProviderLabel(state: AppState, profile: Profile): string {
 }
 
 export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element {
-  const { state, locale, onSwitch, onAddNew, onShowAdvanced, onOpenTerminal } = props;
+  const {
+    state, locale, selectedProfile, favorites, dirtyProfiles,
+    onSelect, onSwitch, onToggleFavorite, onAddNew, onShowAdvanced, onOpenTerminal,
+  } = props;
   const entries = Object.entries(state.profiles);
   const activeEntry = entries.find(([name]) => name === state.activeProfile);
   const otherEntries = entries.filter(([name]) => name !== state.activeProfile);
+
+  // 卡片可用键盘选中（Enter / Space），内部操作按钮各自 stopPropagation
+  const onCardKeyDown = (name: string) => (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect(name);
+    }
+  };
+
+  const favButton = (name: string): JSX.Element => {
+    const isFav = favorites.includes(name);
+    return (
+      <button
+        type="button"
+        className={isFav ? "pcv-icon-btn active" : "pcv-icon-btn"}
+        aria-label={isFav ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
+        title={isFav ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggleFavorite(name);
+        }}
+      >
+        <Star size={14} fill={isFav ? "currentColor" : "none"} />
+      </button>
+    );
+  };
+
+  const terminalButton = (name: string): JSX.Element => (
+    <button
+      type="button"
+      className="pcv-icon-btn"
+      aria-label={t(locale, "openInTerminal")}
+      title={t(locale, "openInTerminal")}
+      onClick={(event) => {
+        event.stopPropagation();
+        onOpenTerminal(name);
+      }}
+    >
+      <Terminal size={14} />
+    </button>
+  );
+
+  const nameWithDirty = (name: string, label: string): JSX.Element => (
+    <strong>
+      {label}
+      {dirtyProfiles?.has(name) ? <span className="pcv-dirty-dot" aria-hidden="true" /> : null}
+    </strong>
+  );
 
   return (
     <section className="profile-centric-view">
       <div className="pcv-header">
         <h2>{t(locale, "yourAssistants")}</h2>
         <div className="pcv-header-actions">
-          <button className="action-button compact" type="button" onClick={onAddNew}>
-            <Plus size={15} />
-            <span>{t(locale, "configureNew")}</span>
+          <button
+            className="action-button compact icon-only"
+            type="button"
+            onClick={onAddNew}
+            aria-label={t(locale, "configureNew")}
+            title={t(locale, "configureNew")}
+          >
+            <Plus size={16} />
           </button>
-          <button className="action-button compact secondary" type="button" onClick={onShowAdvanced}>
-            <Settings size={15} />
-            <span>{t(locale, "showAdvanced")}</span>
+          <button
+            className="action-button compact icon-only secondary"
+            type="button"
+            onClick={onShowAdvanced}
+            aria-label={t(locale, "showAdvanced")}
+            title={t(locale, "showAdvanced")}
+          >
+            <SlidersHorizontal size={16} />
           </button>
         </div>
       </div>
 
       {activeEntry ? (
-        <div className="pcv-active glass-panel">
+        <div
+          role="button"
+          tabIndex={0}
+          className={`pcv-active glass-panel${selectedProfile === activeEntry[0] ? " selected" : ""}`}
+          onClick={() => onSelect(activeEntry[0])}
+          onKeyDown={onCardKeyDown(activeEntry[0])}
+        >
           <div className="pcv-active-badge">{t(locale, "currentActive")}</div>
           <div className="pcv-active-info">
-            <strong>{activeEntry[1].label || activeEntry[0]}</strong>
+            {nameWithDirty(activeEntry[0], activeEntry[1].label || activeEntry[0])}
             <span className="pcv-meta">
               {activeEntry[1].default_model} · {resolveProviderLabel(state, activeEntry[1])}
             </span>
           </div>
           <div className="pcv-active-actions">
-            <button
-              className="action-button compact"
-              type="button"
-              aria-label={t(locale, "openInTerminal")}
-              title={t(locale, "openInTerminal")}
-              onClick={() => onOpenTerminal(activeEntry[0])}
-            >
-              <Terminal size={15} />
-            </button>
+            {favButton(activeEntry[0])}
+            {terminalButton(activeEntry[0])}
           </div>
         </div>
       ) : (
@@ -73,27 +139,30 @@ export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element 
         <div className="pcv-list">
           <h3>{t(locale, "otherProfiles")}</h3>
           {otherEntries.map(([name, profile]) => (
-            <div key={name} className="pcv-list-item glass-panel">
+            <div
+              key={name}
+              role="button"
+              tabIndex={0}
+              className={`pcv-list-item glass-panel${selectedProfile === name ? " selected" : ""}`}
+              onClick={() => onSelect(name)}
+              onKeyDown={onCardKeyDown(name)}
+            >
               <div className="pcv-list-info">
-                <strong>{profile.label || name}</strong>
+                {nameWithDirty(name, profile.label || name)}
                 <span className="pcv-meta">
                   {profile.default_model} · {resolveProviderLabel(state, profile)}
                 </span>
               </div>
               <div className="pcv-list-actions">
-                <button
-                  className="action-button compact"
-                  type="button"
-                  onClick={() => onOpenTerminal(name)}
-                  aria-label={t(locale, "openInTerminal")}
-                  title={t(locale, "openInTerminal")}
-                >
-                  <Terminal size={14} />
-                </button>
+                {favButton(name)}
+                {terminalButton(name)}
                 <button
                   className="action-button compact primary"
                   type="button"
-                  onClick={() => onSwitch(name)}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSwitch(name);
+                  }}
                 >
                   <Check size={14} />
                   <span>{t(locale, "switchTo")}</span>

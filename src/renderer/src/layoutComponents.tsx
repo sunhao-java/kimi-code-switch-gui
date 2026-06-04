@@ -27,11 +27,18 @@ export function SplitLayout(props: {
   renderItemAction?: (item: string) => JSX.Element | null;
   headerActions?: JSX.Element | null;
   listBanner?: JSX.Element | null;
+  hideList?: boolean;
   reverse?: boolean;
   children: JSX.Element;
 }): JSX.Element {
   return (
-    <section className={props.reverse ? "split-layout split-layout-reverse" : "split-layout"}>
+    <section
+      className={[
+        props.reverse ? "split-layout split-layout-reverse" : "split-layout",
+        props.hideList ? "split-layout-no-list" : "",
+      ].filter(Boolean).join(" ")}
+    >
+      {props.hideList ? null : (
       <div className="glass-panel list-panel">
         <div className="list-header">
           <div className="section-title">{props.listTitle}</div>
@@ -98,6 +105,7 @@ export function SplitLayout(props: {
           ))}
         </div>
       </div>
+      )}
       {props.children}
     </section>
   );

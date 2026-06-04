@@ -7585,6 +7585,65 @@ textarea:focus-visible {
   flex-shrink: 0;
 }
 
+/* 卡片可点击选中（进入右侧编辑） */
+.pcv-active[role="button"],
+.pcv-list-item[role="button"] {
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  font: inherit;
+}
+
+.pcv-active:focus-visible,
+.pcv-list-item:focus-visible {
+  outline: 2px solid rgba(var(--primary-rgb), 0.5);
+  outline-offset: 2px;
+}
+
+.pcv-active.selected,
+.pcv-list-item.selected {
+  border-color: rgba(var(--primary-rgb), 0.6);
+  box-shadow: 0 0 0 1px rgba(var(--primary-rgb), 0.45);
+}
+
+/* 卡片内的图标操作按钮（收藏 / 终端） */
+.pcv-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.pcv-icon-btn:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+  background: var(--surface-hover);
+}
+
+.pcv-icon-btn.active {
+  color: #f5c451;
+  border-color: rgba(245, 196, 81, 0.45);
+  background: rgba(245, 196, 81, 0.12);
+}
+
+/* 未保存标记 */
+.pcv-dirty-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: rgba(var(--primary-rgb), 1);
+  vertical-align: middle;
+}
+
 /* ===== 三步向导 ===== */
 .wizard-overlay {
   position: fixed;
@@ -7731,9 +7790,23 @@ textarea:focus-visible {
   color: var(--text);
 }
 
-.wizard-source-card span {
+.wizard-source-desc {
   font-size: 0.8rem;
   color: var(--muted);
+}
+
+.wizard-source-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 8px;
+  border-radius: 9px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1;
 }
 
 .wizard-form {

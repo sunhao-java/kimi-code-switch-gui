@@ -585,6 +585,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
 
         {activeTab === "profiles" ? (
           <SplitLayout
+            hideList
             listTitle={t(locale, "profiles")}
             listItems={profileEntries.map(([name]) => name)}
             dirtyItems={dirtyProfiles}

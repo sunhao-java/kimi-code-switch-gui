@@ -3,7 +3,7 @@ import type { KeyboardEvent } from "react";
 import { AlertTriangle, ChevronsLeft, ChevronsRight, RefreshCw, Terminal, X } from "lucide-react";
 
 import type { McpServerConfig, ShortcutAction, ShortcutBinding } from "@shared/types";
-import { applyProfile } from "@shared/configStore";
+import { applyProfile, toggleFavorite } from "@shared/configStore";
 import type { SearchResult } from "@shared/configStore";
 import { parseMcpConfigStrict } from "@shared/mcpStore";
 import { formatAcceleratorForPlatform, getBrowserShortcutPlatform, normalizeShortcuts } from "@shared/shortcutStore";
@@ -449,10 +449,21 @@ export function App(): JSX.Element {
         </header>
 
         <div className="content-scroll" role="tabpanel" id={`panel-${activeTab}`} aria-labelledby={`tab-${activeTab}`}>
-          {activeTab === "overview" ? (
+          {activeTab === "profiles" ? (
             <ProfileCentricView
               state={state}
               locale={locale}
+              selectedProfile={selectedProfileName}
+              favorites={state.panelSettings.favorites?.profiles ?? []}
+              dirtyProfiles={dirtyProfiles}
+              onSelect={(name) => runAfterUnsavedHandled(() => setSelectedProfile(name))}
+              onToggleFavorite={(name) => {
+                const isFav = state.panelSettings.favorites?.profiles?.includes(name) ?? false;
+                updateImmediateState((draft) => { toggleFavorite(draft, "profile", name); }, {
+                  recordHistory: true,
+                  historySummary: formatMessage(t(locale, isFav ? "historyUnfavoriteProfile" : "historyFavoriteProfile"), { name }),
+                });
+              }}
               onSwitch={(profileName) =>
                 updateState((draft) => {
                   applyProfile(draft, profileName);
