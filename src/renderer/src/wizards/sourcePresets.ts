@@ -1,7 +1,11 @@
 export interface SourcePreset {
   id: string;
+  /** 品牌英文标识，仅用于生成默认 profile 名（不直接在 UI 显示）。 */
   name: string;
-  description: string;
+  /** 显示名 i18n key（受国际化控制）。 */
+  nameKey: string;
+  /** 描述 i18n key（受国际化控制）。 */
+  descKey: string;
   defaultEndpoint: string;
   /** 必须是 kimi-code-cli 认识的 provider type（见 appOptions.PROVIDER_TYPE_OPTIONS）。 */
   providerType: "kimi" | "openai_legacy" | "openai_responses" | "anthropic" | "gemini" | "vertexai";
@@ -19,8 +23,9 @@ export interface SourcePreset {
 export const SOURCE_PRESETS: SourcePreset[] = [
   {
     id: "kimi",
-    name: "Kimi 官方",
-    description: "Moonshot AI · 月之暗面",
+    name: "Kimi",
+    nameKey: "sourceKimiName",
+    descKey: "sourceKimiDesc",
     defaultEndpoint: "https://api.moonshot.cn/v1",
     providerType: "kimi",
     authType: "bearer",
@@ -32,7 +37,8 @@ export const SOURCE_PRESETS: SourcePreset[] = [
   {
     id: "openai",
     name: "OpenAI",
-    description: "ChatGPT · GPT 系列",
+    nameKey: "sourceOpenaiName",
+    descKey: "sourceOpenaiDesc",
     defaultEndpoint: "https://api.openai.com/v1",
     providerType: "openai_responses",
     authType: "bearer",
@@ -44,7 +50,8 @@ export const SOURCE_PRESETS: SourcePreset[] = [
   {
     id: "anthropic",
     name: "Anthropic",
-    description: "Claude 系列",
+    nameKey: "sourceAnthropicName",
+    descKey: "sourceAnthropicDesc",
     defaultEndpoint: "https://api.anthropic.com",
     providerType: "anthropic",
     authType: "x-api-key",
@@ -56,7 +63,8 @@ export const SOURCE_PRESETS: SourcePreset[] = [
   {
     id: "deepseek",
     name: "DeepSeek",
-    description: "深度求索 · OpenAI 兼容",
+    nameKey: "sourceDeepseekName",
+    descKey: "sourceDeepseekDesc",
     defaultEndpoint: "https://api.deepseek.com/v1",
     providerType: "openai_legacy",
     authType: "bearer",
@@ -67,8 +75,9 @@ export const SOURCE_PRESETS: SourcePreset[] = [
   },
   {
     id: "glm",
-    name: "智谱 GLM",
-    description: "智谱 AI · OpenAI 兼容",
+    name: "GLM",
+    nameKey: "sourceGlmName",
+    descKey: "sourceGlmDesc",
     defaultEndpoint: "https://open.bigmodel.cn/api/paas/v4",
     providerType: "openai_legacy",
     authType: "bearer",
@@ -80,7 +89,8 @@ export const SOURCE_PRESETS: SourcePreset[] = [
   {
     id: "custom",
     name: "Custom",
-    description: "Self-hosted or other OpenAI-compatible endpoint",
+    nameKey: "sourceCustomName",
+    descKey: "sourceCustomDesc",
     defaultEndpoint: "",
     providerType: "openai_legacy",
     authType: "bearer",

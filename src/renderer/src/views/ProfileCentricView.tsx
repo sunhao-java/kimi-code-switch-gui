@@ -157,14 +157,14 @@ export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element 
                 {favButton(name)}
                 {terminalButton(name)}
                 <button
-                  className="action-button compact primary"
+                  className="pcv-switch-btn"
                   type="button"
                   onClick={(event) => {
                     event.stopPropagation();
                     onSwitch(name);
                   }}
                 >
-                  <Check size={14} />
+                  <Check size={13} />
                   <span>{t(locale, "switchTo")}</span>
                 </button>
               </div>

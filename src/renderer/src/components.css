@@ -7644,6 +7644,28 @@ textarea:focus-visible {
   vertical-align: middle;
 }
 
+/* 切换按钮：紧凑小尺寸（与卡片图标按钮等高），主色区分 */
+.pcv-switch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 9px;
+  border: 1px solid rgba(var(--primary-2-rgb), 0.32);
+  background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.2), rgba(var(--primary-2-rgb), 0.16));
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: filter 0.15s ease, border-color 0.15s ease;
+}
+
+.pcv-switch-btn:hover {
+  filter: brightness(1.08);
+  border-color: rgba(var(--primary-2-rgb), 0.5);
+}
+
 /* ===== 三步向导 ===== */
 .wizard-overlay {
   position: fixed;
@@ -7833,17 +7855,33 @@ textarea:focus-visible {
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid var(--line);
-  background: rgba(var(--primary-rgb), 0.04);
+  background-color: rgba(var(--primary-rgb), 0.04);
   color: var(--text);
   font-size: 0.9rem;
   outline: none;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.wizard-field select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 38px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2397a9c4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 15px;
+}
+
+.wizard-field select option {
+  background: var(--panel-strong);
+  color: var(--text);
 }
 
 .wizard-field input:focus,
 .wizard-field select:focus {
-  border-color: rgba(var(--primary-rgb), 0.5);
-  background: rgba(var(--primary-rgb), 0.07);
+  border-color: rgba(var(--primary-rgb), 0.55);
+  background-color: rgba(var(--primary-rgb), 0.08);
 }
 
 .wizard-toggle {

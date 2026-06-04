@@ -32,7 +32,7 @@ export function WizardStep2Connect(props: Step2Props): JSX.Element {
   return (
     <div className="wizard-step">
       <h3>{t(locale, "wizardStep2Title")}</h3>
-      <p className="wizard-step-hint">{source.name}</p>
+      <p className="wizard-step-hint">{t(locale, source.nameKey)}</p>
 
       <div className="wizard-form">
         {source.authType !== "none" ? (
@@ -59,27 +59,37 @@ export function WizardStep2Connect(props: Step2Props): JSX.Element {
 
         <label className="wizard-field">
           <span>{t(locale, "modelLabel")}</span>
-          <select
-            value={customModel ? "__custom__" : form.modelId}
-            onChange={(e) => {
-              if (e.target.value === "__custom__") {
-                setCustomModel(true);
-                setForm({ ...form, modelId: "" });
-              } else {
-                setCustomModel(false);
-                setForm({ ...form, modelId: e.target.value });
-              }
-            }}
-          >
-            <option value="">{t(locale, "selectModel")}</option>
-            {source.commonModels.map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-            <option value="__custom__">{t(locale, "customModelOption")}</option>
-          </select>
+          {source.commonModels.length === 0 ? (
+            // 自定义来源：无预设模型，直接输入模型 id
+            <input
+              type="text"
+              value={form.modelId}
+              onChange={(e) => setForm({ ...form, modelId: e.target.value })}
+              placeholder="model-id"
+            />
+          ) : (
+            <select
+              value={customModel ? "__custom__" : form.modelId}
+              onChange={(e) => {
+                if (e.target.value === "__custom__") {
+                  setCustomModel(true);
+                  setForm({ ...form, modelId: "" });
+                } else {
+                  setCustomModel(false);
+                  setForm({ ...form, modelId: e.target.value });
+                }
+              }}
+            >
+              <option value="">{t(locale, "selectModel")}</option>
+              {source.commonModels.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+              <option value="__custom__">{t(locale, "customModelOption")}</option>
+            </select>
+          )}
         </label>
 
-        {customModel ? (
+        {source.commonModels.length > 0 && customModel ? (
           <label className="wizard-field">
             <span>{t(locale, "customModelLabel")}</span>
             <input
