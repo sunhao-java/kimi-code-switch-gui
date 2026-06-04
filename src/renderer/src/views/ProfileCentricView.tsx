@@ -1,6 +1,5 @@
 import { Check, Plus, Settings, Terminal } from "lucide-react";
 import type { AppState, Locale, Profile } from "@shared/types";
-import { buildModelName } from "@shared/nameRules";
 import { t } from "../i18n";
 
 interface ProfileCentricViewProps {

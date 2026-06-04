@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { X } from "lucide-react";
 import type { AppState, Locale } from "@shared/types";
 import { upsertProvider, upsertModel, upsertProfile, applyProfile } from "@shared/configStore";
 import { buildModelName } from "@shared/nameRules";
+import { createUniqueName } from "../appHelpers";
+import { useDialogEscape, useFocusTrap } from "../dialogs";
 import type { SourcePreset } from "./sourcePresets";
 import type { ConnectionFormData } from "./WizardStep2Connect";
 import { WizardStep1Source } from "./WizardStep1Source";
@@ -24,10 +26,14 @@ export function AddAssistantWizard(props: WizardProps): JSX.Element {
   const [step, setStep] = useState<WizardStep>(1);
   const [source, setSource] = useState<SourcePreset | null>(null);
   const [formData, setFormData] = useState<ConnectionFormData>({ apiKey: "", endpoint: "", modelId: "" });
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogEscape(onCancel);
+  useFocusTrap(dialogRef);
 
   return (
-    <div className="wizard-overlay" onClick={onCancel}>
-      <div className="wizard-modal glass-panel" onClick={(e) => e.stopPropagation()}>
+    // 多步表单：不允许点遮罩关闭（防半填误触丢失），仅 Esc / 右上角 ✕ 关闭
+    <div className="wizard-overlay">
+      <div className="wizard-modal glass-panel" ref={dialogRef}>
         <div className="wizard-topbar">
           <div className="wizard-progress">
             {([1, 2, 3] as const).map((s) => (
@@ -70,7 +76,7 @@ export function AddAssistantWizard(props: WizardProps): JSX.Element {
             defaultName={`${source.name} ${formData.modelId}`}
             onBack={() => setStep(2)}
             onComplete={(profileName, activate) => {
-              const providerName = `${source.id}-${Date.now()}`;
+              const providerName = createUniqueName(source.id, Object.keys(state.mainConfig.providers));
               const modelName = buildModelName(providerName, formData.modelId);
               onComplete((draft) => {
                 upsertProvider(draft, providerName, {
@@ -81,7 +87,7 @@ export function AddAssistantWizard(props: WizardProps): JSX.Element {
                 upsertModel(draft, modelName, {
                   provider: providerName,
                   model: formData.modelId,
-                  max_context_size: 128000,
+                  max_context_size: source.defaultContextSize,
                   capabilities: [],
                 });
                 upsertProfile(draft, {
@@ -92,7 +98,7 @@ export function AddAssistantWizard(props: WizardProps): JSX.Element {
                   default_yolo: false,
                   default_plan_mode: false,
                   default_editor: "",
-                  theme: "dark",
+                  theme: state.profiles[state.activeProfile]?.theme ?? "dark",
                   show_thinking_stream: false,
                   merge_all_available_skills: false,
                 });

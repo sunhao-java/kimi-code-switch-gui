@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { Activity, Bug, Copy, Download, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Star, Terminal, Trash2, Upload, X } from "lucide-react";
 import { applyProfile, cloneProfile, deleteModel, deleteProfile, deleteProvider, exportConfig, getImportPreview, importConfig, toggleFavorite, validateImportData, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
 import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
-import { canDeleteProvider, canDeleteModel } from "@shared/configRelations";
+import { getCascadePreview } from "@shared/configRelations";
 import {
   formatAcceleratorForPlatform,
   getBrowserShortcutPlatform,
@@ -133,6 +133,7 @@ type TabPanelsProps = Pick<
   | "loadState"
 > & {
   shortcuts: Record<ShortcutAction, ShortcutBinding>;
+  onRequestCascadeDelete: (type: "provider" | "model", name: string) => void;
 };
 
 type SettingsSubTab = "general" | "shortcuts" | "backup" | "doctor" | "insights" | "history";
@@ -153,6 +154,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     setSelectedMcpServer,
     setSelectedSkill,
     setSelectedSkillPath,
+    onRequestCascadeDelete,
     skillsViewMode,
     setSkillsViewMode,
     skillsReport,
@@ -452,15 +454,12 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                 onSave={() => void onSave()}
                 onDelete={() => {
                   void (async () => {
-                    // 检查引用完整性
-                    const deleteCheck = canDeleteProvider(state, selectedProviderName);
-                    if (!deleteCheck.canDelete) {
-                      const modelNames = deleteCheck.references.map((m) => m.model).join(", ");
-                      const message = `${t(locale, "errorProviderHasReferences")}\n\n${t(locale, "referencedModels")}:\n${deleteCheck.references.map((m) => `• ${m.model}`).join("\n")}\n\n${t(locale, "deleteReferencesFirst")}`;
-                      await window.alert(message);
+                    // 有引用时弹级联删除对话框（影响预览 + 一并删除/仅删此项）；无引用直接确认删除
+                    const impact = getCascadePreview(state, { type: "provider", name: selectedProviderName });
+                    if (impact.affectedModels.length > 0 || impact.affectedProfiles.length > 0) {
+                      onRequestCascadeDelete("provider", selectedProviderName);
                       return;
                     }
-
                     if (!(await confirmDeleteResource(getResourceLabel(locale, "provider"), selectedProviderName))) return;
                     updateState((draft) => {
                       deleteProvider(draft, selectedProviderName);
@@ -562,14 +561,12 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                 onSave={() => void onSave()}
                 onDelete={() => {
                   void (async () => {
-                    // 检查引用完整性
-                    const deleteCheck = canDeleteModel(state, selectedModelName);
-                    if (!deleteCheck.canDelete) {
-                      const message = `${t(locale, "errorModelHasReferences")}\n\n${t(locale, "referencedProfiles")}:\n${deleteCheck.references.map((p) => `• ${p.label || p.name}`).join("\n")}\n\n${t(locale, "deleteReferencesFirst")}`;
-                      await window.alert(message);
+                    // 有引用时弹级联删除对话框；无引用直接确认删除
+                    const impact = getCascadePreview(state, { type: "model", name: selectedModelName });
+                    if (impact.affectedProfiles.length > 0) {
+                      onRequestCascadeDelete("model", selectedModelName);
                       return;
                     }
-
                     if (!(await confirmDeleteResource(getResourceLabel(locale, "model"), selectedModelName))) return;
                     updateState((draft) => {
                       deleteModel(draft, selectedModelName);

@@ -99,6 +99,9 @@ export function App(): JSX.Element {
   const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
   const [cascadeTarget, setCascadeTarget] = useState<{ type: "provider" | "model"; name: string; impact: CascadeImpact } | null>(null);
+  const requestCascadeDelete = (type: "provider" | "model", name: string): void => {
+    setCascadeTarget({ type, name, impact: getCascadePreview(state, { type, name }) });
+  };
 
   useShortcuts({
     shortcuts,
@@ -472,6 +475,7 @@ export function App(): JSX.Element {
             setSelectedProvider={setSelectedProvider}
             selectedModel={selectedModel}
             setSelectedModel={setSelectedModel}
+            onRequestCascadeDelete={requestCascadeDelete}
             selectedProfile={selectedProfile}
             setSelectedProfile={setSelectedProfile}
             selectedMcpServer={selectedMcpServer}
@@ -658,6 +662,10 @@ export function App(): JSX.Element {
               if (cascadeTarget.impact.isCurrentActive && cascadeTarget.impact.suggestedFallbackProfile) {
                 applyProfile(draft, cascadeTarget.impact.suggestedFallbackProfile);
               }
+              // 删除后选中项可能失效，重置到剩余首项
+              setSelectedProvider(Object.keys(draft.mainConfig.providers)[0] ?? "");
+              setSelectedModel(Object.keys(draft.mainConfig.models)[0] ?? "");
+              setSelectedProfile(Object.keys(draft.profiles)[0] ?? "");
             }, {
               persist: true,
               recordHistory: true,

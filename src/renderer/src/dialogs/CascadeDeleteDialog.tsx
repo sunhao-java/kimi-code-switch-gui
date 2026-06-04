@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import type { Locale } from "@shared/types";
 import type { CascadeImpact } from "@shared/configRelations";
+import { useDialogEscape, useFocusTrap } from "../dialogs";
 import { t } from "../i18n";
 import { formatMessage } from "../tabComponents";
 
@@ -19,12 +20,15 @@ interface CascadeDeleteDialogProps {
 export function CascadeDeleteDialog(props: CascadeDeleteDialogProps): JSX.Element {
   const { locale, targetType, targetName, impact, onConfirm, onCancel } = props;
   const [strategy, setStrategy] = useState<CascadeStrategy>("cascade");
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogEscape(onCancel);
+  useFocusTrap(dialogRef);
 
   const totalAffected = impact.affectedModels.length + impact.affectedProfiles.length;
 
   return (
     <div className="dialog-overlay" onClick={onCancel}>
-      <div className="dialog cascade-delete-dialog" onClick={(e) => e.stopPropagation()}>
+      <div className="dialog cascade-delete-dialog" ref={dialogRef} onClick={(e) => e.stopPropagation()}>
         <div className="dialog-header">
           <h3>
             <AlertTriangle size={18} />
@@ -52,11 +56,7 @@ export function CascadeDeleteDialog(props: CascadeDeleteDialogProps): JSX.Elemen
               <h4>{t(locale, "cascadeAffectedProfiles")} ({impact.affectedProfiles.length})</h4>
               <ul className="cascade-list">
                 {impact.affectedProfiles.map((p) => (
-                  <li key={p.name}>
-                    {p.profile.label || p.name}
-                    {impact.isCurrentActive && p.name === impact.suggestedFallbackProfile ? null
-                      : impact.isCurrentActive && impact.affectedProfiles.some((ap) => ap.name === p.name) ? " ⚡" : null}
-                  </li>
+                  <li key={p.name}>{p.profile.label || p.name}</li>
                 ))}
               </ul>
             </div>
