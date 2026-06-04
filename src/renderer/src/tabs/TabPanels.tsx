@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Activity, Bug, Copy, Download, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Star, Terminal, Trash2, Upload, X } from "lucide-react";
 import { applyProfile, cloneProfile, deleteModel, deleteProfile, deleteProvider, exportConfig, getImportPreview, importConfig, toggleFavorite, validateImportData, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
 import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
+import { canDeleteProvider, canDeleteModel } from "@shared/configRelations";
 import {
   formatAcceleratorForPlatform,
   getBrowserShortcutPlatform,
@@ -234,6 +235,10 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
       actions: SHORTCUT_ACTIONS.filter((definition) => definition.scope === "window"),
     },
   ];
+  // 空状态检查
+  const hasProviders = Object.keys(state.mainConfig.providers).length > 0;
+  const hasModels = Object.keys(state.mainConfig.models).length > 0;
+
   const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>("general");
   const [importDialog, setImportDialog] = useState<{ open: boolean; preview: ImportPreview | null; data: ExportBundle | null; strategy: ImportConflictStrategy }>({ open: false, preview: null, data: null, strategy: "skip" });
   const [providerHealthResults, setProviderHealthResults] = useState<ProviderHealthResult[] | null>(null);
@@ -447,6 +452,15 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                 onSave={() => void onSave()}
                 onDelete={() => {
                   void (async () => {
+                    // 检查引用完整性
+                    const deleteCheck = canDeleteProvider(state, selectedProviderName);
+                    if (!deleteCheck.canDelete) {
+                      const modelNames = deleteCheck.references.map((m) => m.model).join(", ");
+                      const message = `${t(locale, "errorProviderHasReferences")}\n\n${t(locale, "referencedModels")}:\n${deleteCheck.references.map((m) => `• ${m.model}`).join("\n")}\n\n${t(locale, "deleteReferencesFirst")}`;
+                      await window.alert(message);
+                      return;
+                    }
+
                     if (!(await confirmDeleteResource(getResourceLabel(locale, "provider"), selectedProviderName))) return;
                     updateState((draft) => {
                       deleteProvider(draft, selectedProviderName);
@@ -494,8 +508,9 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             }
             addLabel={t(locale, "newModel")}
             addButtonClassName="action-button compact icon-only"
-            addButtonTitle={t(locale, "newModel")}
+            addButtonTitle={!hasProviders ? t(locale, "tooltipAddProviderFirst") : t(locale, "newModel")}
             addButtonContent={<Plus size={15} />}
+            addButtonDisabled={!hasProviders}
             onAdd={() =>
               updateState((draft) => {
                 const providerName = Object.keys(draft.mainConfig.providers)[0];
@@ -547,6 +562,14 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                 onSave={() => void onSave()}
                 onDelete={() => {
                   void (async () => {
+                    // 检查引用完整性
+                    const deleteCheck = canDeleteModel(state, selectedModelName);
+                    if (!deleteCheck.canDelete) {
+                      const message = `${t(locale, "errorModelHasReferences")}\n\n${t(locale, "referencedProfiles")}:\n${deleteCheck.references.map((p) => `• ${p.label || p.name}`).join("\n")}\n\n${t(locale, "deleteReferencesFirst")}`;
+                      await window.alert(message);
+                      return;
+                    }
+
                     if (!(await confirmDeleteResource(getResourceLabel(locale, "model"), selectedModelName))) return;
                     updateState((draft) => {
                       deleteModel(draft, selectedModelName);
@@ -575,8 +598,9 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             onSelect={(item) => setSelectedProfile(item)}
             addLabel={t(locale, "newProfile")}
             addButtonClassName="action-button compact icon-only"
-            addButtonTitle={t(locale, "newProfile")}
+            addButtonTitle={!hasModels ? t(locale, "tooltipAddModelFirst") : t(locale, "newProfile")}
             addButtonContent={<Plus size={15} />}
+            addButtonDisabled={!hasModels}
             onAdd={() =>
               updateState((draft) => {
                 const firstModel = Object.keys(draft.mainConfig.models)[0];

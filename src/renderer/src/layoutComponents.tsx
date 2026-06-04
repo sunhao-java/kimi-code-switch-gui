@@ -22,6 +22,7 @@ export function SplitLayout(props: {
   addButtonContent?: JSX.Element;
   addButtonTitle?: string;
   addButtonClassName?: string;
+  addButtonDisabled?: boolean;
   itemClassName?: (item: string) => string | null;
   renderItemAction?: (item: string) => JSX.Element | null;
   headerActions?: JSX.Element | null;
@@ -42,6 +43,7 @@ export function SplitLayout(props: {
                 type="button"
                 aria-label={props.addButtonTitle ?? props.addLabel}
                 title={props.addButtonTitle ?? props.addLabel}
+                disabled={props.addButtonDisabled}
                 onClick={props.onAdd}
               >
                 {props.addButtonContent ?? props.addLabel}
