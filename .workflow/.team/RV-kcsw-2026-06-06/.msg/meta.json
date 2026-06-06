@@ -1,0 +1,14 @@
+{
+  "session_id": "RV-kcsw-2026-06-06",
+  "status": "active",
+  "pipeline_mode": "default",
+  "pipeline_stages": ["scanner", "reviewer"],
+  "team_name": "review",
+  "target": ".",
+  "dimensions": ["SEC", "COR", "PRF", "MNT"],
+  "auto_confirm": false,
+  "tasks_total": 2,
+  "created_at": "2026-06-06",
+  "project_root": "/Users/sunhao/Documents/tools/kimi-code-switch-gui",
+  "skill_root": "/Users/sunhao/Documents/tools/kimi-code-switch-gui/.claude/skills/team-review"
+}
