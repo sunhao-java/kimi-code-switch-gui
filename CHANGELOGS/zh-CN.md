@@ -2,6 +2,26 @@
 
 本文件记录项目的重要变更。格式参考 Keep a Changelog，当前项目采用 `major.minor.patch` 版本号方案。
 
+## [2.0.1] - 2026-06-06
+
+### 新增
+
+- **Profile 中心视图**：Profiles 标签页重构为以 Profile 为核心的视图，可直观看到每个 Profile 绑定的渠道与模型，并在列表中直接切换激活 Profile。
+- **向导式创建 Assistant**：新增 3 步向导（选渠道 → 测试连接 → 命名），从零开始一键创建完整可用配置，无需手动分别配置 Provider / Model / Profile。
+- **级联删除引导**：删除 Provider 或 Model 前自动分析影响范围，弹窗展示将被连带删除的模型与 Profile，支持选择降级方案或确认删除。
+- **Provider 健康状态 banner**：配置页顶部在检测到不可用渠道时实时提示，方便快速定位配置问题。
+
+### 变更
+
+- 向导内置渠道名称与描述全面国际化（zh-CN / zh-TW / en-US / ja-JP / de-DE / es-ES）。
+- 模型选择下拉样式优化，Profile 标签切换按钮收窄，界面更紧凑。
+
+### 修复
+
+- 修复级联删除后当前选中 Profile / Provider / Model 状态错乱的问题（Immer 回调内 `setState` 在 React 18 StrictMode 下被双调用）。
+- 修复在空状态下打开级联删除预览时的崩溃问题（`getCascadePreview` 缺少 null 守卫）。
+- 修复向导第三步允许创建与现有 Profile 同名配置的问题，现在会实时检测重名并禁用提交。
+
 ## [2.0.0] - 2026-06-01
 
 ### 新增

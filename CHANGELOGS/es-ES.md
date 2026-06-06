@@ -2,6 +2,26 @@
 
 Este archivo recoge los cambios relevantes del proyecto. El formato sigue Keep a Changelog y el proyecto adopta el esquema de versiones `major.minor.patch`.
 
+## [2.0.1] - 2026-06-06
+
+### Añadido
+
+- **Vista centrada en perfiles**: la pestaña Profiles ha sido rediseñada con un enfoque centrado en el perfil. Cada tarjeta muestra el proveedor y el modelo asociado de un vistazo; los perfiles se pueden activar directamente desde la lista.
+- **Asistente de creación**: un asistente de 3 pasos (elegir proveedor → probar conexión → nombrar) crea una configuración completa y funcional de una sola vez, sin necesidad de configurar Provider / Model / Profile por separado.
+- **Guía de eliminación en cascada**: antes de eliminar un Provider o Model, la app analiza el impacto y muestra un diálogo con todos los modelos y perfiles que se eliminarán, con opción de degradar o confirmar la eliminación.
+- **Banner de estado del proveedor**: aparece un banner en tiempo real en la parte superior de la página de configuración cuando se detecta un proveedor inalcanzable.
+
+### Cambiado
+
+- Nombres y descripciones de proveedores integrados del asistente completamente internacionalizados (zh-CN / zh-TW / en-US / ja-JP / de-DE / es-ES).
+- Estilo del selector de modelo mejorado; botones de cambio de pestaña de perfil estrechados para un diseño más compacto.
+
+### Corregido
+
+- Corregido el estado de selección corrupto tras una eliminación en cascada (React 18 StrictMode invoca los productores de Immer dos veces, haciendo que las llamadas `setState` dentro del callback se ejecuten el doble).
+- Corregido un fallo al abrir la vista previa de eliminación en cascada en estado vacío (faltaba una comprobación de null en `getCascadePreview`).
+- Corregido que en el último paso del asistente se podía crear un perfil con un nombre ya existente; ahora se detecta el duplicado en tiempo real y se deshabilita el botón de envío.
+
 ## [2.0.0] - 2026-06-01
 
 ### Añadido

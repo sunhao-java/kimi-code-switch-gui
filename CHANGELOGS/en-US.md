@@ -2,6 +2,26 @@
 
 This file records the project's notable changes. Format follows Keep a Changelog; the project uses `major.minor.patch` versioning.
 
+## [2.0.1] - 2026-06-06
+
+### Added
+
+- **Profile-centric view**: the Profiles tab has been redesigned around profiles — each card shows its bound provider and model at a glance, and you can activate any profile directly from the list.
+- **Assistant creation wizard**: a 3-step wizard (pick provider → test connection → name profile) that creates a fully working configuration in one go, with no need to configure Provider / Model / Profile separately.
+- **Cascade-delete guidance**: before deleting a Provider or Model, the app analyses the impact and shows a dialog listing every model and profile that would be removed, with an option to downgrade or confirm.
+- **Provider health banner**: a real-time banner appears at the top of the config page when an unreachable provider is detected, making configuration issues easy to spot.
+
+### Changed
+
+- Wizard built-in provider names and descriptions are now fully internationalised (zh-CN / zh-TW / en-US / ja-JP / de-DE / es-ES).
+- Model selector dropdown styling improved; Profile tab-switch buttons narrowed for a more compact layout.
+
+### Fixed
+
+- Fixed selection state corruption after a cascade delete (React 18 StrictMode double-invokes Immer producers, causing `setState` calls inside the callback to fire twice).
+- Fixed a crash when opening the cascade-delete preview in an empty state (`getCascadePreview` was missing a null guard).
+- Fixed the wizard's final step allowing a profile name that already exists; duplicate names are now detected in real time and the submit button is disabled.
+
 ## [2.0.0] - 2026-06-01
 
 ### Added

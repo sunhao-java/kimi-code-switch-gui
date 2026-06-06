@@ -2,6 +2,26 @@
 
 Diese Datei dokumentiert die wesentlichen Änderungen des Projekts. Das Format folgt Keep a Changelog; verwendet wird das `major.minor.patch`-Versionsschema.
 
+## [2.0.1] - 2026-06-06
+
+### Hinzugefügt
+
+- **Profilzentrierte Ansicht**: Der Profiles-Tab wurde zu einer profilzentrierten Ansicht umgestaltet. Jedes Profil zeigt auf einen Blick den gebundenen Anbieter und das Modell; Profile können direkt aus der Liste aktiviert werden.
+- **Assistent-Erstellungs-Assistent**: Ein 3-schrittiger Assistent (Anbieter wählen → Verbindung testen → Benennen) erstellt eine vollständige, sofort nutzbare Konfiguration in einem Durchgang, ohne Provider / Model / Profile separat einrichten zu müssen.
+- **Kaskaden-Lösch-Hinweis**: Vor dem Löschen eines Providers oder Modells analysiert die App automatisch die Auswirkungen und zeigt in einem Dialog alle betroffenen Modelle und Profile an, mit der Möglichkeit zur Herabstufung oder Bestätigung.
+- **Anbieter-Status-Banner**: Ein Echtzeit-Banner erscheint oben auf der Konfigurationsseite, wenn ein nicht erreichbarer Anbieter erkannt wird.
+
+### Geändert
+
+- Integrierte Anbieternamen und -beschreibungen des Assistenten vollständig internationalisiert (zh-CN / zh-TW / en-US / ja-JP / de-DE / es-ES).
+- Dropdown-Styling für die Modellauswahl verbessert; Profil-Tab-Schaltflächen verschmälert für ein kompakteres Layout.
+
+### Behoben
+
+- Fehlerhaften Auswahlzustand nach einem Kaskaden-Löschen behoben (React 18 StrictMode ruft Immer-Producer doppelt auf, sodass `setState`-Aufrufe im Callback zweimal ausgeführt wurden).
+- Absturz beim Öffnen der Kaskaden-Lösch-Vorschau im leeren Zustand behoben (`getCascadePreview` fehlte eine Null-Prüfung).
+- Im letzten Schritt des Assistenten konnte ein bereits vorhandener Profilname erneut verwendet werden; jetzt wird ein Duplikat in Echtzeit erkannt und der Senden-Button deaktiviert.
+
 ## [2.0.0] - 2026-06-01
 
 ### Hinzugefügt
