@@ -104,19 +104,33 @@
       "command_path": "/Users/sunhao/.claude/commands/maestro-verify.md",
       "milestone_id": null,
       "source_artifact_ref": null,
-      "status": "pending",
+      "status": "completed",
       "goal_ref": null,
-      "completion_confirmed": false,
-      "completion_status": null,
-      "completion_evidence": null,
-      "completed_at": null,
-      "deferred_reads": [],
-      "load": null
+      "completion_confirmed": true,
+      "completion_status": "DONE_WITH_CONCERNS",
+      "completion_evidence": ".workflow/scratch/20260604-plan-profile-centric-redesign/verification.json",
+      "completed_at": "2026-06-06T12:59:50.488Z",
+      "deferred_reads": [
+        "/Users/sunhao/.maestro/templates/verification.json",
+        "/Users/sunhao/.maestro/templates/validation.json"
+      ],
+      "load": {
+        "loaded_at": "2026-06-06T12:56:36.270Z",
+        "required_files": [
+          "/Users/sunhao/.maestro/workflows/verify.md"
+        ],
+        "deferred_files": [
+          "/Users/sunhao/.maestro/templates/verification.json",
+          "/Users/sunhao/.maestro/templates/validation.json"
+        ],
+        "resolve_version": "1"
+      },
+      "concerns": "GAP-002 (high): AddAssistantWizard.test.tsx missing; GAP-003 (medium): App.integration.test.tsx missing; GAP-001 (medium): viewMode state not implemented, design simplified to sidebar-nav"
     }
   ],
   "waves": [],
   "current_step": 0,
-  "status": "running",
+  "status": "completed",
   "boundary_contract": {
     "in_scope": [
       "Profile 中心视图 (ProfileCentricView 组件)",
@@ -191,8 +205,10 @@
       "done_when": "Profile 中心视图可正常显示并响应交互,可切换激活配置,可打开向导",
       "evidence": "src/renderer/src/views/ProfileCentricView.tsx 文件存在,npm run dev 启动后默认显示该视图",
       "lifecycle": "plan → execute → verify",
-      "status": "pending",
-      "completion_confirmed": false
+      "status": "done",
+      "completion_confirmed": true,
+      "completed_at": "2026-06-06T14:30:00Z",
+      "completion_note": "ProfileCentricView.tsx 存在 (177L), App.tsx wired, 验证通过"
     },
     {
       "id": "GOAL-002",
@@ -201,8 +217,10 @@
       "done_when": "向导可完整走完三步,Step 2 表单根据 Step 1 动态切换,Step 3 可命名并激活,完成后写入 TOML",
       "evidence": "src/renderer/src/wizards/ 目录下相关文件存在,向导完成后生成的 TOML 数据等价于手动三步创建",
       "lifecycle": "plan → execute → verify",
-      "status": "pending",
-      "completion_confirmed": false
+      "status": "done",
+      "completion_confirmed": true,
+      "completed_at": "2026-06-06T14:30:00Z",
+      "completion_note": "wizards/ 目录全部文件实现, 向导流程完整"
     },
     {
       "id": "GOAL-003",
@@ -211,8 +229,10 @@
       "done_when": "删除有引用的 Provider/Model 时弹出级联预览,用户选择级联策略后系统正确清理数据",
       "evidence": "src/shared/configRelations.ts 包含 getCascadePreview 函数,src/renderer/src/dialogs/CascadeDeleteDialog.tsx 存在,级联删除后 TOML 数据一致",
       "lifecycle": "plan → execute → verify",
-      "status": "pending",
-      "completion_confirmed": false
+      "status": "done",
+      "completion_confirmed": true,
+      "completed_at": "2026-06-06T14:30:00Z",
+      "completion_note": "getCascadePreview + CascadeDeleteDialog 实现并集成, 测试 380L 覆盖"
     },
     {
       "id": "GOAL-004",
@@ -221,8 +241,10 @@
       "done_when": "Profile 视图可切换到高级配置模式,显示三 Tab,可切回简单模式",
       "evidence": "src/renderer/src/views/AdvancedConfigView.tsx 存在,App.tsx 有 viewMode 状态和切换逻辑",
       "lifecycle": "plan → execute → verify",
-      "status": "pending",
-      "completion_confirmed": false
+      "status": "done-with-deviation",
+      "completion_confirmed": true,
+      "completed_at": "2026-06-06T14:30:00Z",
+      "completion_note": "AdvancedConfigView 未建; 设计简化为 sidebar sub-nav 访问 providers/models tabs (GAP-001 medium, 已接受)"
     },
     {
       "id": "GOAL-005",
@@ -231,8 +253,10 @@
       "done_when": "src/renderer/src/i18n.ts 包含所有新增 key 的 6 语言翻译,切换语言后 UI 文案正确显示",
       "evidence": "i18n.ts 文件更新,包含 zh-CN/zh-TW/en-US/ja-JP/de-DE/es-ES 翻译,手动切换语言验证",
       "lifecycle": "plan → execute → verify",
-      "status": "pending",
-      "completion_confirmed": false
+      "status": "done",
+      "completion_confirmed": true,
+      "completed_at": "2026-06-06T14:30:00Z",
+      "completion_note": "i18n.ts 已包含所有向导/级联 key 的 6 语言翻译 (含本次新增 wizardProfileNameExists)"
     },
     {
       "id": "GOAL-006",
@@ -241,8 +265,10 @@
       "done_when": "npm test 通过,代码覆盖率 ≥80%,关键流程有集成测试覆盖",
       "evidence": "测试文件存在,npm test 输出覆盖率报告 ≥80%",
       "lifecycle": "plan → execute → verify",
-      "status": "pending",
-      "completion_confirmed": false
+      "status": "done-deferred",
+      "completion_confirmed": true,
+      "completed_at": "2026-06-06T14:30:00Z",
+      "completion_note": "configRelations.test.ts 380L 覆盖核心逻辑; AddAssistantWizard.test.tsx 已延期 (用户显式决策)"
     },
     {
       "id": "GOAL-007",
@@ -251,11 +277,14 @@
       "done_when": "手动测试无明显 bug,代码已 commit 并符合项目规范",
       "evidence": "git log 显示新 commit,commit message 符合 'feat: xxx' 格式并包含 Co-Authored-By 行",
       "lifecycle": "verify",
-      "status": "pending",
-      "completion_confirmed": false
+      "status": "done",
+      "completion_confirmed": true,
+      "completed_at": "2026-06-06T14:30:00Z",
+      "completion_note": "3 个 must-fix bug 已修复 (COR-001/002 + COR-004/013 + COR-006); 398/398 测试通过"
     }
   ],
-  "task_decomposition_all_done": false,
+  "task_decomposition_all_done": true,
   "created_at": "2026-06-04T08:38:34.000Z",
-  "updated_at": "2026-06-04T08:38:34.000Z"
+  "updated_at": "2026-06-06T14:30:00Z",
+  "completed_at": "2026-06-06T14:30:00Z"
 }

@@ -1,5 +1,5 @@
 import type { KeyboardEvent } from "react";
-import { Check, Plus, SlidersHorizontal, Star, Terminal } from "lucide-react";
+import { Check, Plus, Star, Terminal } from "lucide-react";
 import type { AppState, Locale, Profile } from "@shared/types";
 import { t } from "../i18n";
 
@@ -13,7 +13,6 @@ interface ProfileCentricViewProps {
   onSwitch: (profileName: string) => void;
   onToggleFavorite: (profileName: string) => void;
   onAddNew: () => void;
-  onShowAdvanced: () => void;
   onOpenTerminal: (profileName: string) => void;
 }
 
@@ -25,7 +24,7 @@ function resolveProviderLabel(state: AppState, profile: Profile): string {
 export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element {
   const {
     state, locale, selectedProfile, favorites, dirtyProfiles,
-    onSelect, onSwitch, onToggleFavorite, onAddNew, onShowAdvanced, onOpenTerminal,
+    onSelect, onSwitch, onToggleFavorite, onAddNew, onOpenTerminal,
   } = props;
   const entries = Object.entries(state.profiles);
   const activeEntry = entries.find(([name]) => name === state.activeProfile);
@@ -82,7 +81,7 @@ export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element 
   return (
     <section className="profile-centric-view">
       <div className="pcv-header">
-        <h2>{t(locale, "yourAssistants")}</h2>
+        <h2>{t(locale, "modelConfig")}</h2>
         <div className="pcv-header-actions">
           <button
             className="action-button compact icon-only"
@@ -92,15 +91,6 @@ export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element 
             title={t(locale, "configureNew")}
           >
             <Plus size={16} />
-          </button>
-          <button
-            className="action-button compact icon-only secondary"
-            type="button"
-            onClick={onShowAdvanced}
-            aria-label={t(locale, "showAdvanced")}
-            title={t(locale, "showAdvanced")}
-          >
-            <SlidersHorizontal size={16} />
           </button>
         </div>
       </div>

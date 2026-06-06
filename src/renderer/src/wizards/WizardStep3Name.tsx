@@ -5,14 +5,18 @@ import { t } from "../i18n";
 interface Step3Props {
   locale: Locale;
   defaultName: string;
+  existingProfileNames: string[];
   onBack: () => void;
   onComplete: (profileName: string, activate: boolean) => void;
 }
 
 export function WizardStep3Name(props: Step3Props): JSX.Element {
-  const { locale, defaultName, onBack, onComplete } = props;
+  const { locale, defaultName, existingProfileNames, onBack, onComplete } = props;
   const [name, setName] = useState(defaultName);
   const [activate, setActivate] = useState(true);
+
+  const trimmed = name.trim();
+  const isDuplicate = trimmed.length > 0 && existingProfileNames.includes(trimmed);
 
   return (
     <div className="wizard-step">
@@ -28,6 +32,9 @@ export function WizardStep3Name(props: Step3Props): JSX.Element {
             onChange={(e) => setName(e.target.value)}
             autoFocus
           />
+          {isDuplicate ? (
+            <span className="wizard-field-error">{t(locale, "wizardProfileNameExists")}</span>
+          ) : null}
         </label>
 
         <label className="wizard-toggle">
@@ -47,8 +54,8 @@ export function WizardStep3Name(props: Step3Props): JSX.Element {
         <button
           className="action-button primary"
           type="button"
-          disabled={!name.trim()}
-          onClick={() => onComplete(name.trim(), activate)}
+          disabled={!trimmed || isDuplicate}
+          onClick={() => onComplete(trimmed, activate)}
         >
           {t(locale, "wizardComplete")}
         </button>

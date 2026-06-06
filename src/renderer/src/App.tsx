@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { AlertTriangle, ChevronsLeft, ChevronsRight, RefreshCw, Terminal, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronsLeft, ChevronsRight, RefreshCw, Terminal, X } from "lucide-react";
 
 import type { McpServerConfig, ShortcutAction, ShortcutBinding } from "@shared/types";
 import { applyProfile, toggleFavorite } from "@shared/configStore";
@@ -19,7 +19,7 @@ import type { CascadeImpact } from "@shared/configRelations";
 import { deleteProvider, deleteModel, deleteProfile } from "@shared/configStore";
 import { useAppHandlers } from "./useAppHandlers";
 import { useShortcuts } from "./useShortcuts";
-import { TAB_ITEMS, ABOUT_TAB, LOCALE_OPTIONS, THEME_OPTIONS } from "./appOptions";
+import { TAB_ITEMS, ABOUT_TAB, LOCALE_OPTIONS, THEME_OPTIONS, ASSISTANT_SUB_ITEMS } from "./appOptions";
 import type { TabId } from "./appOptions";
 import {
   BackupRecordsDialog,
@@ -178,9 +178,23 @@ export function App(): JSX.Element {
     });
   }, [locale, updateState]);
 
+  const [isAssistantGroupOpen, setIsAssistantGroupOpen] = useState(true);
+
+  // 通过快捷键或命令面板导航到子菜单时自动展开分组
+  useEffect(() => {
+    if (ASSISTANT_SUB_ITEMS.some((item) => item.id === activeTab)) {
+      setIsAssistantGroupOpen(true);
+    }
+  }, [activeTab]);
+
   const tabListRef = useRef<HTMLDivElement>(null);
   const visibleTabItems = TAB_ITEMS;
-  const mainTabIds = visibleTabItems.map((item) => item.id);
+  const profilesIdx = TAB_ITEMS.findIndex((i) => i.id === "profiles");
+  const mainTabIds = [
+    ...TAB_ITEMS.slice(0, profilesIdx + 1).map((i) => i.id),
+    ...ASSISTANT_SUB_ITEMS.map((i) => i.id),
+    ...TAB_ITEMS.slice(profilesIdx + 1).map((i) => i.id),
+  ];
 
   const focusTab = useCallback((tabId: string): void => {
     const button = document.getElementById(`tab-${tabId}`);
@@ -300,26 +314,93 @@ export function App(): JSX.Element {
           </button>
         </div>
         <nav className="nav" role="tablist" ref={tabListRef} onKeyDown={handleMainTabKeyDown}>
-          {visibleTabItems.map(({ id, icon: Icon, labelKey }) => (
-            <button
-              key={id}
-              id={`tab-${id}`}
-              role="tab"
-              aria-selected={activeTab === id}
-              className={id === activeTab ? "nav-item active" : "nav-item"}
-              title={t(locale, labelKey)}
-              aria-label={t(locale, labelKey)}
-              tabIndex={id === activeTab ? 0 : -1}
-              onClick={() => {
-                if (id === activeTab) return;
-                runAfterUnsavedHandled(() => setActiveTab(id));
-              }}
-            >
-              <Icon size={18} />
-              <span>{t(locale, labelKey)}</span>
-              {tabShortcutLabels[id] ? <kbd className="nav-shortcut">{tabShortcutLabels[id]}</kbd> : null}
-            </button>
-          ))}
+          {visibleTabItems.map(({ id, icon: Icon, labelKey }) => {
+            if (id === "profiles") {
+              const isGroupActive = ["profiles", "providers", "models"].includes(activeTab);
+              return (
+                <div key={id} className="nav-group">
+                  <div className="nav-group-header">
+                    <button
+                      id={`tab-${id}`}
+                      role="tab"
+                      aria-selected={isGroupActive}
+                      className={isGroupActive ? "nav-item active" : "nav-item"}
+                      title={t(locale, labelKey)}
+                      aria-label={t(locale, labelKey)}
+                      tabIndex={isGroupActive ? 0 : -1}
+                      onClick={() => {
+                        setIsAssistantGroupOpen(true);
+                        if (activeTab !== "profiles") {
+                          runAfterUnsavedHandled(() => setActiveTab("profiles"));
+                        }
+                      }}
+                    >
+                      <Icon size={18} />
+                      <span>{t(locale, labelKey)}</span>
+                      {tabShortcutLabels[id] ? <kbd className="nav-shortcut">{tabShortcutLabels[id]}</kbd> : null}
+                    </button>
+                    {!isSidebarCollapsed && (
+                      <button
+                        type="button"
+                        className={isAssistantGroupOpen ? "nav-group-toggle is-open" : "nav-group-toggle"}
+                        aria-label={isAssistantGroupOpen ? t(locale, "collapseSidebar") : t(locale, "expandSidebar")}
+                        onClick={() => setIsAssistantGroupOpen((v) => !v)}
+                      >
+                        <ChevronDown size={13} />
+                      </button>
+                    )}
+                  </div>
+                  {!isSidebarCollapsed && (
+                    <div className={isAssistantGroupOpen ? "nav-subitems-wrapper" : "nav-subitems-wrapper is-collapsed"}>
+                      <div className="nav-subitems">
+                        {ASSISTANT_SUB_ITEMS.map(({ id: subId, icon: SubIcon, labelKey: subLabelKey }) => (
+                          <button
+                            key={subId}
+                            id={`tab-${subId}`}
+                            role="tab"
+                            aria-selected={activeTab === subId}
+                            className={activeTab === subId ? "nav-item nav-subitem active" : "nav-item nav-subitem"}
+                            title={t(locale, subLabelKey)}
+                            aria-label={t(locale, subLabelKey)}
+                            tabIndex={activeTab === subId ? 0 : -1}
+                            onClick={() => {
+                              if (subId === activeTab) return;
+                              runAfterUnsavedHandled(() => setActiveTab(subId));
+                            }}
+                          >
+                            <SubIcon size={16} />
+                            <span>{t(locale, subLabelKey)}</span>
+                            {tabShortcutLabels[subId] ? <kbd className="nav-shortcut">{tabShortcutLabels[subId]}</kbd> : null}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <button
+                key={id}
+                id={`tab-${id}`}
+                role="tab"
+                aria-selected={activeTab === id}
+                className={id === activeTab ? "nav-item active" : "nav-item"}
+                title={t(locale, labelKey)}
+                aria-label={t(locale, labelKey)}
+                tabIndex={id === activeTab ? 0 : -1}
+                onClick={() => {
+                  if (id === activeTab) return;
+                  runAfterUnsavedHandled(() => setActiveTab(id));
+                }}
+              >
+                <Icon size={18} />
+                <span>{t(locale, labelKey)}</span>
+                {tabShortcutLabels[id] ? <kbd className="nav-shortcut">{tabShortcutLabels[id]}</kbd> : null}
+              </button>
+            );
+          })}
         </nav>
         <nav className="nav nav-bottom" role="tablist" onKeyDown={handleAboutTabKeyDown}>
           <button
@@ -472,7 +553,6 @@ export function App(): JSX.Element {
                 })
               }
               onAddNew={() => setShowWizard(true)}
-              onShowAdvanced={() => runAfterUnsavedHandled(() => setActiveTab("providers"))}
               onOpenTerminal={(profileName) => void openKimiInTerminal(profileName)}
             />
           ) : null}
@@ -600,12 +680,12 @@ export function App(): JSX.Element {
                   ...draft.mcpConfig.mcpServers,
                   ...imported.mcpServers,
                 };
-                setSelectedMcpServer(importedNames[0] ?? "");
               }, {
                 persist: false,
                 recordHistory: true,
                 historySummary: t(locale, "mcpImportApply"),
               });
+              setSelectedMcpServer(importedNames[0] ?? "");
 
               closeMcpImportDialog();
               setError("");
@@ -656,6 +736,9 @@ export function App(): JSX.Element {
           targetName={cascadeTarget.name}
           impact={cascadeTarget.impact}
           onConfirm={(strategy) => {
+            let newFirstProvider = "";
+            let newFirstModel = "";
+            let newFirstProfile = "";
             updateState((draft) => {
               if (strategy === "cascade") {
                 for (const m of cascadeTarget.impact.affectedModels) {
@@ -673,15 +756,17 @@ export function App(): JSX.Element {
               if (cascadeTarget.impact.isCurrentActive && cascadeTarget.impact.suggestedFallbackProfile) {
                 applyProfile(draft, cascadeTarget.impact.suggestedFallbackProfile);
               }
-              // 删除后选中项可能失效，重置到剩余首项
-              setSelectedProvider(Object.keys(draft.mainConfig.providers)[0] ?? "");
-              setSelectedModel(Object.keys(draft.mainConfig.models)[0] ?? "");
-              setSelectedProfile(Object.keys(draft.profiles)[0] ?? "");
+              newFirstProvider = Object.keys(draft.mainConfig.providers)[0] ?? "";
+              newFirstModel = Object.keys(draft.mainConfig.models)[0] ?? "";
+              newFirstProfile = Object.keys(draft.profiles)[0] ?? "";
             }, {
               persist: true,
               recordHistory: true,
               historySummary: formatMessage(t(locale, "historyCascadeDelete"), { name: cascadeTarget.name }),
             });
+            setSelectedProvider(newFirstProvider);
+            setSelectedModel(newFirstModel);
+            setSelectedProfile(newFirstProfile);
             setCascadeTarget(null);
           }}
           onCancel={() => setCascadeTarget(null)}

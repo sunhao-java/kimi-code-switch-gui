@@ -88,6 +88,10 @@ export function getCascadePreview(
   state: AppState,
   target: { type: 'provider' | 'model'; name: string },
 ): CascadeImpact {
+  if (!state?.mainConfig?.models || !state?.profiles) {
+    return { affectedModels: [], affectedProfiles: [], isCurrentActive: false, suggestedFallbackProfile: null };
+  }
+
   const affectedModels: CascadeImpact['affectedModels'] = [];
   const affectedProfiles: CascadeImpact['affectedProfiles'] = [];
 

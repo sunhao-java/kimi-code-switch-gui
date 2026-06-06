@@ -74,6 +74,7 @@ export function AddAssistantWizard(props: WizardProps): JSX.Element {
           <WizardStep3Name
             locale={locale}
             defaultName={`${source.name} ${formData.modelId}`}
+            existingProfileNames={Object.keys(state.profiles)}
             onBack={() => setStep(2)}
             onComplete={(profileName, activate) => {
               const providerName = createUniqueName(source.id, Object.keys(state.mainConfig.providers));

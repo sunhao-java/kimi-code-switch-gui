@@ -225,9 +225,11 @@ textarea:focus-visible {
   white-space: nowrap;
   opacity: 1;
   max-width: 180px;
+  max-height: 60px;
   transition:
     opacity 200ms ease,
-    max-width 320ms cubic-bezier(0.22, 1, 0.36, 1);
+    max-width 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    max-height 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .brand h1 {
@@ -279,10 +281,12 @@ textarea:focus-visible {
 .shell.sidebar-collapsed .brand-copy {
   opacity: 0;
   max-width: 0;
+  max-height: 0;
   /* 折叠时文字先快速淡出，避免内容溢出窄栏 */
   transition:
     opacity 120ms ease,
-    max-width 320ms cubic-bezier(0.22, 1, 0.36, 1);
+    max-width 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    max-height 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .shell.sidebar-collapsed .sidebar-collapse-button {
@@ -483,6 +487,98 @@ textarea:focus-visible {
 .nav-item:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
+}
+
+/* ── nav group (Assistants + sub-items) ─────────────── */
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.nav-group-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-group-header .nav-item {
+  flex: 1;
+  width: auto;
+}
+
+.nav-group-toggle {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.nav-group-toggle:hover {
+  background: var(--surface-hover);
+  border-color: var(--line);
+  color: var(--text);
+}
+
+.nav-group-toggle svg {
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  transform: rotate(-90deg);
+}
+
+.nav-group-toggle.is-open svg {
+  transform: rotate(0deg);
+}
+
+.nav-subitems-wrapper {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 250ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.nav-subitems-wrapper.is-collapsed {
+  grid-template-rows: 0fr;
+}
+
+.nav-subitems {
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-bottom: 2px;
+}
+
+.nav-subitem {
+  min-height: 38px !important;
+  padding: 8px 12px 8px 14px !important;
+  border-radius: 14px !important;
+  margin-left: 10px;
+}
+
+.nav-subitem svg {
+  opacity: 0.85;
+}
+
+.nav-subitem > span {
+  font-size: 0.9em;
+}
+
+/* 折叠侧边栏时隐藏子菜单和切换按钮 */
+.shell.sidebar-collapsed .nav-group-toggle,
+.shell.sidebar-collapsed .nav-subitems-wrapper {
+  display: none;
 }
 
 .action-button {

@@ -23,13 +23,16 @@ export type PreviewFileId = "config" | "profiles" | "panel" | "mcp";
 
 export const TAB_ITEMS: Array<{ id: TabId; icon: typeof Layers3; labelKey: string }> = [
   { id: "overview", icon: Sparkles, labelKey: "overview" },
-  { id: "profiles", icon: Layers3, labelKey: "profiles" },
-  { id: "providers", icon: Globe, labelKey: "providers" },
-  { id: "models", icon: Boxes, labelKey: "models" },
+  { id: "profiles", icon: Layers3, labelKey: "assistants" },
   { id: "mcp", icon: Zap, labelKey: "mcp" },
   { id: "skills", icon: FileText, labelKey: "skillsNav" },
   { id: "insights", icon: TrendingUp, labelKey: "insights" },
   { id: "settings", icon: Settings2, labelKey: "settings" },
+];
+
+export const ASSISTANT_SUB_ITEMS: Array<{ id: TabId; icon: typeof Layers3; labelKey: string }> = [
+  { id: "providers", icon: Globe, labelKey: "providers" },
+  { id: "models", icon: Boxes, labelKey: "models" },
 ];
 
 export const ABOUT_TAB: { id: TabId; icon: typeof Info; labelKey: string } = {
