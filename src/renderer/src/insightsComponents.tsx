@@ -159,12 +159,12 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
       if (result.ok) {
         await loadStatus();
         onStateChange?.();
-        showToast("用量洞察已启用", "success");
+        showToast(t(locale, "insightsToastEnabled"), "success");
       } else {
-        showToast(`启用失败: ${result.message}`, "error");
+        showToast(`${t(locale, "insightsToastEnableError")}: ${result.message}`, "error");
       }
     } catch (err) {
-      showToast(`启用失败: ${String(err)}`, "error");
+      showToast(`${t(locale, "insightsToastEnableError")}: ${String(err)}`, "error");
     } finally {
       setLoading(false);
     }
@@ -177,10 +177,10 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
       if (result.ok) {
         await loadStatus();
         onStateChange?.();
-        showToast("用量洞察已禁用", "info");
+        showToast(t(locale, "insightsToastDisabled"), "info");
       }
     } catch (err) {
-      showToast(`禁用失败: ${String(err)}`, "error");
+      showToast(`${t(locale, "insightsToastDisableError")}: ${String(err)}`, "error");
     } finally {
       setLoading(false);
     }
@@ -193,11 +193,11 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
       if (result.ok) {
         await loadStatus();
         await loadStorage();
-        showToast("所有洞察数据已清除", "success");
+        showToast(t(locale, "insightsToastResetDone"), "success");
         setShowResetDialog(false);
       }
     } catch (err) {
-      showToast(`清除失败: ${String(err)}`, "error");
+      showToast(`${t(locale, "insightsToastResetError")}: ${String(err)}`, "error");
     } finally {
       setLoading(false);
     }
@@ -278,7 +278,7 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
                 <div className="insights-metric-card">
                   <div className="insights-metric-label">
                     <Activity size={14} />
-                    数据来源
+                    {t(locale, "insightsMetricDataSource")}
                   </div>
                   <div className="insights-metric-value" style={{ fontSize: "0.875rem" }}>
                     ~/.kimi/logs/kimi.log
@@ -287,14 +287,14 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
                 <div className="insights-metric-card">
                   <div className="insights-metric-label">
                     <Database size={14} />
-                    已采集事件
+                    {t(locale, "insightsMetricEventsIngested")}
                   </div>
                   <div className="insights-metric-value">{watcherStatus.eventsIngested ?? 0}</div>
                 </div>
                 <div className="insights-metric-card">
                   <div className="insights-metric-label">
                     <TrendingUp size={14} />
-                    追踪会话
+                    {t(locale, "insightsMetricSessionsTracked")}
                   </div>
                   <div className="insights-metric-value">
                     {watcherStatus.sessionsTracked ?? 0}
@@ -319,7 +319,7 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
                 }}
               >
                 <TrendingUp size={16} style={{ color: "rgba(var(--primary-rgb), 1)" }} />
-                <span>查看图表统计、趋势分析、分组数据等：请进入侧边栏的"洞察"菜单。</span>
+                <span>{t(locale, "insightsEnterDashboardHint")}</span>
               </div>
             )}
           </div>
@@ -380,15 +380,15 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
         </SettingsGroup>
 
         {/* 配置选项 */}
-        <SettingsGroup title="配置选项">
+        <SettingsGroup title={t(locale, "insightsConfigGroup")}>
           <div className="insights-config-grid">
             <div className="insights-config-card blue">
               <div className="insights-config-label">{t(locale, "insightsRetentionDays")}</div>
               <div className="insights-config-value">
                 <div className="insights-config-number blue">{settings?.insights_retention_days ?? 90}</div>
-                <div className="insights-config-unit">天</div>
+                <div className="insights-config-unit">{t(locale, "insightsConfigUnitDay")}</div>
               </div>
-              <div className="insights-config-hint">数据保留时长</div>
+              <div className="insights-config-hint">{t(locale, "insightsRetentionHint")}</div>
             </div>
             <div className="insights-config-card purple">
               <div className="insights-config-label">{t(locale, "insightsDiskWarnThreshold")}</div>
@@ -398,7 +398,7 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
                 </div>
                 <div className="insights-config-unit">MB</div>
               </div>
-              <div className="insights-config-hint">磁盘警告阈值</div>
+              <div className="insights-config-hint">{t(locale, "insightsDiskWarnHint")}</div>
             </div>
           </div>
         </SettingsGroup>
@@ -445,15 +445,15 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
         </SettingsGroup>
 
         {/* 数据管理 */}
-        <SettingsGroup title="数据管理">
+        <SettingsGroup title={t(locale, "insightsDataManageGroup")}>
           <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
-              <div style={{ fontWeight: 500, marginBottom: "4px" }}>清除所有洞察数据</div>
-              <div style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>删除 SQLite 数据库和 JSONL 日志，不可恢复</div>
+              <div style={{ fontWeight: 500, marginBottom: "4px" }}>{t(locale, "insightsResetDataTitle")}</div>
+              <div style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>{t(locale, "insightsResetDataDesc")}</div>
             </div>
             <button onClick={() => setShowResetDialog(true)} disabled={loading} className="insights-button-danger">
               <AlertCircle size={14} />
-              清除数据
+              {t(locale, "insightsResetDataButton")}
             </button>
           </div>
         </SettingsGroup>
@@ -466,23 +466,23 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
             <div className="dialog-header">
               <h3>
                 <AlertCircle size={20} />
-                确认清除洞察数据
+                {t(locale, "insightsResetDialogTitle")}
               </h3>
             </div>
             <div className="dialog-body">
               <p style={{ color: "var(--text)", marginBottom: "12px" }}>
-                此操作将清空以下数据，<strong>不可恢复</strong>：
+                {t(locale, "insightsResetDialogIntro")}<strong>{t(locale, "insightsResetDialogIrreversible")}</strong>：
               </p>
               <ul style={{ color: "var(--muted)", fontSize: "0.875rem", lineHeight: "1.6", paddingLeft: "20px" }}>
-                <li>所有用量事件记录</li>
-                <li>每日聚合统计数据</li>
-                <li>日志读取进度</li>
+                <li>{t(locale, "insightsResetDialogItem1")}</li>
+                <li>{t(locale, "insightsResetDialogItem2")}</li>
+                <li>{t(locale, "insightsResetDialogItem3")}</li>
               </ul>
               <p style={{ color: "var(--muted)", fontSize: "0.875rem", marginTop: "12px" }}>
-                清空后，系统将从头开始重新读取日志并重建数据。
+                {t(locale, "insightsResetDialogRebuild")}
               </p>
               <p style={{ color: "var(--danger)", fontSize: "0.875rem", marginTop: "12px", fontWeight: 500 }}>
-                ⚠️ 此操作不会删除 kimi-cli 的原始日志文件。
+                {t(locale, "insightsResetDialogKeepLogs")}
               </p>
             </div>
             <div className="dialog-footer">
@@ -491,7 +491,7 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
                 disabled={loading}
                 className="insights-button-secondary"
               >
-                取消
+                {t(locale, "insightsResetDialogCancel")}
               </button>
               <button
                 onClick={handleResetData}
@@ -499,7 +499,7 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
                 className="insights-button-danger"
               >
                 <AlertCircle size={14} />
-                确认清除
+                {t(locale, "insightsResetDialogConfirm")}
               </button>
             </div>
           </div>
@@ -612,7 +612,7 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
         setCostByModel(costRes.value.byModel);
       }
     } catch (err) {
-      showToast(`加载数据失败: ${String(err)}`, "error");
+      showToast(`${t(locale, "insightsToastLoadError")}: ${String(err)}`, "error");
     } finally {
       setLoading(false);
     }
@@ -631,14 +631,14 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
     return (
       <div className="insights-dashboard-empty">
         <div className="insights-empty-icon"><TrendingUp size={64} /></div>
-        <h2 className="insights-empty-title">用量洞察未启用</h2>
+        <h2 className="insights-empty-title">{t(locale, "insightsDashboardDisabledTitle")}</h2>
         <p className="insights-empty-description">
-          洞察功能通过解析 kimi-cli 日志自动统计 Token 用量、调用趋势和会话分析。
-          <br />请前往「设置 → 用量洞察」开启洞察采集。
+          {t(locale, "insightsDashboardDisabledDesc")}
+          <br />{t(locale, "insightsDashboardDisabledHint")}
         </p>
         {onOpenSettings ? (
           <button onClick={onOpenSettings} className="insights-button-primary" style={{ marginTop: "16px" }}>
-            前往设置开启
+            {t(locale, "insightsDashboardOpenSettings")}
           </button>
         ) : null}
       </div>
@@ -658,26 +658,26 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
         <div className="insights-dashboard-actions">
           {timeRangeMode === "preset" ? (
             <select value={timeRangeKey} onChange={(e) => { if (e.target.value === "__custom__") { setTimeRangeMode("custom"); const now = new Date(); setCustomTo(now.toISOString().slice(0, 10)); setCustomFrom(new Date(now.getTime() - 7 * 86400000).toISOString().slice(0, 10)); } else { setTimeRangeKey(e.target.value); } }} className="insights-select">
-              <option value="today">今天</option>
-              <option value="3d">最近 3 天</option>
-              <option value="7d">最近 7 天</option>
-              <option value="14d">最近 14 天</option>
-              <option value="30d">最近 30 天</option>
-              <option value="90d">最近 90 天</option>
-              <option value="mtd">本月</option>
-              <option value="__custom__">自定义范围...</option>
+              <option value="today">{t(locale, "insightsTimeRangeToday")}</option>
+              <option value="3d">{t(locale, "insightsTimeRange3d")}</option>
+              <option value="7d">{t(locale, "insightsTimeRange7d")}</option>
+              <option value="14d">{t(locale, "insightsTimeRange14d")}</option>
+              <option value="30d">{t(locale, "insightsTimeRange30d")}</option>
+              <option value="90d">{t(locale, "insightsTimeRange90d")}</option>
+              <option value="mtd">{t(locale, "insightsTimeRangeMonth")}</option>
+              <option value="__custom__">{t(locale, "insightsTimeRangeCustomOption")}</option>
             </select>
           ) : (
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="insights-select" />
               <span style={{ color: "var(--muted)" }}>—</span>
               <input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)} className="insights-select" />
-              <button onClick={() => setTimeRangeMode("preset")} className="insights-button-secondary" style={{ padding: "6px 10px" }}>预设</button>
+              <button onClick={() => setTimeRangeMode("preset")} className="insights-button-secondary" style={{ padding: "6px 10px" }}>{t(locale, "insightsTimeRangePreset")}</button>
             </div>
           )}
           <button onClick={() => void loadData()} className="insights-button-secondary" disabled={loading}>
             <Activity size={14} />
-            {loading ? "加载中..." : "刷新"}
+            {loading ? t(locale, "insightsRefreshLoading") : t(locale, "insightsRefresh")}
           </button>
         </div>
       </div>
@@ -709,23 +709,23 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
 
         {activeTab === "trend" && (
           <div className="insights-trend-panel">
-            <p className="insights-tab-desc">按日展示 Token 消耗或调用次数的变化趋势，帮助发现用量高峰和异常波动。</p>
+            <p className="insights-tab-desc">{t(locale, "insightsTrendDesc")}</p>
             <div className="insights-trend-controls">
               <select value={trendMetric} onChange={(e) => setTrendMetric(e.target.value as TrendMetric)} className="insights-select">
-                <option value="tokens">Token 消耗</option>
-                <option value="calls">调用次数</option>
+                <option value="tokens">{t(locale, "insightsTrendMetricTokens")}</option>
+                <option value="calls">{t(locale, "insightsTrendMetricCalls")}</option>
               </select>
-              <div className="insights-chart-type-toggle" role="tablist" aria-label="图表类型">
+              <div className="insights-chart-type-toggle" role="tablist" aria-label={t(locale, "insightsChartTypeLabel")}>
                 <button
                   type="button"
                   role="tab"
                   aria-selected={trendChartType === "bar"}
                   className={`insights-chart-type-btn ${trendChartType === "bar" ? "active" : ""}`}
                   onClick={() => setTrendChartType("bar")}
-                  title="柱状图"
+                  title={t(locale, "insightsChartTypeBar")}
                 >
                   <BarChart3 size={14} />
-                  <span>柱状图</span>
+                  <span>{t(locale, "insightsChartTypeBar")}</span>
                 </button>
                 <button
                   type="button"
@@ -733,15 +733,15 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
                   aria-selected={trendChartType === "line"}
                   className={`insights-chart-type-btn ${trendChartType === "line" ? "active" : ""}`}
                   onClick={() => setTrendChartType("line")}
-                  title="折线图"
+                  title={t(locale, "insightsChartTypeLine")}
                 >
                   <LineChart size={14} />
-                  <span>折线图</span>
+                  <span>{t(locale, "insightsChartTypeLine")}</span>
                 </button>
               </div>
             </div>
             {trendData.length === 0 ? (
-              <div className="insights-coming-soon"><TrendingUp size={48} /><h3>暂无趋势数据</h3><p>使用 kimi-cli 发起请求后，趋势数据将在此展示。</p></div>
+              <div className="insights-coming-soon"><TrendingUp size={48} /><h3>{t(locale, "insightsTrendEmpty")}</h3><p>{t(locale, "insightsTrendEmptyHint")}</p></div>
             ) : (
               <>
                 <div className="insights-trend-cost-summary">
@@ -888,14 +888,14 @@ interface BreakdownCardProps {
 }
 
 function BreakdownCard({ title, data, view, onViewChange, locale, costByName, currency = "USD", currencyRates }: BreakdownCardProps): JSX.Element {
-  const pieData: PieDatum[] = data.map((r) => ({ name: r.name || "(未知)", value: r.tokens }));
+  const pieData: PieDatum[] = data.map((r) => ({ name: r.name || t(locale, "insightsUnknownName"), value: r.tokens }));
   const showCost = costByName !== undefined;
 
   return (
     <div className="insights-breakdown-card">
       <div className="insights-breakdown-card-header">
         <h4 className="insights-breakdown-card-title">{title}</h4>
-        <div className="insights-chart-type-toggle" role="tablist" aria-label="展示形式">
+        <div className="insights-chart-type-toggle" role="tablist" aria-label={t(locale, "insightsViewToggleLabel")}>
           <button
             type="button"
             role="tab"
@@ -929,11 +929,11 @@ function BreakdownCard({ title, data, view, onViewChange, locale, costByName, cu
       ) : view === "table" ? (
         <div className="insights-breakdown-table">
           <div className="insights-table-header">
-            <span className="insights-table-cell name">名称</span>
-            <span className="insights-table-cell num">调用次数</span>
-            <span className="insights-table-cell num">Token 总量</span>
-            <span className="insights-table-cell num">占比</span>
-            <span className="insights-table-cell num">平均延迟</span>
+            <span className="insights-table-cell name">{t(locale, "insightsTableColName")}</span>
+            <span className="insights-table-cell num">{t(locale, "insightsTableColCalls")}</span>
+            <span className="insights-table-cell num">{t(locale, "insightsTableColTokens")}</span>
+            <span className="insights-table-cell num">{t(locale, "insightsTableColPct")}</span>
+            <span className="insights-table-cell num">{t(locale, "insightsTableColLatency")}</span>
             {showCost && <span className="insights-table-cell num">{t(locale, "insightsCostColumn")}</span>}
           </div>
           {data.map((row, i) => {
@@ -941,7 +941,7 @@ function BreakdownCard({ title, data, view, onViewChange, locale, costByName, cu
             const pct = ((row.tokens / totalTokens) * 100).toFixed(1);
             return (
               <div key={i} className="insights-table-row">
-                <span className="insights-table-cell name">{row.name || "(未知)"}</span>
+                <span className="insights-table-cell name">{row.name || t(locale, "insightsUnknownName")}</span>
                 <span className="insights-table-cell num">{formatNumber(row.calls)}</span>
                 <span className="insights-table-cell num">{formatNumber(row.tokens)}</span>
                 <span className="insights-table-cell num">{pct}%</span>
