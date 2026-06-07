@@ -68,11 +68,11 @@ v2.0.0 完成 Electron→Tauri v2 架构重写后，产品进入"巩固地基 �
 
 ### Milestone 3: Insights 二期 + 上游韧性 (v2.2)
 **Target**: 提升 Insights 交互体验，并增强对 kimi-code-cli 上游配置演进的兼容韧性。
-**Status**: planned
+**Status**: completed
 
 #### Phases
 
-- [ ] **Phase 1: Insights 增强 + 上游兼容韧性** — recharts 交互图、tray 洞察入口、配置漂移探测、CLI 版本探测、provider 健康巡检
+- [x] **Phase 1: Insights 增强 + 上游兼容韧性** — 交互趋势图、tray 洞察入口、配置漂移探测、CLI 版本探测、provider 健康巡检
 
 #### Phase Details
 
@@ -86,6 +86,14 @@ v2.0.0 完成 Electron→Tauri v2 架构重写后，产品进入"巩固地基 �
   3. 配置格式漂移探测：当 `~/.kimi/` 出现 GUI 不认识的新字段时，提示用户而非静默丢弃
   4. About/体检页显示检测到的 kimi-code-cli 版本与兼容状态
   5. Provider 连通性批量健康巡检，一次性看出哪些 provider 不可用
+
+**交付状态**（v2.0.1 随版本发布，commit `f7bff78` + `0ddb935`）:
+  - SC1 ✅（偏差）: 趋势图已升级为交互式图表（hover tooltip / 点击下钻 / 图例 / bar+line / 暗亮主题），但用**自研 SVG**（`insightsChart.tsx`）而非 recharts，未引入第三方图表依赖——交互目标达成，技术选型偏离原措辞
+  - SC2 ✅: tray `show-insights` 入口 → `kimi-open-insights` 事件直达（`tray.ts`）
+  - SC3 ✅: `configSafety.ts` `detectUnknownFields` + `buildConfigDoctorReport` 探测漂移并提示
+  - SC4 ✅: `cli.ts` `detectCliVersion` + `evaluateCliCompatibility`，`overviewDashboard.tsx` 渲染版本与兼容状态
+  - SC5 ✅: `runProvidersHealthCheck` 批量并发巡检 → `providerHealthBanner.tsx` 列表展示
+  - 测试: `insightsChart.test.tsx`、`providerHealthBanner.test.tsx`、`cli.test.ts`、`configSafety.test.ts`、`versionUtils.test.ts` 覆盖
 
 ---
 

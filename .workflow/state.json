@@ -2,7 +2,7 @@
   "version": "2.0",
   "project_name": "kimi-code-switch-gui",
   "status": "idle",
-  "current_milestone": "v2.2",
+  "current_milestone": null,
   "current_task_id": null,
   "milestones": [
     {
@@ -29,10 +29,11 @@
       "id": "v2.2",
       "name": "Insights 二期 + 上游韧性",
       "version": "v2.2",
-      "status": "active",
+      "status": "completed",
       "phase_slugs": [
         "01-insights-resilience"
-      ]
+      ],
+      "completed_at": "2026-06-07T14:45:00.000Z"
     }
   ],
   "artifacts": [
@@ -187,7 +188,7 @@
       "completed_at": "2026-06-06T14:00:00Z"
     }
   ],
-  "last_updated": "2026-06-04T08:45:00.000Z",
+  "last_updated": "2026-06-07T14:45:00.000Z",
   "accumulated_context": {
     "key_decisions": [
       "使用日志解析替代 MITM 代理采集用量数据",
@@ -220,6 +221,12 @@
       "action": "completed",
       "at": "2026-06-02T08:26:38.926Z",
       "summary": "Phase 1 成本估算+分发优化 闭环 (VRF-002)"
+    },
+    {
+      "milestone": "v2.2",
+      "action": "completed",
+      "at": "2026-06-07T14:45:00.000Z",
+      "summary": "Phase 1 Insights 增强+上游韧性 5/5 SC 达成（SC1 自研 SVG 交互图替代 recharts，done-with-deviation），随 v2.0.1 发布；补 insightsChart/providerHealthBanner 测试闭环"
     }
   ]
 }
