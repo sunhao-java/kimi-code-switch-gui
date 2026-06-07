@@ -1,4 +1,6 @@
+import type { DisplayCurrency } from "./types";
 export type InsightsStatus = "disabled" | "enabled" | "paused";
+
 
 export type ProxyStatus = "stopped" | "starting" | "running" | "error";
 
@@ -19,6 +21,8 @@ export interface InsightsSettings {
   insights_store_prompt_preview: boolean;
   insights_onboarding_shown_at: string;
   insights_last_known_port: number | null;
+  insights_display_currency: DisplayCurrency;
+  insights_currency_rates: Partial<Record<DisplayCurrency, number>>;
 }
 
 export interface ProxyHealth {

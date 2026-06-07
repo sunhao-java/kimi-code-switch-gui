@@ -1,5 +1,6 @@
+import { SUPPORTED_CURRENCIES } from "./currency";
 import { computeEventCost, resolveModelPricing } from "./pricing";
-import type { ModelConfig, ModelPricing } from "./types";
+import type { DisplayCurrency, ModelConfig, ModelPricing } from "./types";
 import type { InsightsSettings, InsightsStatus, ProxyHealth, ProxyState, UsageEvent } from "./usageTypes";
 
 export const INSIGHTS_PORT_MIN = 1024;
@@ -18,6 +19,8 @@ export function getInsightsDefaults(): InsightsSettings {
     insights_store_prompt_preview: false,
     insights_onboarding_shown_at: "",
     insights_last_known_port: null,
+    insights_display_currency: "USD",
+    insights_currency_rates: {},
   };
 }
 
@@ -108,7 +111,34 @@ export function normalizeInsightsSettings(input: Partial<InsightsSettings> | nul
         : defaults.insights_store_prompt_preview,
     insights_onboarding_shown_at: normalizeOnboardingShownAt(input.insights_onboarding_shown_at),
     insights_last_known_port: normalizeLastKnownPort(input.insights_last_known_port),
+    insights_display_currency: normalizeDisplayCurrency(
+      input.insights_display_currency,
+      defaults.insights_display_currency,
+    ),
+    insights_currency_rates: normalizeCurrencyRates(input.insights_currency_rates),
   };
+}
+
+function normalizeDisplayCurrency(
+  value: unknown,
+  fallback: DisplayCurrency,
+): DisplayCurrency {
+  return typeof value === "string" && (SUPPORTED_CURRENCIES as readonly string[]).includes(value)
+    ? (value as DisplayCurrency)
+    : fallback;
+}
+
+function normalizeCurrencyRates(
+  value: unknown,
+): Partial<Record<DisplayCurrency, number>> {
+  if (typeof value !== "object" || value === null) return {};
+  const source = value as Record<string, unknown>;
+  const out: Partial<Record<DisplayCurrency, number>> = {};
+  for (const currency of SUPPORTED_CURRENCIES) {
+    const v = source[currency];
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) out[currency] = v;
+  }
+  return out;
 }
 
 export function shouldShowFirstRunDialog(settings: InsightsSettings): boolean {

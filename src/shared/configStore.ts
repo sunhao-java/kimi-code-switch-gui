@@ -2,12 +2,14 @@ import parse from "@iarna/toml/parse-string.js";
 import stringify from "@iarna/toml/stringify.js";
 
 import { redactAppStateSecrets } from "./configSafety";
+import { SUPPORTED_CURRENCIES } from "./currency";
 import { buildMcpConfigDocument, DEFAULT_MCP_CONFIG_PATH, loadMcpConfig, parseMcpConfigStrict } from "./mcpStore";
 import { createDefaultShortcuts, normalizeShortcuts } from "./shortcutStore";
 import type {
   AppState,
   BackupDestinationType,
   BackupStrategy,
+  DisplayCurrency,
   ExportBundle,
   ImportConflict,
   ImportConflictStrategy,
@@ -101,6 +103,8 @@ export function createDefaultPanelSettings(
     insights_store_prompt_preview: false,
     insights_onboarding_shown_at: "",
     insights_last_known_port: null,
+    insights_display_currency: "USD",
+    insights_currency_rates: {},
   };
 }
 
@@ -222,6 +226,24 @@ export function parsePanelSettingsDocument(document: string, fallback = createDe
   return panelSettingsFromUnknown(parseDocument(document), fallback);
 }
 
+function sanitizeCurrencyRates(
+  raw: unknown,
+  fallback: Partial<Record<DisplayCurrency, number>> | undefined,
+): Partial<Record<DisplayCurrency, number>> {
+  if (typeof raw !== "object" || raw === null) {
+    return fallback ?? {};
+  }
+  const source = raw as Record<string, unknown>;
+  const out: Partial<Record<DisplayCurrency, number>> = {};
+  for (const currency of SUPPORTED_CURRENCIES) {
+    const v = source[currency];
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) {
+      out[currency] = v;
+    }
+  }
+  return out;
+}
+
 function panelSettingsFromUnknown(data: Record<string, unknown>, fallback: PanelSettings): PanelSettings {
   const trayIcon = typeof data.tray_icon === "boolean" ? data.tray_icon : false;
   const configPath =
@@ -308,6 +330,15 @@ function panelSettingsFromUnknown(data: Record<string, unknown>, fallback: Panel
       typeof data.insights_last_known_port === "number"
         ? data.insights_last_known_port
         : fallback.insights_last_known_port ?? null,
+    insights_display_currency:
+      typeof data.insights_display_currency === "string" &&
+      (SUPPORTED_CURRENCIES as readonly string[]).includes(data.insights_display_currency)
+        ? (data.insights_display_currency as DisplayCurrency)
+        : fallback.insights_display_currency,
+    insights_currency_rates: sanitizeCurrencyRates(
+      data.insights_currency_rates,
+      fallback.insights_currency_rates,
+    ),
   };
 }
 

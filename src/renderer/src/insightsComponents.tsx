@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Activity, AlertCircle, BarChart3, CheckCircle2, Clock, Cpu, Database, HardDrive, LineChart, PieChart as PieIcon, Power, Table as TableIcon, Terminal, TrendingUp, User, Zap } from "lucide-react";
-import type { Locale } from "@shared/types";
+import type { DisplayCurrency, Locale } from "@shared/types";
 import type { InsightsSettings } from "@shared/usageTypes";
+import { formatCostWithCurrency, DEFAULT_CURRENCY_RATES, SUPPORTED_CURRENCIES } from "@shared/currency";
 import { t } from "./i18n";
-import { SettingsGroup } from "./formControls";
+import { SettingsGroup, SelectField } from "./formControls";
 import { ToastContainer } from "./Toast";
 import { useToast } from "./useToast";
 import { TrendChart, type TrendChartType } from "./insightsChart";
@@ -199,6 +200,33 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
     }
   };
 
+  const handleCurrencyChange = async (currency: DisplayCurrency): Promise<void> => {
+    try {
+      const result = await window.kimiSwitch.usageSetConfig({ insights_display_currency: currency });
+      if (result.ok) {
+        await loadStatus();
+        onStateChange?.();
+      }
+    } catch (err) {
+      showToast(`${t(locale, "insightsCurrencySaveFailed")}: ${String(err)}`, "error");
+    }
+  };
+
+  const handleRateChange = async (currency: DisplayCurrency, raw: string): Promise<void> => {
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return;
+    const nextRates = { ...(settings?.insights_currency_rates ?? {}), [currency]: parsed };
+    try {
+      const result = await window.kimiSwitch.usageSetConfig({ insights_currency_rates: nextRates });
+      if (result.ok) {
+        await loadStatus();
+        onStateChange?.();
+      }
+    } catch (err) {
+      showToast(`${t(locale, "insightsCurrencySaveFailed")}: ${String(err)}`, "error");
+    }
+  };
+
   const status = settings?.insights_status ?? "disabled";
   const isEnabled = status === "enabled";
 
@@ -372,6 +400,43 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
           </div>
         </SettingsGroup>
 
+        {/* 成本展示币种 */}
+        <SettingsGroup title={t(locale, "insightsCurrencyGroup")}>
+          <div className="insights-currency-row">
+            <SelectField
+              label={t(locale, "insightsDisplayCurrency")}
+              value={settings?.insights_display_currency ?? "USD"}
+              onChange={(v) => void handleCurrencyChange(v as DisplayCurrency)}
+              options={SUPPORTED_CURRENCIES.map((c) => ({ value: c, label: c }))}
+            />
+            {(settings?.insights_display_currency ?? "USD") !== "USD" && (
+              <label className="insights-currency-rate">
+                <span className="insights-currency-rate-label">
+                  {t(locale, "insightsCurrencyRate")} (1 USD =)
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  className="insights-currency-rate-input"
+                  defaultValue={
+                    settings?.insights_currency_rates?.[
+                      settings.insights_display_currency ?? "USD"
+                    ] ?? DEFAULT_CURRENCY_RATES[settings?.insights_display_currency ?? "USD"]
+                  }
+                  onBlur={(e) =>
+                    void handleRateChange(
+                      settings?.insights_display_currency ?? "USD",
+                      e.target.value,
+                    )
+                  }
+                />
+              </label>
+            )}
+          </div>
+          <div className="insights-currency-hint">{t(locale, "insightsCurrencyHint")}</div>
+        </SettingsGroup>
+
         {/* 数据管理 */}
         <SettingsGroup title="数据管理">
           <div style={{ padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -521,6 +586,9 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
     );
   }
 
+  const displayCurrency: DisplayCurrency = settings?.insights_display_currency ?? "USD";
+  const currencyRates = settings?.insights_currency_rates;
+
   return (
     <div className="insights-dashboard">
       <div className="insights-dashboard-header">
@@ -576,7 +644,7 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
             <OverviewMetricCard icon={<Database size={20} />} label={t(locale, "insightsReasoningTokens")} value={overview ? formatNumber(overview.reasoningTokens) : "-"} color="orange" />
             <OverviewMetricCard icon={<Activity size={20} />} label={t(locale, "insightsAvgLatency")} value={overview ? `${Math.round(overview.avgLatencyMs)} ms` : "-"} color="cyan" />
             <OverviewMetricCard icon={<AlertCircle size={20} />} label={t(locale, "insightsErrorRate")} value={overview ? `${(overview.errorRate * 100).toFixed(1)}%` : "-"} color="red" />
-            <OverviewMetricCard icon={<TrendingUp size={20} />} label={t(locale, "costEstimate")} value={formatCost(costTotal, locale)} color="green" />
+            <OverviewMetricCard icon={<TrendingUp size={20} />} label={t(locale, "costEstimate")} value={formatCost(costTotal, locale, displayCurrency, currencyRates)} color="green" />
           </div>
         )}
 
@@ -619,7 +687,7 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
               <>
                 <div className="insights-trend-cost-summary">
                   <span className="insights-trend-cost-label">{t(locale, "costEstimate")}</span>
-                  <span className="insights-trend-cost-value">{formatCost(costTotal, locale)}</span>
+                  <span className="insights-trend-cost-value">{formatCost(costTotal, locale, displayCurrency, currencyRates)}</span>
                 </div>
                 <TrendChart
                   data={trendData}
@@ -657,6 +725,8 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
                 onViewChange={setBreakdownModelView}
                 locale={locale}
                 costByName={costByModel}
+                currency={displayCurrency}
+                currencyRates={currencyRates}
               />
               <BreakdownCard
                 title={t(locale, "insightsBreakdownByProfile")}
@@ -754,9 +824,11 @@ interface BreakdownCardProps {
   onViewChange: (v: BreakdownView) => void;
   locale: Locale;
   costByName?: Record<string, number | null>;
+  currency?: DisplayCurrency;
+  currencyRates?: Partial<Record<DisplayCurrency, number>>;
 }
 
-function BreakdownCard({ title, data, view, onViewChange, locale, costByName }: BreakdownCardProps): JSX.Element {
+function BreakdownCard({ title, data, view, onViewChange, locale, costByName, currency = "USD", currencyRates }: BreakdownCardProps): JSX.Element {
   const pieData: PieDatum[] = data.map((r) => ({ name: r.name || "(未知)", value: r.tokens }));
   const showCost = costByName !== undefined;
 
@@ -816,7 +888,7 @@ function BreakdownCard({ title, data, view, onViewChange, locale, costByName }: 
                 <span className="insights-table-cell num">{pct}%</span>
                 <span className="insights-table-cell num">{Math.round(row.avgLatency)} ms</span>
                 {showCost && (
-                  <span className="insights-table-cell num">{formatCost(costByName?.[row.name] ?? null, locale)}</span>
+                  <span className="insights-table-cell num">{formatCost(costByName?.[row.name] ?? null, locale, currency, currencyRates)}</span>
                 )}
               </div>
             );
@@ -861,15 +933,19 @@ function formatNumber(n: number): string {
 }
 
 /**
- * Formats an estimated cost (USD) for display. A `null` cost means no pricing is
- * known for the underlying model(s) — we render the localized "not priced"
- * placeholder rather than "$0.00", which would mislead the user into thinking
- * the work was free. Sub-cent non-zero costs show as "<$0.01".
+ * Formats an estimated cost (stored in USD) for display, converting to the
+ * user's chosen display currency. A `null` cost means no pricing is known for
+ * the underlying model(s) — we render the localized "not priced" placeholder
+ * rather than "$0.00", which would mislead the user into thinking the work was
+ * free. Sub-cent non-zero costs show as "<{symbol}0.01".
  */
-function formatCost(cost: number | null, locale: Locale): string {
-  if (cost === null) return t(locale, "costUnknown");
-  if (cost > 0 && cost < 0.01) return "<$0.01";
-  return `$${cost.toFixed(2)}`;
+function formatCost(
+  cost: number | null,
+  locale: Locale,
+  currency: DisplayCurrency,
+  rates: Partial<Record<DisplayCurrency, number>> | undefined,
+): string {
+  return formatCostWithCurrency(cost, currency, rates, t(locale, "costUnknown"));
 }
 
 function formatTimestamp(ms: number): string {

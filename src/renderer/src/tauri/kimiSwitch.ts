@@ -124,6 +124,8 @@ function extractInsightsSettings(state: AppState | null): PanelSettings["insight
     insights_store_prompt_preview: ps?.insights_store_prompt_preview ?? false,
     insights_onboarding_shown_at: ps?.insights_onboarding_shown_at ?? "",
     insights_last_known_port: ps?.insights_last_known_port ?? null,
+    insights_display_currency: ps?.insights_display_currency ?? "USD",
+    insights_currency_rates: ps?.insights_currency_rates ?? {},
   } as never;
 }
 

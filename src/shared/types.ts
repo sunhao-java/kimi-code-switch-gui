@@ -42,6 +42,12 @@ export interface ModelPricing {
   cache_creation_per_mtok?: number;
 }
 
+/**
+ * 成本展示币种。定价始终以 USD 存储，展示时按用户设定汇率换算（显示层转换，
+ * 不改 ModelPricing schema，零迁移风险）。
+ */
+export type DisplayCurrency = "USD" | "CNY" | "EUR";
+
 export interface ModelConfig {
   provider: string;
   model: string;
@@ -146,6 +152,8 @@ export interface PanelSettings {
   insights_store_prompt_preview?: boolean;
   insights_onboarding_shown_at?: string;
   insights_last_known_port?: number | null;
+  insights_display_currency?: DisplayCurrency;
+  insights_currency_rates?: Partial<Record<DisplayCurrency, number>>;
 }
 
 export interface AppState {
