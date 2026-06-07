@@ -28,6 +28,10 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 notify = "6"
 dirs = "5"
 tokio = { version = "1", features = ["time"] }
+flate2 = "1.0"
+sha2 = "0.10"
+chrono = "0.4"
+log = "0.4"
 
 [features]
 # 默认构建时启用自定义协议

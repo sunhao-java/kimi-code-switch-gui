@@ -27,6 +27,7 @@ import { UsageLogWatcher } from "./usageLogWatcher";
 import * as cli from "./cli";
 import { openKimiInTerminal, openSessionTerminal } from "./terminal";
 import { captureSnapshotForState, readManagedDocuments } from "./fileSnapshots";
+import { initConfigHistory, captureSnapshot, cleanupOldSnapshots } from "./configHistory";
 import * as backup from "./backup";
 import { setupTray, teardownTray } from "./tray";
 
@@ -101,6 +102,7 @@ function aggregateCost(
 async function ensureUsageRuntime(): Promise<void> {
   if (!usageOpen) {
     await usageDb.open(USAGE_DB_PATH);
+    await initConfigHistory();
     usageOpen = true;
   }
   if (!logWatcher) {
@@ -147,13 +149,39 @@ export const kimiSwitchTauri = {
     return state;
   },
   saveState: async (state: AppState): Promise<{ ok: true }> => {
+    // 保存前捕获快照（4 个配置文件）
+    const normalized = normalizeStatePaths(state);
+    await Promise.all([
+      captureSnapshot("config", normalized.configPath),
+      captureSnapshot("profiles", normalized.profilesPath),
+      captureSnapshot("panel", normalized.panelSettingsPath),
+      captureSnapshot("mcp", normalized.mcpConfigPath),
+    ]);
+
     await saveAppState(tauriFileAccess, state);
     currentAppState = state;
+
+    // 保存后清理旧快照（30 天前）
+    void cleanupOldSnapshots();
+
     return { ok: true };
   },
   saveStateSafe: async (state: AppState): Promise<{ ok: true }> => {
+    // 保存前捕获快照（4 个配置文件）
+    const normalized = normalizeStatePaths(state);
+    await Promise.all([
+      captureSnapshot("config", normalized.configPath),
+      captureSnapshot("profiles", normalized.profilesPath),
+      captureSnapshot("panel", normalized.panelSettingsPath),
+      captureSnapshot("mcp", normalized.mcpConfigPath),
+    ]);
+
     await saveAppState(tauriFileAccess, state);
     currentAppState = state;
+
+    // 保存后清理旧快照（30 天前）
+    void cleanupOldSnapshots();
+
     return { ok: true };
   },
   captureSnapshot: (state: AppState): Promise<FileSnapshotBundle> => captureSnapshotForState(state),

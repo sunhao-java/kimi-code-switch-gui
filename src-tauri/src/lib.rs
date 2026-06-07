@@ -3,6 +3,7 @@
 //! 架构：业务逻辑（configStore / configSafety / skillsStore 等约 5300 行 TS）
 //! 继续跑在前端 renderer，后端只暴露 I/O 和系统集成的原子能力。
 
+mod config_history;
 mod fs_access;
 mod system;
 mod tray;
@@ -43,6 +44,13 @@ pub fn run() {
             usage::usage_exec_batch,
             usage::usage_exec_script,
             usage::usage_close,
+            // 配置历史
+            config_history::init_config_history,
+            config_history::capture_snapshot,
+            config_history::list_snapshots,
+            config_history::get_snapshot_content,
+            config_history::restore_snapshot,
+            config_history::cleanup_old_snapshots,
             // 托盘
             tray::set_tray,
             tray::show_main_window,

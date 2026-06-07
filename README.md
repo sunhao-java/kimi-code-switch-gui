@@ -148,6 +148,51 @@ kimi --config-file <临时配置文件>
 
 备份文件包含主配置、Profiles、面板设置、MCP 配置和快捷键。恢复前会创建回滚点，避免误恢复后无法回退。
 
+## 配置历史
+
+自动版本控制系统，每次保存配置时自动创建快照，支持查看历史版本和一键回滚。
+
+**核心特性：**
+
+- **自动快照** — 每次保存配置时自动捕获 4 个配置文件（config.toml、config.profiles.toml、config.panel.toml、config.mcp.json）的快照
+- **智能去重** — SHA256 内容去重，相同内容不重复存储
+- **gzip 压缩** — 快照文件 gzip 压缩存储，5KB 配置压缩后约 500B
+- **版本查询** — 按文件类型过滤、时间倒序查询历史快照
+- **一键回滚** — 回滚前自动创建"回滚点"快照，支持撤销回滚操作
+- **自动清理** — 每次保存后自动清理 30 天前的旧快照，释放磁盘空间
+
+**存储位置：**
+
+- 元数据：`~/.kimi/.panel/usage/index.db`（SQLite `config_history` 表）
+- 快照文件：`~/.kimi/.panel/history/{timestamp}-{file_id}.toml.gz`
+
+**API 调用：**
+
+```typescript
+import {
+  captureSnapshot,
+  listSnapshots,
+  getSnapshotContent,
+  restoreSnapshot,
+  cleanupOldSnapshots,
+} from "@renderer/tauri/configHistory";
+
+// 捕获快照
+const snapshotId = await captureSnapshot("config", "~/.kimi/config.toml", "手动备份");
+
+// 查询历史（最近 50 条）
+const snapshots = await listSnapshots("config", 50);
+
+// 获取快照内容
+const content = await getSnapshotContent(snapshotId);
+
+// 回滚到指定快照
+const success = await restoreSnapshot(snapshotId);
+
+// 清理 30 天前的快照
+const deleted = await cleanupOldSnapshots();
+```
+
 ## 安装与运行
 
 ### 环境要求
