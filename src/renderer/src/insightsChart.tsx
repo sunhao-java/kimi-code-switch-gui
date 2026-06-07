@@ -22,7 +22,13 @@ interface TrendChartProps {
   /** Optional callback fired when a data point is clicked (drill-down). */
   onPointClick?: (point: TrendChartPoint, index: number) => void;
   /** Localized labels for the legend / interaction hint (falls back to zh-CN). */
-  labels?: { legend?: string; metricLabel?: string; clickHint?: string };
+  labels?: {
+    legend?: string;
+    metricLabel?: string;
+    clickHint?: string;
+    tooltipLabel?: string;
+    unit?: string;
+  };
 }
 
 const PADDING = { top: 24, right: 24, bottom: 32, left: 56 };
@@ -35,13 +41,8 @@ export function TrendChart({ data, metric, chartType, onPointClick, labels }: Tr
   const legendLabel = labels?.legend ?? "图例";
   const clickHint = labels?.clickHint ?? "点击数据点查看当日明细";
   const metricLabel = labels?.metricLabel ?? (metric === "tokens" ? "Token 消耗" : "调用次数");
-
-  const values = useMemo(
-    () => data.map((d) => (metric === "tokens" ? d.tokens : d.calls)),
-    [data, metric],
-  );
-  const maxVal = useMemo(() => Math.max(...values, 1), [values]);
-  const unit = metric === "tokens" ? "tokens" : "次";
+  const tooltipLabel = labels?.tooltipLabel ?? (metric === "tokens" ? "Token" : "调用");
+  const unit = labels?.unit ?? (metric === "tokens" ? "tokens" : "次");
 
   const chartWidth = VIEW_WIDTH - PADDING.left - PADDING.right;
   const chartHeight = HEIGHT - PADDING.top - PADDING.bottom;
@@ -228,7 +229,7 @@ export function TrendChart({ data, metric, chartType, onPointClick, labels }: Tr
         >
           <div className="insights-chart-tooltip-date">{hovered.date}</div>
           <div className="insights-chart-tooltip-value">
-            <span className="insights-chart-tooltip-label">{metric === "tokens" ? "Token" : "调用"}</span>
+            <span className="insights-chart-tooltip-label">{tooltipLabel}</span>
             <span className="insights-chart-tooltip-num">{formatNumber(hoveredValue)} {unit}</span>
           </div>
         </div>

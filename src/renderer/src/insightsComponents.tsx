@@ -752,7 +752,13 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
                   data={trendData}
                   metric={trendMetric}
                   chartType={trendChartType}
-                  labels={{ legend: t(locale, "chartLegend"), clickHint: t(locale, "chartClickHint") }}
+                  labels={{
+                    legend: t(locale, "chartLegend"),
+                    clickHint: t(locale, "chartClickHint"),
+                    metricLabel: t(locale, trendMetric === "tokens" ? "insightsTrendMetricTokens" : "insightsTrendMetricCalls"),
+                    tooltipLabel: t(locale, trendMetric === "tokens" ? "insightsChartTooltipToken" : "insightsChartTooltipCalls"),
+                    unit: trendMetric === "tokens" ? "tokens" : t(locale, "insightsChartUnitTimes")
+                  }}
                   onPointClick={(point) =>
                     setSelectedTrendPoint((prev) => (prev?.date === point.date ? null : point))
                   }
