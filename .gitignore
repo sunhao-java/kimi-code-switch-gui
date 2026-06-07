@@ -13,3 +13,11 @@ src-tauri/target
 src-tauri/gen
 .codegraph/daemon.pid
 *.tsbuildinfo
+
+# Workflow runtime files
+.workflow/.maestro/
+.workflow/.scratchpad/
+.workflow/.team/
+.workflow/scratch/
+.workflow/state.json
+.workflow/wiki-index.json
