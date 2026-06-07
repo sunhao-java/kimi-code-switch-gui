@@ -407,7 +407,11 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
               label={t(locale, "insightsDisplayCurrency")}
               value={settings?.insights_display_currency ?? "USD"}
               onChange={(v) => void handleCurrencyChange(v as DisplayCurrency)}
-              options={SUPPORTED_CURRENCIES.map((c) => ({ value: c, label: c }))}
+              options={SUPPORTED_CURRENCIES.map((c) => ({
+                value: c,
+                label: c === "USD" ? "US Dollar" : c === "CNY" ? "人民币" : "Euro",
+                badge: c === "USD" ? "$" : c === "CNY" ? "¥" : "€",
+              }))}
             />
             {(settings?.insights_display_currency ?? "USD") !== "USD" && (
               <label className="insights-currency-rate">
