@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { t, type Locale } from "./i18n";
+import { t, type Locale } from "./i18n";
 
 function formatNumber(n: number): string {
   if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
@@ -14,6 +16,7 @@ export interface PieDatum {
 
 interface PieChartProps {
   data: PieDatum[];
+  locale: Locale;
   unitLabel?: string;
   emptyHint?: string;
 }
@@ -70,7 +73,7 @@ function describeArc(startAngle: number, endAngle: number): string {
   ].join(" ");
 }
 
-export function PieChart({ data, unitLabel, emptyHint }: PieChartProps): JSX.Element {
+export function PieChart({ data, locale, unitLabel, emptyHint }: PieChartProps): JSX.Element {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const palette = useMemo(() => getPalette(), []);
 
@@ -86,7 +89,7 @@ export function PieChart({ data, unitLabel, emptyHint }: PieChartProps): JSX.Ele
       const end = cursor + sweep;
       cursor = end;
       return {
-        name: d.name || "(未知)",
+        name: d.name || t(locale, "insightsUnknownName"),
         value: v,
         pct: (v / sum) * 100,
         startAngle: start,
@@ -101,7 +104,7 @@ export function PieChart({ data, unitLabel, emptyHint }: PieChartProps): JSX.Ele
   if (slices.length === 0) {
     return (
       <div className="insights-pie-empty">
-        <span>{emptyHint ?? "暂无数据"}</span>
+        <span>{emptyHint ?? t(locale, "insightsPieChartNoData")}</span>
       </div>
     );
   }
@@ -117,7 +120,7 @@ export function PieChart({ data, unitLabel, emptyHint }: PieChartProps): JSX.Ele
           viewBox={`0 0 ${SIZE} ${SIZE}`}
           className="insights-pie-svg"
           role="img"
-          aria-label="分组占比饼图"
+          aria-label={t(locale, "insightsPieChartAriaLabel")}
         >
           {slices.length === 1 ? (
             (() => {
@@ -173,7 +176,7 @@ export function PieChart({ data, unitLabel, emptyHint }: PieChartProps): JSX.Ele
             textAnchor="middle"
             className="insights-pie-center-label"
           >
-            {activeSlice ? activeSlice.name : "总计"}
+            {activeSlice ? activeSlice.name : t(locale, "insightsPieChartTotal")}
           </text>
           <text
             x={CX}

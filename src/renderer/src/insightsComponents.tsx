@@ -954,7 +954,7 @@ function BreakdownCard({ title, data, view, onViewChange, locale, costByName, cu
           })}
         </div>
       ) : (
-        <PieChart data={pieData} unitLabel="tokens" />
+        <PieChart data={pieData} locale={locale} unitLabel="tokens" />
       )}
     </div>
   );
