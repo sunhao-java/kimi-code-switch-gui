@@ -474,9 +474,9 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
                 此操作将清空以下数据，<strong>不可恢复</strong>：
               </p>
               <ul style={{ color: "var(--muted)", fontSize: "0.875rem", lineHeight: "1.6", paddingLeft: "20px" }}>
-                <li>所有用量事件记录（events 表）</li>
-                <li>每日聚合统计数据（daily_aggregate 表）</li>
-                <li>日志读取状态（ingest_state 表）</li>
+                <li>所有用量事件记录</li>
+                <li>每日聚合统计数据</li>
+                <li>日志读取进度</li>
               </ul>
               <p style={{ color: "var(--muted)", fontSize: "0.875rem", marginTop: "12px" }}>
                 清空后，系统将从头开始重新读取日志并重建数据。
