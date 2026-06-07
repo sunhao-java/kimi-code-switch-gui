@@ -121,6 +121,7 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
   const [watcherStatus, setWatcherStatus] = useState<{ status: string; sessionsTracked?: number; eventsIngested?: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [storageInfo, setStorageInfo] = useState<{ totalBytes: number; exceedsWarn: boolean } | null>(null);
+  const [showResetDialog, setShowResetDialog] = useState(false);
   const { toasts, showToast, removeToast } = useToast();
 
   const loadStatus = async (): Promise<void> => {
@@ -193,6 +194,7 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
         await loadStatus();
         await loadStorage();
         showToast("所有洞察数据已清除", "success");
+        setShowResetDialog(false);
       }
     } catch (err) {
       showToast(`清除失败: ${String(err)}`, "error");
@@ -449,13 +451,60 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
               <div style={{ fontWeight: 500, marginBottom: "4px" }}>清除所有洞察数据</div>
               <div style={{ fontSize: "0.8125rem", color: "var(--muted)" }}>删除 SQLite 数据库和 JSONL 日志，不可恢复</div>
             </div>
-            <button onClick={handleResetData} disabled={loading} className="insights-button-danger">
+            <button onClick={() => setShowResetDialog(true)} disabled={loading} className="insights-button-danger">
               <AlertCircle size={14} />
               清除数据
             </button>
           </div>
         </SettingsGroup>
       </div>
+
+      {/* 确认清除对话框 */}
+      {showResetDialog && (
+        <div className="dialog-overlay" onClick={() => setShowResetDialog(false)}>
+          <div className="dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="dialog-header">
+              <h3>
+                <AlertCircle size={20} />
+                确认清除洞察数据
+              </h3>
+            </div>
+            <div className="dialog-body">
+              <p style={{ color: "var(--text)", marginBottom: "12px" }}>
+                此操作将清空以下数据，<strong>不可恢复</strong>：
+              </p>
+              <ul style={{ color: "var(--muted)", fontSize: "0.875rem", lineHeight: "1.6", paddingLeft: "20px" }}>
+                <li>所有用量事件记录（events 表）</li>
+                <li>每日聚合统计数据（daily_aggregate 表）</li>
+                <li>日志读取状态（ingest_state 表）</li>
+              </ul>
+              <p style={{ color: "var(--muted)", fontSize: "0.875rem", marginTop: "12px" }}>
+                清空后，系统将从头开始重新读取日志并重建数据。
+              </p>
+              <p style={{ color: "var(--danger)", fontSize: "0.875rem", marginTop: "12px", fontWeight: 500 }}>
+                ⚠️ 此操作不会删除 kimi-cli 的原始日志文件。
+              </p>
+            </div>
+            <div className="dialog-footer">
+              <button
+                onClick={() => setShowResetDialog(false)}
+                disabled={loading}
+                className="insights-button-secondary"
+              >
+                取消
+              </button>
+              <button
+                onClick={handleResetData}
+                disabled={loading}
+                className="insights-button-danger"
+              >
+                <AlertCircle size={14} />
+                确认清除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
