@@ -3,6 +3,7 @@ import { Activity, AlertCircle, BarChart3, CheckCircle2, Clock, Cpu, Database, H
 import type { DisplayCurrency, Locale } from "@shared/types";
 import type { InsightsSettings } from "@shared/usageTypes";
 import { formatCostWithCurrency, DEFAULT_CURRENCY_RATES, SUPPORTED_CURRENCIES } from "@shared/currency";
+import { estimateMonthlyCost } from "@shared/costEstimate";
 import { t } from "./i18n";
 import { SettingsGroup, SelectField } from "./formControls";
 import { ToastContainer } from "./Toast";
@@ -484,6 +485,11 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
   const [costTotal, setCostTotal] = useState<number | null>(null);
   const [costByDay, setCostByDay] = useState<Record<string, number | null>>({});
   const [costByModel, setCostByModel] = useState<Record<string, number | null>>({});
+  const [monthEstimate, setMonthEstimate] = useState<{
+    monthToDate: number;
+    estimatedMonthTotal: number;
+    estimatedRemaining: number;
+  } | null>(null);
   const [timeRangeKey, setTimeRangeKey] = useState<string>(initialPrefs.timeRangeKey);
   const [customFrom, setCustomFrom] = useState(initialPrefs.customFrom);
   const [customTo, setCustomTo] = useState(initialPrefs.customTo);
