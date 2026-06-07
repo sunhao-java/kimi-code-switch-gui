@@ -7,25 +7,11 @@
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use flate2::read::GzDecoder;
-use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Write;
 use std::io::Read;
 use std::path::PathBuf;
-use std::sync::Mutex;
-
-pub struct ConfigHistoryState {
-    pub conn: Mutex<Option<Connection>>,
-}
-
-impl Default for ConfigHistoryState {
-    fn default() -> Self {
-        Self {
-            conn: Mutex::new(None),
-        }
-    }
-}
 
 /// 配置历史表 schema。
 ///
