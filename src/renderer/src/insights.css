@@ -1264,9 +1264,10 @@
 /* 成本展示币种设置 */
 .insights-currency-row {
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 20px;
   padding: 0 20px 12px;
+  margin-bottom: 4px;
 }
 
 .insights-currency-rate {
