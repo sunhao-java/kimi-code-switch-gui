@@ -181,7 +181,6 @@ export function OverviewDashboard(props: {
           <div className="overview-hero-paths-grid">
             <div className="overview-hero-path"><span className="overview-hero-path-label">{t(locale, "overviewConfigTitle")}</span><span className="overview-hero-path-value">{state.configPath}</span></div>
             <div className="overview-hero-path"><span className="overview-hero-path-label">{t(locale, "overviewProfilesTitle")}</span><span className="overview-hero-path-value">{state.profilesPath}</span></div>
-            <div className="overview-hero-path"><span className="overview-hero-path-label">{t(locale, "overviewPanelTitle")}</span><span className="overview-hero-path-value">{state.panelSettingsPath}</span></div>
             <div className="overview-hero-path"><span className="overview-hero-path-label">{t(locale, "overviewMcpTitle")}</span><span className="overview-hero-path-value">{state.mcpConfigPath}</span></div>
           </div>
         </div>

@@ -5,6 +5,8 @@
 
 mod config_history;
 mod fs_access;
+mod mcp_servers_store;
+mod panel_settings_store;
 mod system;
 mod tray;
 mod usage;
@@ -25,6 +27,7 @@ pub fn run() {
             fs_access::write_text,
             fs_access::ensure_dir,
             fs_access::remove_file,
+            fs_access::move_file,
             fs_access::path_exists,
             fs_access::list_dir,
             fs_access::list_dir_typed,
@@ -44,6 +47,7 @@ pub fn run() {
             usage::usage_exec_batch,
             usage::usage_exec_script,
             usage::usage_close,
+            usage::migrate_legacy_database,
             // 配置历史
             config_history::init_config_history,
             config_history::capture_snapshot,
@@ -51,6 +55,23 @@ pub fn run() {
             config_history::get_snapshot_content,
             config_history::restore_snapshot,
             config_history::cleanup_old_snapshots,
+            // 面板设置存储
+            panel_settings_store::init_panel_settings_store,
+            panel_settings_store::get_panel_settings,
+            panel_settings_store::save_panel_settings,
+            panel_settings_store::export_panel_settings,
+            panel_settings_store::import_panel_settings,
+            panel_settings_store::migrate_panel_settings_from_toml,
+            // MCP 服务器存储
+            mcp_servers_store::init_mcp_servers_store,
+            mcp_servers_store::list_mcp_servers,
+            mcp_servers_store::get_mcp_server,
+            mcp_servers_store::save_mcp_server,
+            mcp_servers_store::enable_mcp_server,
+            mcp_servers_store::disable_mcp_server,
+            mcp_servers_store::delete_mcp_server,
+            mcp_servers_store::get_enabled_mcp_servers,
+            mcp_servers_store::migrate_mcp_from_json,
             // 托盘
             tray::set_tray,
             tray::show_main_window,

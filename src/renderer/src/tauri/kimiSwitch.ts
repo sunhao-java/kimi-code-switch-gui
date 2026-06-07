@@ -28,6 +28,7 @@ import * as cli from "./cli";
 import { openKimiInTerminal, openSessionTerminal } from "./terminal";
 import { captureSnapshotForState, readManagedDocuments } from "./fileSnapshots";
 import { initConfigHistory, captureSnapshot, cleanupOldSnapshots } from "./configHistory";
+import { initPanelSettingsStore } from "./panelSettingsStore";
 import * as backup from "./backup";
 import { setupTray, teardownTray } from "./tray";
 
@@ -38,7 +39,8 @@ const skillFileAccess = {
 };
 
 // ── 用量洞察运行时（log watcher + db 生命周期）──
-const USAGE_DB_PATH = "~/.kimi/.panel/usage/index.db";
+// 全局应用数据库：包含 usage 数据、config_history、panel_settings
+const USAGE_DB_PATH = "~/.kimi/.panel/app.db";
 const USAGE_JSONL_DIR = "~/.kimi/.panel/usage";
 let logWatcher: UsageLogWatcher | null = null;
 let usageOpen = false;
@@ -138,6 +140,61 @@ function notImplemented(name: string): never {
 export const kimiSwitchTauri = {
   // ── 核心状态链路 ──
   loadState: async (paths?: Record<string, string>): Promise<AppState> => {
+    // 确保数据库打开（panel_settings 依赖数据库连接）
+    if (!usageOpen) {
+      // 迁移数据库文件到 .panel 目录（如果还在根目录）
+      const oldDbPath = "~/.kimi/app.db";
+      const newDbPath = USAGE_DB_PATH; // ~/.kimi/.panel/app.db
+      const { pathExists, ensureDir, moveFile, removeFile } = await import("./fileAccess");
+
+      try {
+        if (await pathExists(oldDbPath)) {
+          console.log("Migrating app.db to .panel directory...");
+          // 确保目标目录存在
+          await ensureDir("~/.kimi/.panel");
+          // 移动文件（如果目标已存在则删除旧文件）
+          if (!(await pathExists(newDbPath))) {
+            await moveFile(oldDbPath, newDbPath);
+            console.log("Database migrated to ~/.kimi/.panel/app.db");
+          } else {
+            console.log("Target database already exists, removing old file...");
+            await removeFile(oldDbPath);
+          }
+        }
+      } catch (err) {
+        console.warn("Database file migration skipped:", err);
+      }
+
+      await usageDb.open(USAGE_DB_PATH);
+      await initConfigHistory();
+
+      // 自动迁移旧数据库（如果存在）
+      try {
+        const result = await invoke<string>("migrate_legacy_database");
+        if (result.includes("Migrated")) {
+          console.log("Legacy database migration:", result);
+        }
+      } catch (err) {
+        console.warn("Legacy database migration skipped:", err);
+      }
+
+      usageOpen = true;
+    }
+
+    // 初始化 panel_settings_store 表
+    await initPanelSettingsStore();
+
+    // 初始化 mcp_servers_store 表
+    const { initMcpServersStore, migrateMcpFromJson } = await import("./mcpServersStore");
+    await initMcpServersStore();
+
+    // 自动迁移 mcp.json 到数据库（如果存在）
+    try {
+      await migrateMcpFromJson(paths?.mcpConfigPath || "~/.kimi/config.mcp.json");
+    } catch (err) {
+      console.warn("MCP migration skipped:", err);
+    }
+
     const state = await loadAppState(tauriFileAccess, paths);
     currentAppState = state;
     if (state.panelSettings.insights_status === "enabled") {

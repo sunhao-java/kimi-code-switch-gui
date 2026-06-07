@@ -2,6 +2,9 @@
 //!
 //! 设计：Rust 持有连接，前端传 SQL + 具名参数。SQL 语句、时间计算、游标编解码、
 //! 日志解析等纯逻辑全部保留在前端 TS（usageDb 的 27 条 SQL 几乎原样下传）。
+//!
+//! 数据库文件：~/.kimi/app.db（全局应用数据库）
+//! 包含表：usage 相关表、config_history、panel_settings
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -307,4 +310,104 @@ mod tests {
             Json::String("hello".into())
         );
     }
+}
+
+/// 迁移旧数据库到新路径。
+///
+/// 将 ~/.kimi/.panel/usage/index.db 的所有表和数据复制到当前连接的数据库。
+/// 迁移完成后，重命名旧数据库为 index.db.migrated。
+#[tauri::command]
+pub fn migrate_legacy_database(
+    state: tauri::State<UsageState>,
+) -> Result<String, String> {
+    let old_db_path = resolve_home("~/.kimi/.panel/usage/index.db");
+
+    // 检查旧数据库是否存在
+    if !old_db_path.exists() {
+        return Ok("No legacy database found, migration skipped".to_string());
+    }
+
+    let guard = state.conn.lock().unwrap();
+    let conn = guard.as_ref().ok_or("usage db not open")?;
+
+    // ATTACH 旧数据库
+    conn.execute(
+        &format!("ATTACH DATABASE '{}' AS legacy", old_db_path.display()),
+        [],
+    )
+    .map_err(|e| format!("attach legacy db: {e}"))?;
+
+    // 获取旧数据库中的所有表
+    let tables: Vec<String> = {
+        let mut stmt = conn
+            .prepare("SELECT name FROM legacy.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+            .map_err(|e| format!("query tables: {e}"))?;
+
+        let rows = stmt
+            .query_map([], |row| row.get(0))
+            .map_err(|e| format!("map tables: {e}"))?;
+
+        rows.collect::<Result<Vec<String>, _>>()
+            .map_err(|e| format!("collect tables: {e}"))?
+    };
+
+    let mut migrated_tables = Vec::new();
+
+    // 复制每个表
+    for table in &tables {
+        // 跳过已存在的表（避免覆盖）
+        let exists: bool = conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?1",
+                [table],
+                |_| Ok(true),
+            )
+            .unwrap_or(false);
+
+        if exists {
+            log::info!("Table {} already exists, skipping", table);
+            continue;
+        }
+
+        // 复制表结构
+        let create_sql: String = conn
+            .query_row(
+                &format!("SELECT sql FROM legacy.sqlite_master WHERE type='table' AND name = '{}'", table),
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("get create sql for {}: {e}", table))?;
+
+        conn.execute_batch(&create_sql)
+            .map_err(|e| format!("create table {}: {e}", table))?;
+
+        // 复制数据
+        conn.execute(
+            &format!("INSERT INTO main.{} SELECT * FROM legacy.{}", table, table),
+            [],
+        )
+        .map_err(|e| format!("copy data for {}: {e}", table))?;
+
+        migrated_tables.push(table.clone());
+        log::info!("Migrated table: {}", table);
+    }
+
+    // DETACH 旧数据库
+    conn.execute("DETACH DATABASE legacy", [])
+        .map_err(|e| format!("detach legacy db: {e}"))?;
+
+    drop(guard);
+
+    // 重命名旧数据库
+    let migrated_path = old_db_path.with_extension("db.migrated");
+    std::fs::rename(&old_db_path, &migrated_path)
+        .map_err(|e| format!("rename legacy db: {e}"))?;
+
+    log::info!("Legacy database migrated and renamed to {:?}", migrated_path);
+
+    Ok(format!(
+        "Migrated {} tables: {}. Old database renamed to index.db.migrated",
+        migrated_tables.len(),
+        migrated_tables.join(", ")
+    ))
 }

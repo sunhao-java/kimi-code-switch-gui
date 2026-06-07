@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 /// 解析 `~/` 前缀为用户主目录绝对路径。
-fn resolve_home(path: &str) -> PathBuf {
+pub(crate) fn resolve_home(path: &str) -> PathBuf {
     if let Some(stripped) = path.strip_prefix("~/") {
         if let Some(home) = dirs::home_dir() {
             return home.join(stripped);
@@ -71,6 +71,27 @@ pub fn remove_dir(path: String) -> Result<(), String> {
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(err) => Err(format!("remove_dir {}: {}", resolved.display(), err)),
     }
+}
+
+/// 移动文件（支持跨目录）。
+#[tauri::command]
+pub fn move_file(from: String, to: String) -> Result<(), String> {
+    let from_resolved = resolve_home(&from);
+    let to_resolved = resolve_home(&to);
+
+    if !from_resolved.exists() {
+        return Err(format!("Source file does not exist: {}", from_resolved.display()));
+    }
+
+    // 确保目标目录存在
+    if let Some(parent) = to_resolved.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("create parent dir {}: {}", parent.display(), e))?;
+    }
+
+    // 移动文件
+    std::fs::rename(&from_resolved, &to_resolved)
+        .map_err(|e| format!("move {} to {}: {}", from_resolved.display(), to_resolved.display(), e))
 }
 
 /// 主机名（备份元信息用）。

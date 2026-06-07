@@ -66,7 +66,7 @@ function buildBackupFiles(state: AppState): Array<{ name: string; content: strin
   return [
     { name: "config.toml", content: buildConfigDocument(s) },
     { name: "config.profiles.toml", content: buildProfilesDocument(s) },
-    { name: "config.panel.toml", content: buildPanelSettingsDocument(s.panelSettings) },
+    { name: "config.panel.json", content: JSON.stringify(s.panelSettings, null, 2) }, // SQLite 导出为 JSON
     { name: SHORTCUTS_BACKUP_FILENAME, content: JSON.stringify(normalizeShortcuts(s.panelSettings.shortcuts), null, 2) },
     { name: "mcp.json", content: buildMcpConfigDocument(s.mcpConfig) },
   ];
@@ -189,12 +189,18 @@ async function readBackupDocuments(state: AppState, backupName: string): Promise
   if (s.panelSettings.backup_destination_type === "webdav") {
     const dirUrl = buildWebDavUrl(s.panelSettings, [backupName]);
     const read = (n: string): Promise<string | null> => downloadWebDavFile(s.panelSettings, `${dirUrl}/${encodeURIComponent(n)}`);
-    const [c, p, pa, sh, m] = await Promise.all([read("config.toml"), read("config.profiles.toml"), read("config.panel.toml"), read(SHORTCUTS_BACKUP_FILENAME), read("mcp.json")]);
+    // 优先读取 JSON 格式，兼容旧 TOML 格式
+    let pa = await read("config.panel.json");
+    if (!pa) pa = await read("config.panel.toml");
+    const [c, p, sh, m] = await Promise.all([read("config.toml"), read("config.profiles.toml"), read(SHORTCUTS_BACKUP_FILENAME), read("mcp.json")]);
     return { configDocument: c ?? "", profilesDocument: p ?? "", panelSettingsDocument: mergeShortcuts(pa ?? "", sh), mcpDocument: m ?? "" };
   }
   const dir = `${s.panelSettings.backup_local_path}/${backupName}`;
   const read = (n: string): Promise<string | null> => tauriFileAccess.readText(`${dir}/${n}`);
-  const [c, p, pa, sh, m] = await Promise.all([read("config.toml"), read("config.profiles.toml"), read("config.panel.toml"), read(SHORTCUTS_BACKUP_FILENAME), read("mcp.json")]);
+  // 优先读取 JSON 格式，兼容旧 TOML 格式
+  let pa = await read("config.panel.json");
+  if (!pa) pa = await read("config.panel.toml");
+  const [c, p, sh, m] = await Promise.all([read("config.toml"), read("config.profiles.toml"), read(SHORTCUTS_BACKUP_FILENAME), read("mcp.json")]);
   return { configDocument: c ?? "", profilesDocument: p ?? "", panelSettingsDocument: mergeShortcuts(pa ?? "", sh), mcpDocument: m ?? "" };
 }
 

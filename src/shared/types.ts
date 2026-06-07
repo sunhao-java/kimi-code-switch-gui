@@ -375,4 +375,5 @@ export interface ExportBundle {
   models: Record<string, ModelConfig>;
   profiles: Record<string, Profile>;
   mcpServers: Record<string, McpServerConfig>;
+  panelSettings?: PanelSettings; // 可选：面板设置（字体、主题等）
 }

@@ -65,6 +65,10 @@ export interface FileAccess {
   readText(path: string): Promise<string | null>;
   writeText(path: string, content: string): Promise<void>;
   ensureDir(path: string): Promise<void>;
+  // 可选：PanelSettings 专用读写（用于 SQLite 存储）
+  // 若未提供，回退到 readText/writeText + TOML
+  readPanelSettings?(path: string): Promise<PanelSettings | null>;
+  writePanelSettings?(path: string, settings: PanelSettings): Promise<void>;
 }
 
 export function createDefaultPanelSettings(
@@ -182,6 +186,29 @@ async function loadPanelSettingsWithLegacyFallback(
   files: FileAccess,
   panelSettingsPath: string,
 ): Promise<{ settings: PanelSettings; migratedFromLegacy: boolean }> {
+  // 优先使用 SQLite（若 files.readPanelSettings 存在）
+  if (files.readPanelSettings) {
+    const settings = await files.readPanelSettings(panelSettingsPath);
+    if (settings) {
+      return { settings, migratedFromLegacy: false };
+    }
+    // SQLite 为空，尝试从 TOML 迁移
+    const tomlSettings = await tryLoadPanelSettingsFromToml(files, panelSettingsPath);
+    if (tomlSettings) {
+      // 迁移到 SQLite（files.writePanelSettings 负责 TOML 文件重命名）
+      if (files.writePanelSettings) {
+        await files.writePanelSettings(panelSettingsPath, tomlSettings.settings);
+      }
+      return tomlSettings;
+    }
+    // 都没有，返回默认值
+    return {
+      settings: createDefaultPanelSettings(DEFAULT_CONFIG_PATH, panelSettingsPath),
+      migratedFromLegacy: false,
+    };
+  }
+
+  // 回退：使用 TOML 文件（测试环境）
   if (panelSettingsPath !== DEFAULT_PANEL_SETTINGS_PATH) {
     return {
       settings: await loadPanelSettings(files, panelSettingsPath),
@@ -222,7 +249,65 @@ async function loadPanelSettingsWithLegacyFallback(
   };
 }
 
+// 辅助函数：尝试从 TOML 文件加载（用于迁移）
+async function tryLoadPanelSettingsFromToml(
+  files: FileAccess,
+  panelSettingsPath: string,
+): Promise<{ settings: PanelSettings; migratedFromLegacy: boolean } | null> {
+  if (panelSettingsPath !== DEFAULT_PANEL_SETTINGS_PATH) {
+    try {
+      return {
+        settings: await loadPanelSettings(files, panelSettingsPath),
+        migratedFromLegacy: false,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  // 尝试主 TOML
+  try {
+    const primaryDocument = await files.readText(panelSettingsPath);
+    if (primaryDocument?.trim()) {
+      return {
+        settings: panelSettingsFromUnknown(
+          parseDocument(primaryDocument),
+          createDefaultPanelSettings(DEFAULT_CONFIG_PATH, panelSettingsPath),
+        ),
+        migratedFromLegacy: false,
+      };
+    }
+  } catch {
+    // 忽略，尝试 legacy
+  }
+
+  // 尝试 legacy TOML
+  try {
+    const legacyData = await loadTomlFile(files, LEGACY_PANEL_SETTINGS_PATH, "legacy panel settings");
+    if (Object.keys(legacyData).length) {
+      return {
+        settings: panelSettingsFromUnknown(legacyData, createDefaultPanelSettings(DEFAULT_CONFIG_PATH, panelSettingsPath)),
+        migratedFromLegacy: true,
+      };
+    }
+  } catch {
+    // 忽略
+  }
+
+  return null;
+}
+
 export function parsePanelSettingsDocument(document: string, fallback = createDefaultPanelSettings()): PanelSettings {
+  // 尝试 JSON 格式（新备份）
+  if (document.trim().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(document);
+      return panelSettingsFromUnknown(parsed, fallback);
+    } catch {
+      // 忽略，回退到 TOML
+    }
+  }
+  // 回退到 TOML 格式（旧备份/TOML 文件）
   return panelSettingsFromUnknown(parseDocument(document), fallback);
 }
 
@@ -353,10 +438,18 @@ export async function saveAppState(files: FileAccess, state: AppState): Promise<
   await files.ensureDir(dirnamePath(normalizedState.mcpConfigPath));
   await files.writeText(normalizedState.configPath, buildConfigDocument(normalizedState));
   await files.writeText(normalizedState.profilesPath, buildProfilesDocument(normalizedState));
-  await files.writeText(
-    normalizedState.panelSettingsPath,
-    buildPanelSettingsDocument(normalizedState.panelSettings),
-  );
+
+  // Panel settings：优先使用 SQLite（若 writePanelSettings 存在）
+  if (files.writePanelSettings) {
+    await files.writePanelSettings(normalizedState.panelSettingsPath, normalizedState.panelSettings);
+  } else {
+    // 回退：TOML 文件（测试环境）
+    await files.writeText(
+      normalizedState.panelSettingsPath,
+      buildPanelSettingsDocument(normalizedState.panelSettings),
+    );
+  }
+
   await files.writeText(normalizedState.mcpConfigPath, buildMcpConfigDocument(normalizedState.mcpConfig));
 }
 
@@ -901,6 +994,7 @@ export function exportConfig(state: AppState): ExportBundle {
     models: structuredClone(redacted.mainConfig.models),
     profiles: structuredClone(redacted.profiles),
     mcpServers: structuredClone(redacted.mcpConfig.mcpServers),
+    panelSettings: structuredClone(redacted.panelSettings),
   };
 }
 
@@ -978,6 +1072,10 @@ export function importConfig(
     if (exists && strategy === "skip") continue;
     const key = exists && strategy === "rename" ? `${name}-imported` : name;
     next.mcpConfig.mcpServers[key] = structuredClone(server);
+  }
+  // 导入面板设置（如果存在）
+  if (data.panelSettings) {
+    next.panelSettings = structuredClone(data.panelSettings);
   }
   return next;
 }

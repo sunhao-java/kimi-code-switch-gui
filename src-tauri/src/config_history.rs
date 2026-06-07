@@ -1,17 +1,17 @@
 //! 配置历史版本管理。
 //!
 //! 功能：自动快照、版本查询、回滚、自动清理。
-//! 存储：SQLite 元数据（~/.kimi/.panel/usage/index.db 的 config_history 表）
+//! 存储：SQLite 元数据（~/.kimi/app.db 的 config_history 表）
 //!       + 文件系统快照内容（~/.kimi/.panel/history/{id}.toml.gz）
 
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use flate2::read::GzDecoder;
+use rusqlite::OptionalExtension;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Write;
 use std::io::Read;
-use std::path::PathBuf;
 
 /// 配置历史表 schema。
 ///
@@ -63,16 +63,6 @@ pub fn init_config_history(
     Ok(())
 }
 
-/// 辅助函数：解析 ~/ 路径
-fn resolve_home(path: &str) -> PathBuf {
-    if let Some(stripped) = path.strip_prefix("~/") {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(stripped);
-        }
-    }
-    PathBuf::from(path)
-}
-
 /// 辅助函数：计算字符串的 SHA256
 fn compute_sha256(content: &str) -> String {
     let mut hasher = Sha256::new();
@@ -92,11 +82,13 @@ fn gzip_compress(content: &str) -> Result<Vec<u8>, String> {
 /// 捕获配置快照。
 ///
 /// 流程：
-/// 1. 读取配置文件内容
+/// 1. 读取配置内容：
+///    - file_id="panel": 从 SQLite 导出 JSON（无需文件路径）
+///    - 其他: 读取 TOML 文件
 /// 2. 计算 SHA256
 /// 3. 检查是否已存在（去重）
 /// 4. gzip 压缩
-/// 5. 保存到 ~/.kimi/.panel/history/{timestamp_ms}-{file_id}.toml.gz
+/// 5. 保存到 ~/.kimi/.panel/history/{timestamp_ms}-{file_id}.{json|toml}.gz
 /// 6. 插入 SQLite 记录
 ///
 /// 错误处理：快照失败时记录错误日志，返回 Ok(None)，不阻塞调用方。
@@ -107,13 +99,39 @@ pub fn capture_snapshot(
     description: Option<String>,
     state: tauri::State<crate::usage::UsageState>,
 ) -> Result<Option<i64>, String> {
-    // 读取文件内容
-    let resolved_path = resolve_home(&file_path);
-    let content = match fs::read_to_string(&resolved_path) {
-        Ok(c) => c,
-        Err(e) => {
-            log::error!("Failed to read file for snapshot: {e}");
-            return Ok(None); // 失败不阻塞
+    // 读取配置内容
+    let content = if file_id == "panel" {
+        // Panel settings 从 SQLite 导出 JSON
+        let guard = state.conn.lock().unwrap();
+        let conn = guard.as_ref().ok_or("usage db not open")?;
+
+        let settings_json: Option<String> = conn
+            .query_row(
+                "SELECT settings_json FROM panel_settings WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("export panel settings: {e}"))?;
+
+        drop(guard); // 释放锁
+
+        match settings_json {
+            Some(json) => json,
+            None => {
+                log::warn!("Panel settings not found in database, skipping snapshot");
+                return Ok(None);
+            }
+        }
+    } else {
+        // 其他配置文件从磁盘读取
+        let resolved_path = crate::fs_access::resolve_home(&file_path);
+        match fs::read_to_string(&resolved_path) {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("Failed to read file for snapshot: {e}");
+                return Ok(None); // 失败不阻塞
+            }
         }
     };
 
@@ -344,16 +362,34 @@ pub fn restore_snapshot(
         .read_to_string(&mut snapshot_content)
         .map_err(|e| format!("decompress: {e}"))?;
 
-    // 3. 确定目标文件路径
+    // 3. 恢复配置
+    if file_id == "panel" {
+        // Panel settings：导入到 SQLite
+        let now = chrono::Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO panel_settings (id, version, settings_json, updated_at, created_at)
+             VALUES (1, 1, ?1, ?2, ?2)
+             ON CONFLICT(id) DO UPDATE SET
+               settings_json = excluded.settings_json,
+               updated_at = excluded.updated_at",
+            rusqlite::params![snapshot_content, now],
+        )
+        .map_err(|e| format!("restore panel settings: {e}"))?;
+
+        log::info!("Restored panel settings from snapshot {snapshot_id}");
+        return Ok(());
+    }
+
+    // 其他配置文件：写入磁盘
     let config_file_path = match file_id.as_str() {
         "config" => "~/.kimi/config.toml",
         "profiles" => "~/.kimi/config.profiles.toml",
-        "panel" => "~/.kimi/config.panel.toml",
         "mcp" => "~/.kimi/config.mcp.json",
         _ => return Err(format!("unknown file_id: {file_id}")),
     };
 
-    let target_path = resolve_home(config_file_path);
+    let target_path = crate::fs_access::resolve_home(config_file_path);
 
     // 4. 创建"回滚点"快照（当前配置）
     if target_path.exists() {

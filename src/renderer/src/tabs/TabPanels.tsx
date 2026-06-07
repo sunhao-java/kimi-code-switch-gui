@@ -1219,14 +1219,6 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                   />
                   <PathField
                     locale={locale}
-                    label={t(locale, "panelSettingsPath")}
-                    value={state.panelSettingsPath}
-                    readOnly
-                    onView={() => openDocumentViewer("panel")}
-                    onChange={() => {}}
-                  />
-                  <PathField
-                    locale={locale}
                     label={t(locale, "mcpConfigPathLabel")}
                     value={state.mcpConfigPath}
                     readOnly
@@ -1589,17 +1581,29 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             onStrategyChange={(strategy) => setImportDialog((prev) => ({ ...prev, strategy }))}
             onConfirm={() => {
               const next = importConfig(state, importDialog.data!, importDialog.strategy);
+              const hasPanelSettings = Boolean(importDialog.data?.panelSettings);
+
               updateState((draft) => {
                 draft.mainConfig.providers = next.mainConfig.providers;
                 draft.mainConfig.models = next.mainConfig.models;
                 draft.profiles = next.profiles;
                 draft.mcpConfig.mcpServers = next.mcpConfig.mcpServers;
+                // 导入面板设置
+                if (next.panelSettings) {
+                  draft.panelSettings = next.panelSettings;
+                }
               }, {
                 persist: true,
                 historySummary: t(locale, "historyImportConfig"),
               });
               setImportDialog({ open: false, preview: null, data: null, strategy: "skip" });
-              setNotice(t(locale, "importSuccess"));
+
+              // 如果导入了面板设置，提示重启生效
+              if (hasPanelSettings) {
+                setNotice(t(locale, "importSuccessWithPanelSettings"));
+              } else {
+                setNotice(t(locale, "importSuccess"));
+              }
             }}
             onCancel={() => setImportDialog({ open: false, preview: null, data: null, strategy: "skip" })}
           />
@@ -1687,8 +1691,21 @@ function ImportPreviewDialog(props: {
         </div>
         <div className="dialog-body import-preview-body">
           {preview.conflicts.length > 0 ? (
-            <div className="import-preview-section">
-              <h4>{t(locale, "importConflict")} ({preview.conflicts.length})</h4>
+            <div className="import-preview-section conflict-section">
+              <div className="section-header">
+                <h4>{t(locale, "importConflict")} ({preview.conflicts.length})</h4>
+                <div className="import-preview-strategy-inline">
+                  <label>{t(locale, "importStrategy")}</label>
+                  <select
+                    value={strategy}
+                    onChange={(e) => onStrategyChange(e.target.value as ImportConflictStrategy)}
+                  >
+                    <option value="skip">{t(locale, "importStrategySkip")}</option>
+                    <option value="overwrite">{t(locale, "importStrategyOverwrite")}</option>
+                    <option value="rename">{t(locale, "importStrategyRename")}</option>
+                  </select>
+                </div>
+              </div>
               <div className="import-preview-list">
                 {preview.conflicts.map((item) => (
                   <div key={`${item.type}-${item.name}`} className="import-preview-item conflict">
@@ -1697,21 +1714,10 @@ function ImportPreviewDialog(props: {
                   </div>
                 ))}
               </div>
-              <div className="import-preview-strategy">
-                <label>{t(locale, "importStrategy")}</label>
-                <select
-                  value={strategy}
-                  onChange={(e) => onStrategyChange(e.target.value as ImportConflictStrategy)}
-                >
-                  <option value="skip">{t(locale, "importStrategySkip")}</option>
-                  <option value="overwrite">{t(locale, "importStrategyOverwrite")}</option>
-                  <option value="rename">{t(locale, "importStrategyRename")}</option>
-                </select>
-              </div>
             </div>
           ) : null}
           {preview.newItems.length > 0 ? (
-            <div className="import-preview-section">
+            <div className="import-preview-section new-section">
               <h4>{t(locale, "importNew")} ({preview.newItems.length})</h4>
               <div className="import-preview-list">
                 {preview.newItems.map((item) => (
