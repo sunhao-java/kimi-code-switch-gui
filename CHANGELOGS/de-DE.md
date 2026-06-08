@@ -2,6 +2,27 @@
 
 Diese Datei dokumentiert die wesentlichen Änderungen des Projekts. Das Format folgt Keep a Changelog; verwendet wird das `major.minor.patch`-Versionsschema.
 
+## [2.1.0] - 2026-06-08
+
+### Hinzugefügt
+
+- **Nutzungs-Insights**: Fängt API-Anfragen über einen lokalen HTTPS-Proxy ab, um Token-Nutzung, Cache-Trefferraten, Reasoning-Latenz, Aufruftrends und Sitzungsanalysen automatisch zu erfassen. Alle Daten werden lokal gespeichert und niemals hochgeladen.
+- **Konfigurationsversionskontrolle**: Erstellt bei jedem Speichern automatisch Snapshots, mit Filterung nach Dateityp, Diff-Ansicht und Ein-Klick-Rollback.
+- **Kostenabschätzungssystem**: Preiskonfiguration pro Modell (Input/Output/Cache-Read/Cache-Creation), mit Echtzeit-Kostenschätzung auf der Insights-Übersichtsseite.
+- **Mehrwährungs-Kostenanzeige**: Unterstützt CNY, USD, EUR, JPY, GBP mit benutzerdefinierten Wechselkursen; Insights-Seiten konvertieren und zeigen Kosten automatisch an.
+- **Insights-Daten löschen mit Bestätigung**: Zeigt einen Bestätigungsdialog mit Auflistung der zu löschenden Daten (Ereignisdatensätze / Aggregatstatistiken / Log-Fortschritt), bevor alle Insights-Daten gelöscht werden.
+
+### Geändert
+
+- Vollständige Internationalisierung der Insights-Funktion (zh-CN / zh-TW / en-US / ja-JP / de-DE / es-ES), einschließlich Trenddiagramme, Aufschlüsselungsstatistiken, Sitzungsanalysen, Einstellungsseite, Toast-Benachrichtigungen, Erststart-Assistent und Daten-Löschen-Dialog.
+- Währungsauswahl verwendet jetzt Flaggensymbole mit kompakten Labels für ein klareres Layout.
+
+### Behoben
+
+- Absturz des Insights-Trenddiagramms durch fehlende `maxVal`-Definition behoben.
+- Abgeschnittene Sidebar-Hintergrundfarbe in bestimmten Themes behoben.
+- Redundantes `ConfigHistoryState`-Struct und doppelte i18n-Schlüssel entfernt.
+
 ## [2.0.1] - 2026-06-06
 
 ### Hinzugefügt

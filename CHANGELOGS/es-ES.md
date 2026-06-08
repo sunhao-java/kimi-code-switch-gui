@@ -2,6 +2,27 @@
 
 Este archivo recoge los cambios relevantes del proyecto. El formato sigue Keep a Changelog y el proyecto adopta el esquema de versiones `major.minor.patch`.
 
+## [2.1.0] - 2026-06-08
+
+### Añadido
+
+- **Insights de uso**: intercepta solicitudes de API mediante un proxy HTTPS local para registrar automáticamente el uso de tokens, tasas de aciertos de caché, latencia de razonamiento, tendencias de llamadas y análisis de sesiones. Todos los datos se almacenan localmente y nunca se suben.
+- **Control de versiones de configuración**: crea snapshots automáticamente en cada guardado de configuración, con filtrado por tipo de archivo, vista de diff y rollback de un clic.
+- **Sistema de estimación de costos**: configura precios por modelo (entrada/salida/lectura de caché/creación de caché), con estimaciones de costo en tiempo real en la página de resumen de insights.
+- **Visualización de costos en múltiples monedas**: admite CNY, USD, EUR, JPY, GBP con tipos de cambio personalizados; las páginas de insights convierten y muestran costos automáticamente.
+- **Confirmación de borrado de datos de Insights**: muestra un diálogo de confirmación que enumera lo que se borrará (registros de eventos / estadísticas agregadas / progreso de logs) antes de eliminar todos los datos de Insights.
+
+### Cambiado
+
+- Internacionalización completa de la función de insights (zh-CN / zh-TW / en-US / ja-JP / de-DE / es-ES), cubriendo gráficos de tendencias, estadísticas de desglose, análisis de sesiones, página de ajustes, notificaciones toast, asistente de primera ejecución y diálogo de borrado de datos.
+- Selector de moneda ahora usa iconos de banderas con etiquetas compactas para un diseño más limpio.
+
+### Corregido
+
+- Corregido el fallo del gráfico de tendencias de insights causado por la falta de definición de `maxVal`.
+- Corregido el truncado del color de fondo de la barra lateral en ciertos temas.
+- Eliminada la estructura redundante `ConfigHistoryState` y las claves i18n duplicadas.
+
 ## [2.0.1] - 2026-06-06
 
 ### Añadido

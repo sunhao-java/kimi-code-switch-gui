@@ -2,6 +2,27 @@
 
 This file records the project's notable changes. Format follows Keep a Changelog; the project uses `major.minor.patch` versioning.
 
+## [2.1.0] - 2026-06-08
+
+### Added
+
+- **Usage Insights**: intercepts API requests via a local HTTPS proxy to automatically track token usage, cache hit rates, reasoning latency, call trends, and session analytics. All data is stored locally and never uploaded.
+- **Configuration version control**: automatically creates snapshots on every config save, with support for filtering by file type, viewing diffs, and one-click rollback.
+- **Cost estimation system**: configure pricing per model (input/output/cache-read/cache-creation), with real-time cost estimates displayed on the insights overview page.
+- **Multi-currency cost display**: supports CNY, USD, EUR, JPY, GBP with custom exchange rates; insights pages automatically convert and display costs.
+- **Insights data clear confirmation**: shows a confirmation dialog listing what will be cleared (event records / aggregate stats / log progress) before deleting all insights data to prevent accidental loss.
+
+### Changed
+
+- Full internationalization for insights feature (zh-CN / zh-TW / en-US / ja-JP / de-DE / es-ES), covering trend charts, breakdown stats, session analytics, settings page, toast notifications, first-run wizard, and clear data dialog.
+- Currency selector now uses flag icons with compact labels for a cleaner layout.
+
+### Fixed
+
+- Fixed insights trend chart crash caused by missing `maxVal` definition.
+- Fixed sidebar background color truncation in certain themes.
+- Removed redundant `ConfigHistoryState` struct and duplicate i18n keys.
+
 ## [2.0.1] - 2026-06-06
 
 ### Added
