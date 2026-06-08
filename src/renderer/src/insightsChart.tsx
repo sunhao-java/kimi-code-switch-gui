@@ -44,6 +44,12 @@ export function TrendChart({ data, metric, chartType, onPointClick, labels }: Tr
   const tooltipLabel = labels?.tooltipLabel ?? (metric === "tokens" ? "Token" : "调用");
   const unit = labels?.unit ?? (metric === "tokens" ? "tokens" : "次");
 
+  const values = useMemo(
+    () => data.map((d) => (metric === "tokens" ? d.tokens : d.calls)),
+    [data, metric],
+  );
+  const maxVal = useMemo(() => Math.max(...values, 1), [values]);
+
   const chartWidth = VIEW_WIDTH - PADDING.left - PADDING.right;
   const chartHeight = HEIGHT - PADDING.top - PADDING.bottom;
   const slotWidth = data.length > 0 ? chartWidth / data.length : chartWidth;
