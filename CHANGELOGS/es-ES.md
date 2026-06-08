@@ -6,7 +6,7 @@ Este archivo recoge los cambios relevantes del proyecto. El formato sigue Keep a
 
 ### Añadido
 
-- **Insights de uso**: intercepta solicitudes de API mediante un proxy HTTPS local para registrar automáticamente el uso de tokens, tasas de aciertos de caché, latencia de razonamiento, tendencias de llamadas y análisis de sesiones. Todos los datos se almacenan localmente y nunca se suben.
+- **Insights de uso**: analiza archivos de log de kimi-code-cli (`~/.kimi/logs/kimi.log`) para registrar automáticamente el uso de tokens, tasas de aciertos de caché, latencia de razonamiento, tendencias de llamadas y análisis de sesiones. Todos los datos se almacenan localmente y nunca se suben.
 - **Control de versiones de configuración**: crea snapshots automáticamente en cada guardado de configuración, con filtrado por tipo de archivo, vista de diff y rollback de un clic.
 - **Sistema de estimación de costos**: configura precios por modelo (entrada/salida/lectura de caché/creación de caché), con estimaciones de costo en tiempo real en la página de resumen de insights.
 - **Visualización de costos en múltiples monedas**: admite CNY, USD, EUR, JPY, GBP con tipos de cambio personalizados; las páginas de insights convierten y muestran costos automáticamente.

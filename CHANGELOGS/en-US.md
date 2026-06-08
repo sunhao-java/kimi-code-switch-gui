@@ -6,7 +6,7 @@ This file records the project's notable changes. Format follows Keep a Changelog
 
 ### Added
 
-- **Usage Insights**: intercepts API requests via a local HTTPS proxy to automatically track token usage, cache hit rates, reasoning latency, call trends, and session analytics. All data is stored locally and never uploaded.
+- **Usage Insights**: parses kimi-code-cli log files (`~/.kimi/logs/kimi.log`) to automatically track token usage, cache hit rates, reasoning latency, call trends, and session analytics. All data is stored locally and never uploaded.
 - **Configuration version control**: automatically creates snapshots on every config save, with support for filtering by file type, viewing diffs, and one-click rollback.
 - **Cost estimation system**: configure pricing per model (input/output/cache-read/cache-creation), with real-time cost estimates displayed on the insights overview page.
 - **Multi-currency cost display**: supports CNY, USD, EUR, JPY, GBP with custom exchange rates; insights pages automatically convert and display costs.
