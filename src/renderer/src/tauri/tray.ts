@@ -95,8 +95,20 @@ export async function setupTray(
       if (!cur) return;
 
       if (action === "show-window") {
+        // 托盘模式下恢复 Dock 图标
+        if (cur.panelSettings.close_behavior === "keep-in-tray") {
+          await invoke("set_dock_icon_visibility", { visible: true }).catch((err) => {
+            console.error("Failed to show dock icon:", err);
+          });
+        }
         await invoke("show_main_window");
       } else if (action === "show-insights") {
+        // 托盘模式下恢复 Dock 图标
+        if (cur.panelSettings.close_behavior === "keep-in-tray") {
+          await invoke("set_dock_icon_visibility", { visible: true }).catch((err) => {
+            console.error("Failed to show dock icon:", err);
+          });
+        }
         await invoke("show_main_window");
         window.dispatchEvent(new Event("kimi-open-insights"));
       } else if (action === "quit") {
@@ -126,4 +138,10 @@ export async function setupTray(
 
 export async function teardownTray(): Promise<void> {
   await invoke("set_tray", { enabled: false, menu: [], tooltip: null });
+  // 清理事件监听器
+  if (unlisten) {
+    unlisten();
+    unlisten = null;
+  }
+  currentOnReload = null;
 }

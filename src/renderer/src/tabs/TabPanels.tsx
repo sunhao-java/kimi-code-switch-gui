@@ -1182,7 +1182,9 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       }
                       options={CLOSE_BEHAVIOR_OPTIONS.map((option) => ({
                         value: option.value,
-                        label: labelForLocale(option.label, locale),
+                        label: option.value === "quit"
+                          ? t(locale, "closeBehaviorQuit")
+                          : t(locale, "closeBehaviorKeepInTray"),
                       }))}
                     />
                   ) : null}

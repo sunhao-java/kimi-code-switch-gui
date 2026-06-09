@@ -26,17 +26,20 @@ pub fn init_panel_settings_store(
         .unwrap_or(false);
 
     if table_exists {
-        // 检查是否是旧的 JSON 列结构
-        let has_settings_json_only: bool = conn
-            .prepare("SELECT settings_json FROM panel_settings LIMIT 0")
-            .is_ok();
+        // 检查是否是旧的 JSON 列结构（通过查询表结构而不是执行查询）
+        let columns: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('panel_settings')")
+            .and_then(|mut stmt| {
+                stmt.query_map([], |row| row.get(0))?
+                    .collect::<Result<Vec<String>, _>>()
+            })
+            .unwrap_or_default();
 
-        let has_new_structure: bool = conn
-            .prepare("SELECT config_path, theme, locale FROM panel_settings LIMIT 0")
-            .is_ok();
+        let has_settings_json_only = columns.contains(&"settings_json".to_string())
+            && !columns.contains(&"config_path".to_string());
 
         // 如果是旧结构（只有 settings_json 列），删除表重建
-        if has_settings_json_only && !has_new_structure {
+        if has_settings_json_only {
             log::info!("Detected old panel_settings schema, dropping and recreating...");
             conn.execute("DROP TABLE panel_settings", [])
                 .map_err(|e| format!("drop old panel_settings table: {e}"))?;

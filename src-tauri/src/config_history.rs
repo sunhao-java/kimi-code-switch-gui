@@ -7,7 +7,6 @@
 use flate2::write::GzEncoder;
 use flate2::Compression;
 use flate2::read::GzDecoder;
-use rusqlite::OptionalExtension;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::Write;
@@ -102,21 +101,7 @@ pub fn capture_snapshot(
     // 读取配置内容
     let content = if file_id == "panel" {
         // Panel settings 从 SQLite 导出 JSON
-        let guard = state.conn.lock().unwrap();
-        let conn = guard.as_ref().ok_or("usage db not open")?;
-
-        let settings_json: Option<String> = conn
-            .query_row(
-                "SELECT settings_json FROM panel_settings WHERE id = 1",
-                [],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|e| format!("export panel settings: {e}"))?;
-
-        drop(guard); // 释放锁
-
-        match settings_json {
+        match crate::panel_settings_store::get_panel_settings(state.clone())? {
             Some(json) => json,
             None => {
                 log::warn!("Panel settings not found in database, skipping snapshot");
@@ -365,17 +350,12 @@ pub fn restore_snapshot(
     // 3. 恢复配置
     if file_id == "panel" {
         // Panel settings：导入到 SQLite
-        let now = chrono::Utc::now().to_rfc3339();
+        drop(guard); // 释放数据库连接锁，避免 import_panel_settings 死锁
 
-        conn.execute(
-            "INSERT INTO panel_settings (id, version, settings_json, updated_at, created_at)
-             VALUES (1, 1, ?1, ?2, ?2)
-             ON CONFLICT(id) DO UPDATE SET
-               settings_json = excluded.settings_json,
-               updated_at = excluded.updated_at",
-            rusqlite::params![snapshot_content, now],
-        )
-        .map_err(|e| format!("restore panel settings: {e}"))?;
+        crate::panel_settings_store::import_panel_settings(
+            snapshot_content.to_string(),
+            state.clone(),
+        )?;
 
         log::info!("Restored panel settings from snapshot {snapshot_id}");
         return Ok(());
