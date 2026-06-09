@@ -2,6 +2,21 @@
 
 This file records the project's notable changes. Format follows Keep a Changelog; the project uses `major.minor.patch` versioning.
 
+## [2.1.1] - 2026-06-09
+
+### Changed
+
+- **Show/hide shortcut**: enabled by default, with the default binding changed to `Command+Shift+H`.
+- **Agent collaboration guide**: updated `AGENTS.md` to match the current Tauri v2 architecture, commands, and release constraints.
+
+### Fixed
+
+- Fixed global shortcuts not being recordable/configurable and failing to register after restart: shortcuts are now registered and handled by the Rust main process, so they keep working while the window is hidden.
+- Fixed the show/hide shortcut flashing the window by hiding it and immediately showing it again.
+- Fixed shortcut recording being interfered with by page-level shortcuts; recording now uses capture-phase handling and normalized accelerator output.
+- Fixed the Dock icon not being restored when reopening the window or Usage Insights from the tray after hiding to tray, and cleaned up leftover tray event listeners.
+- Fixed configuration history snapshot/restore compatibility with structured SQLite `panel_settings`; legacy schema detection now uses `pragma_table_info`.
+
 ## [2.1.0] - 2026-06-08
 
 ### Added

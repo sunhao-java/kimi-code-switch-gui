@@ -2,6 +2,21 @@
 
 Este archivo recoge los cambios relevantes del proyecto. El formato sigue Keep a Changelog y el proyecto adopta el esquema de versiones `major.minor.patch`.
 
+## [2.1.1] - 2026-06-09
+
+### Cambiado
+
+- **Atajo de mostrar/ocultar**: activado por defecto, con el atajo predeterminado cambiado a `Command+Shift+H`.
+- **Guía de colaboración de agentes**: `AGENTS.md` actualizado para reflejar la arquitectura actual de Tauri v2, los comandos y las restricciones de publicación.
+
+### Corregido
+
+- Corregido que los atajos globales no se pudieran grabar/configurar y fallaran al registrarse tras reiniciar: ahora los registra y gestiona el proceso principal de Rust, por lo que siguen funcionando con la ventana oculta.
+- Corregido el parpadeo del atajo de mostrar/ocultar, que ocultaba la ventana y la mostraba de nuevo inmediatamente.
+- Corregida la interferencia de atajos de página durante la grabación; ahora se usa captura en fase capture y salida de aceleradores normalizada.
+- Corregido que el icono del Dock no se restaurara al reabrir la ventana o Usage Insights desde la bandeja tras ocultar en bandeja, y limpiados listeners residuales de eventos de bandeja.
+- Corregida la compatibilidad de snapshots/restauración del historial de configuración con `panel_settings` estructurado en SQLite; la detección del schema antiguo ahora usa `pragma_table_info`.
+
 ## [2.1.0] - 2026-06-08
 
 ### Añadido

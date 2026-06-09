@@ -2,6 +2,21 @@
 
 Diese Datei dokumentiert die wesentlichen Änderungen des Projekts. Das Format folgt Keep a Changelog; verwendet wird das `major.minor.patch`-Versionsschema.
 
+## [2.1.1] - 2026-06-09
+
+### Geändert
+
+- **Ein-/Ausblenden-Shortcut**: standardmäßig aktiviert; die Standardbelegung ist jetzt `Command+Shift+H`.
+- **Agenten-Leitfaden**: `AGENTS.md` wurde an die aktuelle Tauri-v2-Architektur, Befehle und Release-Vorgaben angepasst.
+
+### Behoben
+
+- Globale Shortcuts konnten nicht aufgezeichnet/konfiguriert werden und schlugen nach einem Neustart bei der Registrierung fehl. Shortcuts werden nun im Rust-Hauptprozess registriert und verarbeitet, sodass sie auch bei ausgeblendetem Fenster zuverlässig funktionieren.
+- Das Ein-/Ausblenden per Shortcut ließ das Fenster kurz verschwinden und sofort wieder erscheinen; dieses Flackern ist behoben.
+- Die Shortcut-Aufzeichnung wurde von seiteninternen Tastenkombinationen gestört; sie nutzt jetzt Capture-Phase-Handling und normalisierte Accelerator-Ausgabe.
+- Beim erneuten Öffnen des Fensters oder der Nutzungs-Insights aus dem Tray wurde das Dock-Symbol nach dem Ausblenden in den Tray nicht wiederhergestellt; außerdem werden verbliebene Tray-Event-Listener bereinigt.
+- Kompatibilität von Konfigurationshistorie-Snapshots und Wiederherstellung mit strukturierten SQLite-`panel_settings` behoben; alte Schemas werden nun über `pragma_table_info` erkannt.
+
 ## [2.1.0] - 2026-06-08
 
 ### Hinzugefügt
