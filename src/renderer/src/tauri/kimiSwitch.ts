@@ -3,6 +3,7 @@
 // 系统集成走 Rust 命令或 Tauri 插件。
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import parseTomlString from "@iarna/toml/parse-string.js";
@@ -45,6 +46,7 @@ const USAGE_JSONL_DIR = "~/.kimi/.panel/usage";
 let logWatcher: UsageLogWatcher | null = null;
 let usageOpen = false;
 let currentAppState: AppState | null = null;
+let shortcutSyncTask: Promise<void> = Promise.resolve();
 
 function activeProfile(): string {
   return currentAppState?.activeProfile ?? "default";
@@ -203,6 +205,7 @@ export const kimiSwitchTauri = {
     if (state.panelSettings.tray_icon) {
       void setupTray(() => currentAppState, () => window.dispatchEvent(new Event("kimi-tray-reload"))).catch((e) => console.error("tray", e));
     }
+    await syncWindowToggleShortcut();
     return state;
   },
   saveState: async (state: AppState): Promise<{ ok: true }> => {
@@ -217,6 +220,8 @@ export const kimiSwitchTauri = {
 
     await saveAppState(tauriFileAccess, state);
     currentAppState = state;
+
+    await syncWindowToggleShortcut();
 
     // 保存后清理旧快照（30 天前）
     void cleanupOldSnapshots();
@@ -235,6 +240,8 @@ export const kimiSwitchTauri = {
 
     await saveAppState(tauriFileAccess, state);
     currentAppState = state;
+
+    await syncWindowToggleShortcut();
 
     // 保存后清理旧快照（30 天前）
     void cleanupOldSnapshots();
@@ -487,4 +494,65 @@ export const kimiSwitchTauri = {
 export function installKimiSwitchTauri(): void {
   // @ts-expect-error 运行时注入，与 Electron preload 的 KimiSwitchApi 对齐
   window.kimiSwitch = kimiSwitchTauri;
+
+  // 监听窗口关闭事件：根据 close_behavior 决定是隐藏到托盘还是退出
+  const mainWindow = getCurrentWindow();
+  void mainWindow.onCloseRequested(async (event) => {
+    // 读取当前设置
+    const closeBehavior = currentAppState?.panelSettings.close_behavior ?? "quit";
+    const trayEnabled = currentAppState?.panelSettings.tray_icon ?? false;
+
+    // 如果设置为隐藏到托盘且托盘已启用，则隐藏窗口而不是退出
+    if (closeBehavior === "keep-in-tray" && trayEnabled) {
+      event.preventDefault();
+      await mainWindow.hide();
+
+      // 隐藏到托盘时自动隐藏 Dock 图标
+      await invoke("set_dock_icon_visibility", { visible: false }).catch((err) => {
+        console.error("Failed to hide dock icon:", err);
+      });
+    }
+    // 否则允许默认行为（退出应用）
+  });
+
+  // 监听窗口显示事件：恢复 Dock 图标
+  void mainWindow.listen("tauri://show", async () => {
+    const closeBehavior = currentAppState?.panelSettings.close_behavior ?? "quit";
+    const trayEnabled = currentAppState?.panelSettings.tray_icon ?? false;
+
+    // 如果是托盘模式，恢复 Dock 图标
+    if (closeBehavior === "keep-in-tray" && trayEnabled) {
+      await invoke("set_dock_icon_visibility", { visible: true }).catch((err) => {
+        console.error("Failed to show dock icon:", err);
+      });
+    }
+  });
+
+  void syncWindowToggleShortcut();
+}
+
+function syncWindowToggleShortcut(): Promise<void> {
+  shortcutSyncTask = shortcutSyncTask
+    .catch(() => undefined)
+    .then(() => syncWindowToggleShortcutOnce());
+  return shortcutSyncTask;
+}
+
+async function syncWindowToggleShortcutOnce(): Promise<void> {
+  if (!currentAppState) {
+    return;
+  }
+
+  const windowToggle = currentAppState.panelSettings.shortcuts["window.toggle"];
+  const accelerator = windowToggle?.enabled && windowToggle.scope === "global"
+    ? windowToggle.accelerator.trim() || null
+    : null;
+
+  await invoke("sync_window_toggle_shortcut", {
+    accelerator,
+    closeBehavior: currentAppState.panelSettings.close_behavior,
+    trayEnabled: currentAppState.panelSettings.tray_icon,
+  }).catch((err) => {
+    console.error("[Global Shortcut] sync failed:", err);
+  });
 }

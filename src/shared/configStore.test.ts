@@ -297,7 +297,7 @@ describe("configStore", () => {
     expect(loaded.backup_retention_count).toBe(10);
     expect(loaded.backup_strategy).toBe("manual");
     expect(loaded.backup_destination_type).toBe("local");
-    expect(loaded.shortcuts["window.toggle"].accelerator).toBe("CommandOrControl+Shift+K");
+    expect(loaded.shortcuts["window.toggle"].accelerator).toBe("Command+Shift+H");
     expect(loaded.shortcuts["app.save"].scope).toBe("window");
     expect(loaded.last_display_id).toBe(2);
   });

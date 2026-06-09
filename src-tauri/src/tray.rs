@@ -75,13 +75,21 @@ pub fn set_tray(
     let mut guard = state.icon.lock().unwrap();
 
     if !enabled {
-        *guard = None; // drop 会移除托盘
+        eprintln!("[TRAY] Disabling tray");
+        // 先清除 state 中的引用
+        *guard = None;
+        // 然后通过 ID 移除托盘（这是关键！）
+        if let Some(_tray) = app.tray_by_id("main-tray") {
+            eprintln!("[TRAY] Removing tray by id");
+            let _ = app.remove_tray_by_id("main-tray");
+        }
         return Ok(());
     }
 
-    let menu_obj = build_menu_items(&app, &menu, MenuBuilder::new(&app)).map_err(|e| e.to_string())?;
-
+    // 如果已有托盘实例，只更新菜单
     if let Some(tray) = guard.as_ref() {
+        eprintln!("[TRAY] Updating existing tray");
+        let menu_obj = build_menu_items(&app, &menu, MenuBuilder::new(&app)).map_err(|e| e.to_string())?;
         tray.set_menu(Some(menu_obj)).map_err(|e| e.to_string())?;
         if let Some(tip) = tooltip {
             tray.set_tooltip(Some(tip)).ok();
@@ -89,7 +97,11 @@ pub fn set_tray(
         return Ok(());
     }
 
-    let tray = TrayIconBuilder::new()
+    // 首次创建托盘
+    eprintln!("[TRAY] Creating new tray with id 'main-tray'");
+    let menu_obj = build_menu_items(&app, &menu, MenuBuilder::new(&app)).map_err(|e| e.to_string())?;
+
+    let tray = TrayIconBuilder::with_id("main-tray")
         .icon(app.default_window_icon().cloned().ok_or("no default icon")?)
         .tooltip(tooltip.unwrap_or_else(|| "Kimi Code Switch GUI".into()))
         .menu(&menu_obj)
@@ -103,6 +115,7 @@ pub fn set_tray(
         .map_err(|e| e.to_string())?;
 
     *guard = Some(tray);
+    eprintln!("[TRAY] New tray created and stored");
     Ok(())
 }
 
@@ -112,6 +125,27 @@ pub fn show_main_window(app: AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("main") {
         win.show().map_err(|e| e.to_string())?;
         win.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// 控制 Dock 图标的显示/隐藏（仅 macOS）。
+/// visible=true 显示 Dock 图标（Regular activation policy）
+/// visible=false 隐藏 Dock 图标（Accessory activation policy）
+#[tauri::command]
+pub fn set_dock_icon_visibility(app: AppHandle, visible: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        app.set_activation_policy(if visible {
+            tauri::ActivationPolicy::Regular
+        } else {
+            tauri::ActivationPolicy::Accessory
+        })
+        .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, visible); // 避免未使用参数警告
     }
     Ok(())
 }

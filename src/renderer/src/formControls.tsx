@@ -45,43 +45,66 @@ export function ShortcutRecorderField(props: {
   disabledText: string;
   onChange: (value: string) => void;
 }): JSX.Element {
+  const { disabledText, displayValue, label, onChange, placeholder, recordingHint } = props;
   const [isRecording, setIsRecording] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
   const shownValue = isRecording
-    ? props.recordingHint
-    : props.displayValue || props.disabledText || props.placeholder;
+    ? recordingHint
+    : displayValue || disabledText || placeholder;
+
+  useEffect(() => {
+    if (!isRecording) {
+      return;
+    }
+
+    document.body.dataset.shortcutRecording = "true";
+
+    function stopRecording(): void {
+      setIsRecording(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent): void {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      if (event.key === "Escape") {
+        stopRecording();
+        return;
+      }
+      if (event.key === "Backspace" || event.key === "Delete") {
+        onChange("");
+        stopRecording();
+        return;
+      }
+
+      const accelerator = eventToAccelerator(event);
+      if (accelerator) {
+        onChange(accelerator);
+        stopRecording();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown, true);
+      delete document.body.dataset.shortcutRecording;
+    };
+  }, [isRecording, onChange]);
 
   return (
     <button
+      ref={buttonRef}
       className={isRecording ? "shortcut-recorder is-recording" : "shortcut-recorder"}
       type="button"
-      aria-label={`${props.label} ${isRecording ? props.recordingHint : shownValue}`}
+      aria-label={`${label} ${isRecording ? recordingHint : shownValue}`}
       aria-pressed={isRecording}
-      title={isRecording ? props.recordingHint : props.label}
-      onClick={() => setIsRecording(true)}
-      onBlur={() => setIsRecording(false)}
-      onKeyDown={(event) => {
-        if (!isRecording) {
-          return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-
-        if (event.key === "Escape") {
-          setIsRecording(false);
-          return;
-        }
-        if (event.key === "Backspace" || event.key === "Delete") {
-          props.onChange("");
-          setIsRecording(false);
-          return;
-        }
-
-        const accelerator = eventToAccelerator(event.nativeEvent);
-        if (accelerator) {
-          props.onChange(accelerator);
-          setIsRecording(false);
-        }
+      title={isRecording ? recordingHint : label}
+      onClick={() => {
+        buttonRef.current?.focus();
+        setIsRecording(true);
       }}
+      onBlur={() => setIsRecording(false)}
     >
       <span>{shownValue}</span>
     </button>

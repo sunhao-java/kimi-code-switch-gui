@@ -18,7 +18,7 @@ export const SHORTCUT_ACTIONS: ShortcutActionDefinition[] = [
   {
     action: "window.toggle",
     scope: "global",
-    defaultAccelerator: "CommandOrControl+Shift+K",
+    defaultAccelerator: "Command+Shift+H",
     defaultEnabled: true,
     label: {
       "zh-CN": "显示/隐藏主窗口",
@@ -231,6 +231,8 @@ export const SHORTCUT_ACTION_SET = new Set<ShortcutAction>(
   SHORTCUT_ACTIONS.map((definition) => definition.action),
 );
 
+const LEGACY_WINDOW_TOGGLE_ACCELERATOR = "CommandOrControl+Shift+K";
+
 export function createDefaultShortcuts(): Record<ShortcutAction, ShortcutBinding> {
   return Object.fromEntries(
     SHORTCUT_ACTIONS.map((definition) => [
@@ -257,13 +259,24 @@ export function normalizeShortcuts(value: unknown): Record<ShortcutAction, Short
       continue;
     }
 
-    const accelerator = typeof raw.accelerator === "string"
+    let accelerator = typeof raw.accelerator === "string"
       ? sanitizeAccelerator(raw.accelerator)
       : defaults[definition.action].accelerator;
+    let enabled = Boolean(accelerator.trim()) && (typeof raw.enabled === "boolean" ? raw.enabled : defaults[definition.action].enabled);
+
+    if (
+      definition.action === "window.toggle" &&
+      accelerator === LEGACY_WINDOW_TOGGLE_ACCELERATOR &&
+      raw.enabled === false
+    ) {
+      accelerator = defaults[definition.action].accelerator;
+      enabled = defaults[definition.action].enabled;
+    }
+
     defaults[definition.action] = {
       action: definition.action,
       accelerator,
-      enabled: Boolean(accelerator.trim()) && (typeof raw.enabled === "boolean" ? raw.enabled : defaults[definition.action].enabled),
+      enabled,
       scope: definition.scope,
     };
   }

@@ -13,7 +13,8 @@ describe("shortcutStore", () => {
     const shortcuts = createDefaultShortcuts();
     expect(Object.keys(shortcuts)).not.toContain("window.show");
     expect(Object.keys(shortcuts)).not.toContain("window.hide");
-    expect(shortcuts["window.toggle"].accelerator).toBe("CommandOrControl+Shift+K");
+    expect(shortcuts["window.toggle"].accelerator).toBe("Command+Shift+H");
+    expect(shortcuts["window.toggle"].enabled).toBe(true);
     expect(shortcuts["window.toggle"].scope).toBe("global");
     expect(shortcuts["app.save"].accelerator).toBe("CommandOrControl+S");
     expect(shortcuts["tab.settings"].accelerator).toBe("CommandOrControl+8");
@@ -34,7 +35,8 @@ describe("shortcutStore", () => {
     expect(shortcuts["app.save"].accelerator).toBe("CommandOrControl+Shift+S");
     expect(shortcuts["app.save"].enabled).toBe(false);
     expect(shortcuts["app.save"].scope).toBe("window");
-    expect(shortcuts["window.toggle"].accelerator).toBe("CommandOrControl+Shift+K");
+    expect(shortcuts["window.toggle"].accelerator).toBe("Command+Shift+H");
+    expect(shortcuts["window.toggle"].enabled).toBe(true);
   });
 
   it("drops non-ASCII shortcut accelerators", () => {
@@ -50,6 +52,18 @@ describe("shortcutStore", () => {
     expect(sanitizeAccelerator("Alt+Μ")).toBe("");
     expect(isValidAccelerator("Alt+M")).toBe(true);
     expect(isValidAccelerator("Alt+Μ")).toBe(false);
+  });
+
+  it("migrates the previous disabled window toggle default", () => {
+    const shortcuts = normalizeShortcuts({
+      "window.toggle": {
+        accelerator: "CommandOrControl+Shift+K",
+        enabled: false,
+      },
+    });
+
+    expect(shortcuts["window.toggle"].accelerator).toBe("Command+Shift+H");
+    expect(shortcuts["window.toggle"].enabled).toBe(true);
   });
 
   it("resets a shortcut binding to its default value", () => {
@@ -93,7 +107,7 @@ describe("shortcutStore", () => {
   });
 
   it("formats accelerators for macOS and non-macOS platforms", () => {
-    expect(formatAcceleratorForPlatform("CommandOrControl+Shift+K", "darwin")).toBe("⌘+⇧+K");
+    expect(formatAcceleratorForPlatform("Command+Shift+H", "darwin")).toBe("⌘+⇧+H");
     expect(formatAcceleratorForPlatform("CommandOrControl+Shift+K", "win32")).toBe("Ctrl+Shift+K");
     expect(formatAcceleratorForPlatform("Super+Shift+K", "win32")).toBe("Win+Shift+K");
     expect(formatAcceleratorForPlatform("Super+Shift+K", "linux")).toBe("Super+Shift+K");

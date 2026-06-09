@@ -7,6 +7,7 @@ mod config_history;
 mod fs_access;
 mod mcp_servers_store;
 mod panel_settings_store;
+mod shortcuts;
 mod system;
 mod tray;
 mod usage;
@@ -19,6 +20,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .manage(shortcuts::ShortcutRuntimeState::default())
         .manage(usage::UsageState::default())
         .manage(tray::TrayState::default())
         .invoke_handler(tauri::generate_handler![
@@ -75,6 +77,9 @@ pub fn run() {
             // 托盘
             tray::set_tray,
             tray::show_main_window,
+            tray::set_dock_icon_visibility,
+            // 全局快捷键
+            shortcuts::sync_window_toggle_shortcut,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

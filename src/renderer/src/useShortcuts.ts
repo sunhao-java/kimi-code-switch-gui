@@ -37,6 +37,7 @@ export function useShortcuts(options: {
 
     function handleKeyDown(event: KeyboardEvent): void {
       if (event.defaultPrevented) return;
+      if (document.body.dataset.shortcutRecording === "true") return;
 
       const action = eventToAcceleratorCandidates(event)
         .map((accelerator) => bindings.get(accelerator.toLowerCase()))
