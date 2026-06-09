@@ -183,6 +183,7 @@ When the user asks `发布新版本`:
    ```
 
 5. Push the tag with `git push origin vX.Y.Z`. CI re-extracts zh-CN and en-US release notes from `CHANGELOGS/` and combines them with `---`.
+6. GitHub Release title must be exactly the version tag, for example `vX.Y.Z`. Do not append commit messages, feature summaries, release descriptions, or any other text to the Release title; put details only in the Release body.
 
 ## Notes
 

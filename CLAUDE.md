@@ -89,9 +89,9 @@ Execute end-to-end, no confirmation needed:
    ```
    Tag format requirement still applies: lowercase `v` prefix + three numeric segments, strictly monotonic increasing; reject any deviation like `X.Y.Z` / `version-X.Y.Z` / `release-X.Y.Z`
 5. **Push tag** — `git push origin vX.Y.Z` so the `v*` CI workflow can pick it up. The CI in `.github/workflows/release.yml` re-extracts the matching sections from `CHANGELOGS/zh-CN.md` + `CHANGELOGS/en-US.md`, combines them with a `---` divider, and overwrites the GitHub Release body via `gh release edit --notes-file`. Keep CHANGELOGS/ as the single source of truth.
+6. **GitHub Release title** — the Release title must be exactly the version tag, for example `vX.Y.Z`. Do not append commit messages, feature summaries, release descriptions, or any other text to the title; put all descriptive content in the Release body only.
 
 ### Safety rails
 
 - Still honor the general Git Safety Protocol: no `--no-verify`, no force-push to main/master without explicit ask, never commit files that look like secrets (`.env`, `credentials.*`).
 - If pre-commit hooks fail, fix the root cause and create a new commit — do not `--amend` (the commit didn't happen, amend would rewrite the previous commit).
-

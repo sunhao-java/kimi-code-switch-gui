@@ -128,11 +128,12 @@ jobs:
         run: |
           if [ "${HAS_NOTES}" = "true" ]; then
             gh release view "${VERSION}" >/dev/null 2>&1 \
-              && gh release edit "${VERSION}" --notes-file "${NOTES_FILE}" \
-              || gh release create "${VERSION}" --notes-file "${NOTES_FILE}"
+              && gh release edit "${VERSION}" --title "${VERSION}" --notes-file "${NOTES_FILE}" \
+              || gh release create "${VERSION}" --title "${VERSION}" --notes-file "${NOTES_FILE}"
           else
             gh release view "${VERSION}" >/dev/null 2>&1 \
-              || gh release create "${VERSION}" --generate-notes
+              && gh release edit "${VERSION}" --title "${VERSION}" \
+              || gh release create "${VERSION}" --title "${VERSION}" --generate-notes
           fi
 
   build:
