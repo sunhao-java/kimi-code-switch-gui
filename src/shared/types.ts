@@ -1,6 +1,7 @@
 export type Locale = "zh-CN" | "zh-TW" | "en-US" | "ja-JP" | "de-DE" | "es-ES";
 export type LocalizedText = Partial<Record<Locale, string>> & Record<"en-US", string>;
 export type AppearanceMode = "auto" | "dark" | "light";
+export type ConfigTarget = "kimi-cli" | "kimi-code";
 export type AppearanceTheme = "aurora" | "ocean" | "violet" | "sunset" | "forest" | "sakura" | "mint" | "cosmos" | "amber";
 export type UiFontSize = "mini" | "compact" | "small" | "standard" | "large" | "extra-large";
 export type DisplayOpenMode = "random" | "remember-last" | "active-display";
@@ -112,6 +113,7 @@ export interface ShortcutBinding {
 
 export interface PanelSettings {
   version: number;
+  config_target?: ConfigTarget;
   config_path: string;
   profiles_path: string;
   follow_config_profiles: boolean;
@@ -157,6 +159,7 @@ export interface PanelSettings {
 }
 
 export interface AppState {
+  configTarget?: ConfigTarget;
   configPath: string;
   profilesPath: string;
   panelSettingsPath: string;

@@ -78,7 +78,7 @@ export function App(): JSX.Element {
     selectedProfileData, selectedMcpServerData,
     isProviderNameEditable, isProfileNameEditable, isMcpServerNameEditable,
     updateState, updateImmediateState,
-    runAfterUnsavedHandled, onSave, persistState,
+    runAfterUnsavedHandled, onSave, persistConfigTarget, persistState,
     confirmDeleteResource,
     closeMcpImportDialog, requestCloseMcpImportDialog,
     refreshSkills, openDocumentViewer,
@@ -632,6 +632,7 @@ export function App(): JSX.Element {
             updateImmediateState={updateImmediateState}
             runAfterUnsavedHandled={runAfterUnsavedHandled}
             onSave={onSave}
+            persistConfigTarget={persistConfigTarget}
             persistState={persistState}
             confirmDeleteResource={confirmDeleteResource}
             refreshSkills={refreshSkills}

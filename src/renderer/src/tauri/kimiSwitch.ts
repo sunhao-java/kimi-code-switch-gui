@@ -10,6 +10,9 @@ import parseTomlString from "@iarna/toml/parse-string.js";
 
 import {
   createDefaultPanelSettings,
+  getDefaultConfigPath,
+  getDefaultMcpConfigPath,
+  getDefaultProfilesPath,
   loadAppState,
   normalizeStatePaths,
   saveAppState,
@@ -20,7 +23,7 @@ import { buildConfigDoctorReport, buildRedactedPreviewBundle } from "@shared/con
 import { scanSkills } from "@shared/skillsStore";
 import { compareReleaseVersions } from "@shared/versionUtils";
 import { computeEventCost, resolveModelPricing } from "@shared/pricing";
-import type { AppState, ManagedFileId, ModelConfig, PanelSettings, PreviewBundle, OpenKimiTerminalRequest, FileSnapshotBundle } from "@shared/types";
+import type { AppState, ConfigTarget, ManagedFileId, ModelConfig, PanelSettings, PreviewBundle, OpenKimiTerminalRequest, FileSnapshotBundle } from "@shared/types";
 
 import { tauriFileAccess, pathExists } from "./fileAccess";
 import * as usageDb from "./usageDb";
@@ -29,7 +32,7 @@ import * as cli from "./cli";
 import { openKimiInTerminal, openSessionTerminal } from "./terminal";
 import { captureSnapshotForState, readManagedDocuments } from "./fileSnapshots";
 import { initConfigHistory, captureSnapshot, cleanupOldSnapshots } from "./configHistory";
-import { initPanelSettingsStore } from "./panelSettingsStore";
+import { getPanelSettings, initPanelSettingsStore, savePanelSettings } from "./panelSettingsStore";
 import * as backup from "./backup";
 import { setupTray, teardownTray } from "./tray";
 
@@ -192,7 +195,16 @@ export const kimiSwitchTauri = {
 
     // 自动迁移 mcp.json 到数据库（如果存在）
     try {
-      await migrateMcpFromJson(paths?.mcpConfigPath || "~/.kimi/config.mcp.json");
+      const migrationTarget = paths?.configTarget ?? (await getPanelSettings())?.config_target ?? "kimi-code";
+      const migrationPaths = new Set([
+        paths?.mcpConfigPath,
+        getDefaultMcpConfigPath(migrationTarget),
+        "~/.kimi/mcp.json",
+        "~/.kimi/config.mcp.json",
+      ].filter((path): path is string => Boolean(path)));
+      for (const path of migrationPaths) {
+        await migrateMcpFromJson(path);
+      }
     } catch (err) {
       console.warn("MCP migration skipped:", err);
     }
@@ -246,6 +258,37 @@ export const kimiSwitchTauri = {
     // 保存后清理旧快照（30 天前）
     void cleanupOldSnapshots();
 
+    return { ok: true };
+  },
+  saveConfigTargetPreference: async (configTarget: ConfigTarget): Promise<{ ok: true }> => {
+    const currentSettings = (await getPanelSettings())
+      ?? currentAppState?.panelSettings
+      ?? createDefaultPanelSettings();
+    const configPath = getDefaultConfigPath(configTarget);
+    const profilesPath = getDefaultProfilesPath(configTarget, configPath);
+    const saved = await savePanelSettings({
+      ...currentSettings,
+      config_target: configTarget,
+      config_path: configPath,
+      profiles_path: profilesPath,
+      follow_config_profiles: true,
+    });
+    if (!saved) {
+      throw new Error("Failed to save config target preference.");
+    }
+    if (currentAppState) {
+      currentAppState = {
+        ...currentAppState,
+        configTarget,
+        panelSettings: {
+          ...currentAppState.panelSettings,
+          config_target: configTarget,
+          config_path: configPath,
+          profiles_path: profilesPath,
+          follow_config_profiles: true,
+        },
+      };
+    }
     return { ok: true };
   },
   captureSnapshot: (state: AppState): Promise<FileSnapshotBundle> => captureSnapshotForState(state),
@@ -318,9 +361,11 @@ export const kimiSwitchTauri = {
 
   // ── CLI / MCP / 连通性 ──
   getInstallSource: (): Promise<"homebrew" | "manual" | "development"> => Promise.resolve("manual"),
-  getCliVersion: (options?: { checkLatest?: boolean }) => cli.getCliVersion(options),
+  getCliVersion: (options?: { checkLatest?: boolean; target?: AppState["configTarget"] }) =>
+    cli.getTargetCliVersion(options?.target ?? "kimi-cli", { checkLatest: options?.checkLatest }),
   runProvidersHealthCheck: (state: AppState) => cli.runProvidersHealthCheck(state),
-  upgradeKimiCli: () => cli.upgradeKimiCli(),
+  upgradeKimiCli: (target?: AppState["configTarget"], options?: { install?: boolean }) =>
+    cli.upgradeTargetCli(target ?? "kimi-cli", options),
   testMcpServer: (name: string) => cli.runKimiMcpCommand(["test", name]),
   authMcpServer: (name: string) => cli.runKimiMcpCommand(["auth", name]),
   resetMcpServerAuth: (name: string) => cli.runKimiMcpCommand(["reset-auth", name]),

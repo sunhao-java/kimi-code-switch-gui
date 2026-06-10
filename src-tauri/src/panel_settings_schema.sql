@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS panel_settings (
   version INTEGER NOT NULL DEFAULT 1,
 
   -- 路径配置
+  config_target TEXT NOT NULL DEFAULT 'kimi-code',
   config_path TEXT NOT NULL,
   profiles_path TEXT NOT NULL,
   follow_config_profiles INTEGER NOT NULL DEFAULT 1, -- boolean

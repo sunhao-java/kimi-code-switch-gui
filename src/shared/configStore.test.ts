@@ -36,6 +36,7 @@ import type { AppState } from "./types";
 
 function createState(): AppState {
   return {
+    configTarget: "kimi-code",
     configPath: "/tmp/config.toml",
     profilesPath: "/tmp/config.profiles.toml",
     panelSettingsPath: "/tmp/config.panel.toml",
@@ -292,7 +293,7 @@ describe("configStore", () => {
     expect(loaded.display_open_mode).toBe("active-display");
     expect(loaded.close_behavior).toBe("keep-in-tray");
     expect(loaded.terminal_app).toBe("system-terminal");
-    expect(loaded.backup_local_path).toBe("~/.kimi/.panel/backups");
+    expect(loaded.backup_local_path).toBe("~/.kimi-code/.panel/backups");
     expect(loaded.backup_frequency).toBe("daily");
     expect(loaded.backup_retention_count).toBe(10);
     expect(loaded.backup_strategy).toBe("manual");
@@ -319,7 +320,7 @@ describe("configStore", () => {
     });
     const loaded = await loadPanelSettings(files, "/tmp/config.panel.toml");
     expect(loaded.ui_font_size).toBe("standard");
-    expect(loaded.backup_local_path).toBe("~/.kimi/.panel/backups");
+    expect(loaded.backup_local_path).toBe("~/.kimi-code/.panel/backups");
     expect(loaded.backup_frequency).toBe("daily");
     expect(loaded.backup_retention_count).toBe(1);
     expect(loaded.backup_strategy).toBe("scheduled");
@@ -465,12 +466,12 @@ url = "https://mcp.context7.com/mcp"
       "~/.kimi/config.profiles.toml": 'version = 1\nactive_profile = "default"\n',
       "~/.kimi/config.panel.toml": 'locale = "en-US"\ntheme = "dark"\n',
     });
-    const loaded = await loadAppState(files);
-    expect(loaded.panelSettingsPath).toBe("~/.kimi/.panel/config.panel.toml");
+    const loaded = await loadAppState(files, { configTarget: "kimi-cli" });
+    expect(loaded.panelSettingsPath).toBe("~/.kimi-code/.panel/config.panel.toml");
     expect(loaded.panelSettings.locale).toBe("en-US");
     expect(loaded.panelSettings.theme).toBe("dark");
-    expect(files.ensured).toContain("~/.kimi/.panel");
-    expect(files.store["~/.kimi/.panel/config.panel.toml"]).toContain('locale = "en-US"');
+    expect(files.ensured).toContain("~/.kimi-code/.panel");
+    expect(files.store["~/.kimi-code/.panel/config.panel.toml"]).toContain('locale = "en-US"');
   });
 
   it("throws when panel settings file read fails for reasons other than missing content", async () => {
@@ -527,19 +528,23 @@ url = "https://mcp.context7.com/mcp"
 
   it("normalizes empty paths before save", () => {
     const state = createState();
+    state.configTarget = "kimi-cli";
     state.profilesPath = "";
     state.panelSettingsPath = "";
     const normalized = normalizeStatePaths(state);
-    expect(normalized.profilesPath).toBe("/tmp/config.profiles.toml");
-    expect(normalized.panelSettingsPath).toBe("~/.kimi/.panel/config.panel.toml");
+    // kimi-cli 模式下 profilesPath 应该等于 configPath（不分离）
+    expect(normalized.profilesPath).toBe("/tmp/config.toml");
+    expect(normalized.panelSettingsPath).toBe("~/.kimi-code/.panel/config.panel.toml");
     expect(normalized.mcpConfigPath).toBe("/tmp/mcp.json");
   });
 
   it("saves with derived profile path when explicit path is blank", async () => {
     const state = createState();
+    state.configTarget = "kimi-code";
     state.profilesPath = "";
     const files = createMemoryFs({});
     await saveAppState(files, state);
+    expect(files.store["/tmp/config.profiles.toml"]).toBeDefined();
     expect(files.store["/tmp/config.profiles.toml"]).toContain("active_profile");
   });
 
@@ -815,5 +820,159 @@ describe("searchConfig", () => {
   it("returns empty for no match", () => {
     const state = createState();
     expect(searchConfig(state, "zzz_nonexistent")).toEqual([]);
+  });
+});
+
+describe("dual-target configuration", () => {
+  it("loads kimi-cli config without profiles file", async () => {
+    const files = createMemoryFs({
+      "~/.kimi/config.toml": `
+default_model = "test-model"
+default_thinking = true
+[providers.test]
+type = "openai"
+base_url = "https://api.test.com"
+api_key = "sk-test"
+[models.test-model]
+provider = "test"
+model = "gpt-4"
+max_context_size = 8192
+`,
+    });
+    const state = await loadAppState(files, { configTarget: "kimi-cli" });
+    expect(state.configTarget).toBe("kimi-cli");
+    expect(state.configPath).toBe("~/.kimi/config.toml");
+    expect(state.profilesPath).toBe("~/.kimi/config.toml");
+    expect(state.mcpConfigPath).toBe("~/.kimi/mcp.json");
+    expect(state.activeProfile).toBe("default");
+    expect(state.profiles.default.default_model).toBe("test-model");
+    expect(state.mainConfig.providers.test).toBeDefined();
+  });
+
+  it("uses persisted panel config target to select kimi-cli paths", async () => {
+    const files = createMemoryFs({
+      "~/.kimi-code/.panel/config.panel.toml": 'config_target = "kimi-cli"\n',
+      "~/.kimi/config.toml": `
+default_model = "test-model"
+[providers.test]
+type = "openai"
+base_url = "https://api.test.com"
+api_key = "sk-test"
+[models.test-model]
+provider = "test"
+model = "gpt-4"
+max_context_size = 8192
+`,
+    });
+
+    const state = await loadAppState(files);
+
+    expect(state.configTarget).toBe("kimi-cli");
+    expect(state.configPath).toBe("~/.kimi/config.toml");
+    expect(state.profilesPath).toBe("~/.kimi/config.toml");
+    expect(state.panelSettings.config_target).toBe("kimi-cli");
+  });
+
+  it("loads kimi-code config with profiles file", async () => {
+    const files = createMemoryFs({
+      "~/.kimi-code/config.toml": `
+[providers.test]
+type = "openai"
+base_url = "https://api.test.com"
+api_key = "sk-test"
+[models.test-model]
+provider = "test"
+model = "gpt-4"
+max_context_size = 8192
+`,
+      "~/.kimi-code/config.profiles.toml": `
+version = 1
+active_profile = "work"
+[profiles.work]
+default_model = "test-model"
+default_thinking = false
+`,
+    });
+    const state = await loadAppState(files, { configTarget: "kimi-code" });
+    expect(state.configTarget).toBe("kimi-code");
+    expect(state.configPath).toBe("~/.kimi-code/config.toml");
+    expect(state.profilesPath).toBe("~/.kimi-code/config.profiles.toml");
+    expect(state.mcpConfigPath).toBe("~/.kimi-code/mcp.json");
+    expect(state.activeProfile).toBe("work");
+    expect(state.profiles.work.default_thinking).toBe(false);
+  });
+
+  it("switches known default paths when config target changes", () => {
+    const state = createState();
+    state.configTarget = "kimi-cli";
+    state.configPath = "~/.kimi-code/config.toml";
+    state.profilesPath = "~/.kimi-code/config.profiles.toml";
+    state.mcpConfigPath = "~/.kimi-code/mcp.json";
+
+    const normalized = normalizeStatePaths(state);
+
+    expect(normalized.configPath).toBe("~/.kimi/config.toml");
+    expect(normalized.profilesPath).toBe("~/.kimi/config.toml");
+    expect(normalized.mcpConfigPath).toBe("~/.kimi/mcp.json");
+    expect(normalized.panelSettings.config_path).toBe("~/.kimi/config.toml");
+    expect(normalized.panelSettings.profiles_path).toBe("~/.kimi/config.toml");
+  });
+
+  it("moves legacy kimi-code defaults into the kimi-code directory", () => {
+    const state = createState();
+    state.configTarget = "kimi-code";
+    state.configPath = "~/.kimi/config.toml";
+    state.profilesPath = "~/.kimi/config.profiles.toml";
+    state.mcpConfigPath = "~/.kimi/mcp.json";
+
+    const normalized = normalizeStatePaths(state);
+
+    expect(normalized.configPath).toBe("~/.kimi-code/config.toml");
+    expect(normalized.profilesPath).toBe("~/.kimi-code/config.profiles.toml");
+    expect(normalized.mcpConfigPath).toBe("~/.kimi-code/mcp.json");
+  });
+
+  it("keeps custom paths when config target changes", () => {
+    const state = createState();
+    state.configTarget = "kimi-cli";
+    state.configPath = "/custom/kimi-code/config.toml";
+    state.profilesPath = "/custom/kimi-code/config.profiles.toml";
+    state.mcpConfigPath = "/custom/kimi-code/mcp.json";
+
+    const normalized = normalizeStatePaths(state);
+
+    expect(normalized.configPath).toBe("/custom/kimi-code/config.toml");
+    expect(normalized.profilesPath).toBe("/custom/kimi-code/config.toml");
+    expect(normalized.mcpConfigPath).toBe("/custom/kimi-code/mcp.json");
+  });
+
+  it("saves kimi-cli config without creating profiles file", async () => {
+    const state = createState();
+    state.configTarget = "kimi-cli";
+    state.configPath = "~/.kimi/config.toml";
+    state.profilesPath = "~/.kimi/config.toml";
+    const files = createMemoryFs({});
+    await saveAppState(files, state);
+    expect(files.store["~/.kimi/config.toml"]).toBeDefined();
+    expect(files.store["~/.kimi/config.profiles.toml"]).toBeUndefined();
+  });
+
+  it("saves kimi-code config with separate profiles file", async () => {
+    const state = createState();
+    state.configTarget = "kimi-code";
+    state.configPath = "~/.kimi-code/config.toml";
+    state.profilesPath = "~/.kimi-code/config.profiles.toml";
+    const files = createMemoryFs({});
+    await saveAppState(files, state);
+    expect(files.store["~/.kimi-code/config.toml"]).toBeDefined();
+    expect(files.store["~/.kimi-code/config.profiles.toml"]).toBeDefined();
+  });
+
+  it("persists configTarget in panelSettings", () => {
+    const settings = createDefaultPanelSettings("/tmp/config.toml", "/tmp/panel.toml");
+    settings.config_target = "kimi-cli";
+
+    const doc = buildPanelSettingsDocument(settings);
+    expect(doc).toContain('config_target = "kimi-cli"');
   });
 });

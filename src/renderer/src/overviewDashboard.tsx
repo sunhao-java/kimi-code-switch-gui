@@ -23,6 +23,7 @@ type CliVersionState = {
   installed: boolean;
   latestVersion?: string;
   hasUpdate?: boolean;
+  installCommand?: string;
 };
 
 export function SummaryCard(props: {
@@ -89,17 +90,18 @@ export function OverviewDashboard(props: {
   const [cliVersion, setCliVersion] = useState<CliVersionState>({ version: "", installed: false });
   const [isCliVersionChecking, setIsCliVersionChecking] = useState(false);
   const [isCliUpdating, setIsCliUpdating] = useState(false);
+  const configTarget = state.configTarget ?? "kimi-code";
   const checkCliVersion = useCallback(async (checkLatest = false): Promise<void> => {
     setIsCliVersionChecking(true);
     try {
-      const version = await window.kimiSwitch?.getCliVersion?.({ checkLatest });
+      const version = await window.kimiSwitch?.getCliVersion?.({ checkLatest, target: configTarget });
       setCliVersion(version ?? { version: "", installed: false });
     } catch {
       setCliVersion({ version: "", installed: false });
     } finally {
       setIsCliVersionChecking(false);
     }
-  }, []);
+  }, [configTarget]);
 
   useEffect(() => {
     void checkCliVersion();
@@ -108,12 +110,12 @@ export function OverviewDashboard(props: {
   const upgradeCli = useCallback(async (): Promise<void> => {
     setIsCliUpdating(true);
     try {
-      await window.kimiSwitch?.upgradeKimiCli?.();
+      await window.kimiSwitch?.upgradeKimiCli?.(configTarget, { install: !cliVersion.installed });
       await checkCliVersion(true);
     } finally {
       setIsCliUpdating(false);
     }
-  }, [checkCliVersion]);
+  }, [checkCliVersion, cliVersion.installed, configTarget]);
 
   const cliVersionText = cliVersion.installed
     ? cliVersion.hasUpdate && cliVersion.latestVersion
@@ -121,7 +123,7 @@ export function OverviewDashboard(props: {
       : cliVersion.version
     : t(locale, "overviewCliNotFound");
 
-  const cliCompatStatus = evaluateCliCompatibility(cliVersion);
+  const cliCompatStatus = configTarget === "kimi-cli" ? evaluateCliCompatibility(cliVersion) : "unknown";
   const cliCompatLabel =
     cliCompatStatus === "compatible"
       ? t(locale, "cliCompatCompatible")
@@ -132,6 +134,15 @@ export function OverviewDashboard(props: {
     cliCompatStatus === "outdated"
       ? t(locale, "cliCompatOutdatedHint").replace("{min}", MIN_CLI_VERSION)
       : t(locale, "cliCompatTitle");
+  const versionLabel = configTarget === "kimi-cli"
+    ? t(locale, "overviewCliVersion")
+    : t(locale, "overviewKimiCodeVersion");
+  const checkVersionLabel = configTarget === "kimi-cli"
+    ? t(locale, "overviewCliCheck")
+    : t(locale, "overviewKimiCodeCheck");
+  const updateVersionLabel = configTarget === "kimi-cli"
+    ? (cliVersion.installed ? t(locale, "overviewCliUpdate") : t(locale, "overviewCliInstall"))
+    : (cliVersion.installed ? t(locale, "overviewKimiCodeUpdate") : t(locale, "overviewKimiCodeInstall"));
 
   const boolLabel = (v: boolean): string => t(locale, v ? "overviewOn" : "overviewOff");
 
@@ -165,7 +176,7 @@ export function OverviewDashboard(props: {
         <div className="overview-hero-body">
           <div className="overview-hero-col">
             <div className="overview-hero-col-title">{t(locale, "overviewAppVersion")}</div>
-            <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewCliVersion")}</span><span className={cliVersion.installed ? "overview-hero-kv-value overview-cli-version-value" : "overview-hero-kv-value overview-cli-version-value text-warn"}><span>{cliVersionText}</span>{cliVersion.installed ? <span className={`cli-compat-badge cli-compat-${cliCompatStatus}`} title={cliCompatTitle}>{cliCompatLabel}</span> : null}<button className="overview-cli-check-button" type="button" title={t(locale, "overviewCliCheck")} aria-label={t(locale, "overviewCliCheck")} disabled={isCliVersionChecking || isCliUpdating} onClick={() => void checkCliVersion(true)}>{isCliVersionChecking ? <LoaderCircle size={13} className="button-spinner" /> : <RefreshCw size={13} />}</button>{cliVersion.hasUpdate ? <button className="overview-cli-check-button" type="button" title={t(locale, "overviewCliUpdate")} aria-label={t(locale, "overviewCliUpdate")} disabled={isCliUpdating || isCliVersionChecking} onClick={() => void upgradeCli()}>{isCliUpdating ? <LoaderCircle size={13} className="button-spinner" /> : <Download size={13} />}</button> : null}</span></div>
+            <div className="overview-hero-kv"><span className="overview-hero-kv-label">{versionLabel}</span><span className={cliVersion.installed ? "overview-hero-kv-value overview-cli-version-value" : "overview-hero-kv-value overview-cli-version-value text-warn"}><span>{cliVersionText}</span>{cliVersion.installed && configTarget === "kimi-cli" ? <span className={`cli-compat-badge cli-compat-${cliCompatStatus}`} title={cliCompatTitle}>{cliCompatLabel}</span> : null}<button className="overview-cli-check-button" type="button" title={checkVersionLabel} aria-label={checkVersionLabel} disabled={isCliVersionChecking || isCliUpdating} onClick={() => void checkCliVersion(true)}>{isCliVersionChecking ? <LoaderCircle size={13} className="button-spinner" /> : <RefreshCw size={13} />}</button>{cliVersion.hasUpdate || !cliVersion.installed ? <button className="overview-cli-check-button" type="button" title={cliVersion.installed ? updateVersionLabel : `${updateVersionLabel}: ${cliVersion.installCommand ?? ""}`} aria-label={updateVersionLabel} disabled={isCliUpdating || isCliVersionChecking} onClick={() => void upgradeCli()}>{isCliUpdating ? <LoaderCircle size={13} className="button-spinner" /> : <Download size={13} />}</button> : null}</span></div>
             <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewDefaultModel")}</span><span className="overview-hero-kv-value">{activeProfile?.default_model || "-"}</span></div>
             <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewTheme")}</span><span className="overview-hero-kv-value">{themeLabel(state.panelSettings.appearance_theme)}</span></div>
           </div>

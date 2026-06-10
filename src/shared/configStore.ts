@@ -2,6 +2,7 @@ import parse from "@iarna/toml/parse-string.js";
 import stringify from "@iarna/toml/stringify.js";
 
 import { redactAppStateSecrets } from "./configSafety";
+import { ConfigResolver, ConfigTarget, parseConfigTarget } from "./configTarget";
 import { SUPPORTED_CURRENCIES } from "./currency";
 import { buildMcpConfigDocument, DEFAULT_MCP_CONFIG_PATH, loadMcpConfig, parseMcpConfigStrict } from "./mcpStore";
 import { createDefaultShortcuts, normalizeShortcuts } from "./shortcutStore";
@@ -30,16 +31,64 @@ export const PROFILE_FILENAME = "config.profiles.toml";
 export const PANEL_SETTINGS_FILENAME = "config.panel.toml";
 export const BACKUP_DIRECTORY_NAME = "backups";
 export const DEFAULT_PROFILE_NAME = "default";
-export const DEFAULT_CONFIG_PATH = "~/.kimi/config.toml";
-export const DEFAULT_PANEL_DIRECTORY = "~/.kimi/.panel";
+
+/**
+ * 根据目标获取默认配置路径
+ */
+export function getDefaultConfigPath(target: ConfigTarget): string {
+  const resolver = new ConfigResolver(target);
+  return `~/${resolver.getConfigPath("config.toml")}`;
+}
+
+export function getDefaultProfilesPath(target: ConfigTarget, configPath = getDefaultConfigPath(target)): string {
+  const resolver = new ConfigResolver(target);
+  return resolver.supportsProfiles()
+    ? defaultProfilesPath(configPath)
+    : configPath;
+}
+
+export function getDefaultMcpConfigPath(target: ConfigTarget): string {
+  const resolver = new ConfigResolver(target);
+  return `~/${resolver.getConfigPath("mcp.json")}`;
+}
+
+/**
+ * 根据目标获取默认 panel 路径
+ */
+export function getDefaultPanelDirectory(target: ConfigTarget): string {
+  const resolver = new ConfigResolver(target);
+  return `~/${resolver.getConfigDir()}/.panel`;
+}
+
+export const DEFAULT_CONFIG_PATH = getDefaultConfigPath(ConfigTarget.KimiCode);
+export const DEFAULT_PANEL_DIRECTORY = getDefaultPanelDirectory(ConfigTarget.KimiCode);
 export const DEFAULT_PANEL_SETTINGS_PATH = `${DEFAULT_PANEL_DIRECTORY}/${PANEL_SETTINGS_FILENAME}`;
 export const LEGACY_PANEL_SETTINGS_PATH = "~/.kimi/config.panel.toml";
 export const PANEL_USAGE_DIRECTORY = `${DEFAULT_PANEL_DIRECTORY}/usage`;
 export const PANEL_USAGE_DB_PATH = `${PANEL_USAGE_DIRECTORY}/index.db`;
 export const LEGACY_USAGE_DIRECTORY = "~/.kimi/usage";
+const LEGACY_PROFILES_PATH = "~/.kimi/config.profiles.toml";
+const LEGACY_MCP_CONFIG_PATH = "~/.kimi/config.mcp.json";
+const KNOWN_DEFAULT_CONFIG_PATHS = [
+  getDefaultConfigPath(ConfigTarget.KimiCode),
+  getDefaultConfigPath(ConfigTarget.KimiCli),
+] as const;
+const KNOWN_DEFAULT_PROFILES_PATHS = [
+  getDefaultProfilesPath(ConfigTarget.KimiCode),
+  getDefaultProfilesPath(ConfigTarget.KimiCli),
+  LEGACY_PROFILES_PATH,
+] as const;
+const KNOWN_DEFAULT_MCP_CONFIG_PATHS = [
+  getDefaultMcpConfigPath(ConfigTarget.KimiCode),
+  getDefaultMcpConfigPath(ConfigTarget.KimiCli),
+  DEFAULT_MCP_CONFIG_PATH,
+  LEGACY_MCP_CONFIG_PATH,
+] as const;
 const SUPPORTED_LOCALES = new Set<PanelSettings["locale"]>(["zh-CN", "zh-TW", "en-US", "ja-JP", "de-DE", "es-ES"]);
 
-const PROFILE_KEYS: Array<keyof Profile> = [
+type ProfileConfigKey = Exclude<keyof Profile, "name" | "label">;
+
+const PROFILE_KEYS: readonly ProfileConfigKey[] = [
   "default_model",
   "default_thinking",
   "default_yolo",
@@ -77,6 +126,7 @@ export function createDefaultPanelSettings(
 ): PanelSettings {
   return {
     version: PANEL_SETTINGS_VERSION,
+    config_target: ConfigTarget.KimiCode,
     config_path: configPath,
     profiles_path: "",
     follow_config_profiles: true,
@@ -119,24 +169,32 @@ export function cloneState(state: AppState): AppState {
 export async function loadAppState(
   files: FileAccess,
   paths?: {
+    configTarget?: ConfigTarget;
     configPath?: string;
     profilesPath?: string;
     panelSettingsPath?: string;
     mcpConfigPath?: string;
   },
 ): Promise<AppState> {
+  // 先加载 panelSettings 获取保存的 configTarget
   const panelSettingsPath = paths?.panelSettingsPath ?? DEFAULT_PANEL_SETTINGS_PATH;
-  const mcpConfigPath = sanitizePath(paths?.mcpConfigPath, DEFAULT_MCP_CONFIG_PATH);
   const panelSettingsResult = await loadPanelSettingsWithLegacyFallback(files, panelSettingsPath);
   const panelSettings = panelSettingsResult.settings;
+
+  // configTarget 优先级：参数 > panelSettings > 默认值
+  const configTarget = paths?.configTarget ?? panelSettings.config_target ?? ConfigTarget.KimiCode;
+  const resolver = new ConfigResolver(configTarget);
+
   if (panelSettingsResult.migratedFromLegacy) {
     await files.ensureDir(dirnamePath(DEFAULT_PANEL_SETTINGS_PATH));
     await files.writeText(DEFAULT_PANEL_SETTINGS_PATH, buildPanelSettingsDocument(panelSettings));
   }
-  const configPath = sanitizePath(paths?.configPath, DEFAULT_CONFIG_PATH);
+  const mcpConfigPath = sanitizePath(paths?.mcpConfigPath, getDefaultMcpConfigPath(configTarget));
+  const configPath = sanitizePath(paths?.configPath, getDefaultConfigPath(configTarget));
   const profilesPath = resolveProfilesPath({
     explicitProfilesPath: paths?.profilesPath,
     configPath,
+    supportsProfiles: resolver.supportsProfiles(),
   });
   const resolvedPanelSettingsPath = sanitizePath(
     panelSettingsPath,
@@ -145,8 +203,15 @@ export async function loadAppState(
   const mainConfig = normalizeMainConfig(await loadTomlFile(files, configPath, "main config"));
   const fileMcpConfig = await loadMcpConfig(files, mcpConfigPath);
   const mcpConfig = mergePanelMcpServers(panelSettings.mcp_servers, fileMcpConfig.mcpServers);
-  const rawProfiles = await loadTomlFile(files, profilesPath, "profiles config");
-  const profiles = parseProfiles(mainConfig, rawProfiles);
+
+  // kimi-cli 不支持 profiles，使用 mainConfig 作为唯一配置源
+  const profiles = resolver.supportsProfiles()
+    ? parseProfiles(mainConfig, await loadTomlFile(files, profilesPath, "profiles config"))
+    : { [DEFAULT_PROFILE_NAME]: extractProfileFromMainConfig(mainConfig) };
+
+  const rawProfiles = resolver.supportsProfiles()
+    ? await loadTomlFile(files, profilesPath, "profiles config")
+    : {};
   const activeProfile = ensureActiveProfile(
     typeof rawProfiles.active_profile === "string"
       ? rawProfiles.active_profile
@@ -155,6 +220,7 @@ export async function loadAppState(
   );
 
   return {
+    configTarget,
     configPath,
     profilesPath,
     panelSettingsPath: resolvedPanelSettingsPath,
@@ -164,8 +230,9 @@ export async function loadAppState(
     activeProfile,
     panelSettings: {
       ...panelSettings,
+      config_target: configTarget,
       config_path: configPath,
-      profiles_path: "",
+      profiles_path: profilesPath,
       follow_config_profiles: true,
       mcp_servers: cloneMcpServers(mcpConfig.mcpServers),
     },
@@ -354,6 +421,7 @@ function panelSettingsFromUnknown(data: Record<string, unknown>, fallback: Panel
   })();
   return {
     version: PANEL_SETTINGS_VERSION,
+    config_target: parseConfigTarget(data.config_target ?? fallback.config_target),
     config_path: configPath,
     profiles_path:
       typeof data.profiles_path === "string" ? data.profiles_path : fallback.profiles_path,
@@ -429,15 +497,25 @@ function panelSettingsFromUnknown(data: Record<string, unknown>, fallback: Panel
 
 export async function saveAppState(files: FileAccess, state: AppState): Promise<void> {
   const normalizedState = normalizeStatePaths(state);
-  if (normalizedState.configPath === normalizedState.profilesPath) {
+  const resolver = new ConfigResolver(normalizedState.configTarget);
+
+  // kimi-cli 模式：config.toml 和 profiles 是同一个文件
+  if (!resolver.supportsProfiles() && normalizedState.configPath === normalizedState.profilesPath) {
+    // 合法：kimi-cli 不分离 profiles
+  } else if (normalizedState.configPath === normalizedState.profilesPath) {
     throw new Error("Config path and profiles path must be different.");
   }
+
   await files.ensureDir(dirnamePath(normalizedState.configPath));
-  await files.ensureDir(dirnamePath(normalizedState.profilesPath));
   await files.ensureDir(dirnamePath(normalizedState.panelSettingsPath));
   await files.ensureDir(dirnamePath(normalizedState.mcpConfigPath));
   await files.writeText(normalizedState.configPath, buildConfigDocument(normalizedState));
-  await files.writeText(normalizedState.profilesPath, buildProfilesDocument(normalizedState));
+
+  // kimi-code 才写 profiles 文件
+  if (resolver.supportsProfiles()) {
+    await files.ensureDir(dirnamePath(normalizedState.profilesPath));
+    await files.writeText(normalizedState.profilesPath, buildProfilesDocument(normalizedState));
+  }
 
   // Panel settings：优先使用 SQLite（若 writePanelSettings 存在）
   if (files.writePanelSettings) {
@@ -917,6 +995,15 @@ function sanitizePath(path: string | undefined, fallback: string): string {
   return typeof path === "string" && path.trim() ? path.trim() : fallback;
 }
 
+function resolveTargetDefaultPath(
+  path: string | undefined,
+  fallback: string,
+  knownDefaults: readonly string[],
+): string {
+  const sanitized = sanitizePath(path, fallback);
+  return knownDefaults.includes(sanitized) ? fallback : sanitized;
+}
+
 function defaultProfilesPath(configPath: string): string {
   return joinPath(dirnamePath(configPath), PROFILE_FILENAME);
 }
@@ -928,19 +1015,60 @@ function defaultBackupPath(): string {
 function resolveProfilesPath(options: {
   explicitProfilesPath?: string;
   configPath: string;
+  supportsProfiles: boolean;
 }): string {
+  if (!options.supportsProfiles) {
+    return options.configPath; // kimi-cli 使用 config.toml 本身
+  }
   if (options.explicitProfilesPath?.trim()) {
     return options.explicitProfilesPath.trim();
   }
   return defaultProfilesPath(options.configPath);
 }
 
+/**
+ * 从 MainConfig 提取 Profile（用于 kimi-cli 模式）
+ */
+function extractProfileFromMainConfig(mainConfig: MainConfig): Profile {
+  return {
+    name: DEFAULT_PROFILE_NAME,
+    label: "Default",
+    default_model: mainConfig.default_model || "",
+    default_thinking: mainConfig.default_thinking ?? true,
+    default_yolo: mainConfig.default_yolo ?? false,
+    default_plan_mode: mainConfig.default_plan_mode ?? false,
+    default_editor: mainConfig.default_editor || "",
+    theme: mainConfig.theme || "dark",
+    show_thinking_stream: mainConfig.show_thinking_stream ?? false,
+    merge_all_available_skills: mainConfig.merge_all_available_skills ?? true,
+  };
+}
+
 export function normalizeStatePaths(state: AppState): AppState {
-  const configPath = sanitizePath(state.configPath, DEFAULT_CONFIG_PATH);
+  const configTarget = state.configTarget ?? ConfigTarget.KimiCode;
+  const resolver = new ConfigResolver(configTarget);
+  const defaultConfigPath = getDefaultConfigPath(configTarget);
+  const configPath = resolveTargetDefaultPath(
+    state.configPath,
+    defaultConfigPath,
+    KNOWN_DEFAULT_CONFIG_PATHS,
+  );
   const panelSettingsPath = sanitizePath(state.panelSettingsPath, DEFAULT_PANEL_SETTINGS_PATH);
-  const mcpConfigPath = sanitizePath(state.mcpConfigPath, DEFAULT_MCP_CONFIG_PATH);
+  const mcpConfigPath = resolveTargetDefaultPath(
+    state.mcpConfigPath,
+    getDefaultMcpConfigPath(configTarget),
+    KNOWN_DEFAULT_MCP_CONFIG_PATHS,
+  );
+  const profilesPath = resolver.supportsProfiles()
+    ? resolveTargetDefaultPath(
+        state.profilesPath,
+        defaultProfilesPath(configPath),
+        KNOWN_DEFAULT_PROFILES_PATHS,
+      )
+    : configPath;
   const panelSettings: PanelSettings = {
     ...state.panelSettings,
+    config_target: configTarget,
     config_path: configPath,
     theme: parseAppearanceMode(state.panelSettings.theme, "auto"),
     appearance_theme: parseAppearanceTheme(state.panelSettings.appearance_theme, "aurora"),
@@ -963,23 +1091,21 @@ export function normalizeStatePaths(state: AppState): AppState {
     shortcuts: normalizeShortcuts(state.panelSettings.shortcuts),
     last_display_id: state.panelSettings.last_display_id,
     mcp_servers: cloneMcpServers(state.mcpConfig.mcpServers),
-    profiles_path: "",
+    profiles_path: profilesPath,
     follow_config_profiles: true,
   };
-  const profilesPath = resolveProfilesPath({
-    configPath,
-    explicitProfilesPath: state.profilesPath,
-  });
   return {
     ...state,
+    configTarget,
     configPath,
     profilesPath,
     panelSettingsPath,
     mcpConfigPath,
     panelSettings: {
       ...panelSettings,
+      config_target: configTarget,
       mcp_servers: cloneMcpServers(state.mcpConfig.mcpServers),
-      profiles_path: "",
+      profiles_path: profilesPath,
     },
   };
 }

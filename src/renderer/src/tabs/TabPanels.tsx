@@ -19,6 +19,7 @@ import type {
   BackupFrequency,
   BackupStrategy,
   CloseBehavior,
+  ConfigTarget,
   DisplayOpenMode,
   ExportBundle,
   ImportConflictStrategy,
@@ -119,6 +120,7 @@ type TabPanelsProps = Pick<
   | "runAfterUnsavedHandled"
   | "onSave"
   | "persistState"
+  | "persistConfigTarget"
   | "confirmDeleteResource"
   | "refreshSkills"
   | "openDocumentViewer"
@@ -136,7 +138,8 @@ type TabPanelsProps = Pick<
   onRequestCascadeDelete: (type: "provider" | "model", name: string) => void;
 };
 
-type SettingsSubTab = "general" | "shortcuts" | "backup" | "doctor" | "insights" | "history";
+type SettingsSubTab = "general" | "config-target" | "shortcuts" | "backup" | "doctor" | "insights" | "history";
+const POST_CONFIG_TARGET_SWITCH_TAB_KEY = "kimi-switch:post-config-target-switch-tab";
 
 export function TabPanels(props: TabPanelsProps): JSX.Element {
   const {
@@ -202,6 +205,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     updateImmediateState,
     runAfterUnsavedHandled,
     onSave,
+    persistConfigTarget,
     persistState,
     confirmDeleteResource,
     refreshSkills,
@@ -241,7 +245,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   const hasProviders = Object.keys(state.mainConfig.providers).length > 0;
   const hasModels = Object.keys(state.mainConfig.models).length > 0;
 
-  const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>("general");
+  const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>("config-target");
   const [importDialog, setImportDialog] = useState<{ open: boolean; preview: ImportPreview | null; data: ExportBundle | null; strategy: ImportConflictStrategy }>({ open: false, preview: null, data: null, strategy: "skip" });
   const [providerHealthResults, setProviderHealthResults] = useState<ProviderHealthResult[] | null>(null);
   const [isProviderHealthChecking, setIsProviderHealthChecking] = useState(false);
@@ -286,6 +290,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     }
   };
   const settingsSubTabs: Array<{ id: SettingsSubTab; label: string; description: string }> = [
+    {
+      id: "config-target",
+      label: t(locale, "settingsTabConfigTarget"),
+      description: t(locale, "settingsTabConfigTargetDescription"),
+    },
     {
       id: "general",
       label: t(locale, "settingsTabGeneral"),
@@ -1074,6 +1083,76 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             <div className="section-title">
               {settingsSubTabs.find((tab) => tab.id === activeSettingsSubTab)?.label ?? t(locale, "settings")}
             </div>
+            {activeSettingsSubTab === "config-target" ? (
+              <div className="settings-tab-panel">
+                <SettingsGroup title={t(locale, "settingsGroupConfigTarget")}>
+                  <SelectField
+                    locale={locale}
+                    label={t(locale, "configTargetLabel")}
+                    value={state.panelSettings.config_target ?? "kimi-code"}
+                    options={[
+                      { value: "kimi-code", label: "Kimi Code" },
+                      { value: "kimi-cli", label: "Kimi CLI" },
+                    ]}
+                    onChange={async (value) => {
+                      const newTarget = value as ConfigTarget;
+                      try {
+                        const version = await getApi()?.getCliVersion?.({ target: newTarget });
+                        if (version && !version.installed) {
+                          const packageName = version.packageName ?? (newTarget === "kimi-code" ? "Kimi Code" : "Kimi CLI");
+                          const command = version.installCommand ?? version.updateCommand ?? "";
+                          setNotice("");
+                          setError(formatMessage(t(locale, "configTargetInstallRequired"), {
+                            name: packageName,
+                            command,
+                          }));
+                          return;
+                        }
+                        await persistConfigTarget(newTarget);
+                        try {
+                          window.sessionStorage.setItem(POST_CONFIG_TARGET_SWITCH_TAB_KEY, "overview");
+                        } catch {
+                          // 忽略 sessionStorage 不可用的极端情况，reload 后仍能正常进入应用。
+                        }
+                        window.location.reload();
+                      } catch (err) {
+                        console.error("Failed to reload after target change:", err);
+                      }
+                    }}
+                  />
+                  <div className="field-description" style={{ color: "var(--color-warning)", fontWeight: 500 }}>
+                    ⚠️ {t(locale, "configTargetWarning")}
+                  </div>
+                </SettingsGroup>
+                <SettingsGroup title={t(locale, "settingsGroupPaths")}>
+                  <PathField
+                    locale={locale}
+                    label={t(locale, "configPath")}
+                    value={state.configPath}
+                    readOnly
+                    onView={() => openDocumentViewer("config")}
+                    onChange={() => {}}
+                  />
+                  <PathField
+                    locale={locale}
+                    label={t(locale, "profilesPath")}
+                    value={state.profilesPath}
+                    readOnly
+                    onView={() => openDocumentViewer("profiles")}
+                    onChange={() => {}}
+                  />
+                  <PathField
+                    locale={locale}
+                    label={t(locale, "mcpConfigPathLabel")}
+                    value={state.mcpConfigPath}
+                    readOnly
+                    fileType="json"
+                    onView={() => openDocumentViewer("mcp")}
+                    onChange={() => {}}
+                  />
+                </SettingsGroup>
+              </div>
+            ) : null}
             {activeSettingsSubTab === "general" ? (
               <div className="settings-tab-panel">
                 <SettingsGroup title={t(locale, "settingsGroupAppearance")}>
@@ -1200,33 +1279,6 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       value: option.value,
                       label: labelForLocale(option.label, locale),
                     }))}
-                  />
-                </SettingsGroup>
-                <SettingsGroup title={t(locale, "settingsGroupPaths")}>
-                  <PathField
-                    locale={locale}
-                    label={t(locale, "configPath")}
-                    value={state.configPath}
-                    readOnly
-                    onView={() => openDocumentViewer("config")}
-                    onChange={() => {}}
-                  />
-                  <PathField
-                    locale={locale}
-                    label={t(locale, "profilesPath")}
-                    value={state.profilesPath}
-                    readOnly
-                    onView={() => openDocumentViewer("profiles")}
-                    onChange={() => {}}
-                  />
-                  <PathField
-                    locale={locale}
-                    label={t(locale, "mcpConfigPathLabel")}
-                    value={state.mcpConfigPath}
-                    readOnly
-                    fileType="json"
-                    onView={() => openDocumentViewer("mcp")}
-                    onChange={() => {}}
                   />
                 </SettingsGroup>
               </div>

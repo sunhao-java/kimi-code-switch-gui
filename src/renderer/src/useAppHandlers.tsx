@@ -17,6 +17,8 @@ import { useSafetyActions } from "./useSafetyActions";
 import { useStateMutations } from "./useStateMutations";
 import { useUnsavedChangesGuard } from "./useUnsavedChangesGuard";
 
+const POST_CONFIG_TARGET_SWITCH_TAB_KEY = "kimi-switch:post-config-target-switch-tab";
+
 // Auto-generated hook - contains all state, effects, and handler functions
 export function useAppHandlers() {
   const [state, setState] = useState<AppState>(() => createFallbackState());
@@ -139,6 +141,7 @@ export function useAppHandlers() {
     loadState,
     persistState,
     onSave,
+    persistConfigTarget,
     persistImmediateState,
     restoreSavedState,
   } = useAppPersistence({
@@ -213,6 +216,20 @@ export function useAppHandlers() {
   useEffect(() => {
     if (hasRestoredUiState.current) return;
     if (!savedState) return;
+    let forcedTab: string | null = null;
+    try {
+      forcedTab = window.sessionStorage.getItem(POST_CONFIG_TARGET_SWITCH_TAB_KEY);
+      if (forcedTab) {
+        window.sessionStorage.removeItem(POST_CONFIG_TARGET_SWITCH_TAB_KEY);
+      }
+    } catch {
+      forcedTab = null;
+    }
+    if (forcedTab === "overview") {
+      setActiveTab("overview");
+      hasRestoredUiState.current = true;
+      return;
+    }
     const persistedTab = savedState.panelSettings.uiState?.activeTab;
     if (persistedTab) {
       setActiveTab(persistedTab as TabId);
@@ -491,6 +508,7 @@ export function useAppHandlers() {
     loadState,
     persistState,
     onSave,
+    persistConfigTarget,
     persistImmediateState,
     requestConfirm,
     closeConfirmDialog,

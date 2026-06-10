@@ -43,6 +43,12 @@ pub fn init_panel_settings_store(
             log::info!("Detected old panel_settings schema, dropping and recreating...");
             conn.execute("DROP TABLE panel_settings", [])
                 .map_err(|e| format!("drop old panel_settings table: {e}"))?;
+        } else if !columns.contains(&"config_target".to_string()) {
+            conn.execute(
+                "ALTER TABLE panel_settings ADD COLUMN config_target TEXT NOT NULL DEFAULT 'kimi-code'",
+                [],
+            )
+            .map_err(|e| format!("add config_target column to panel_settings: {e}"))?;
         }
     }
 
@@ -69,7 +75,7 @@ pub fn get_panel_settings(
     let row_json: Option<String> = conn
         .query_row(
             "SELECT
-                version, config_path, profiles_path, follow_config_profiles,
+                version, config_target, config_path, profiles_path, follow_config_profiles,
                 theme, appearance_theme, ui_font_size, locale,
                 tray_icon, sidebar_collapsed, display_open_mode, close_behavior, terminal_app,
                 last_display_id, ui_state, favorites,
@@ -86,44 +92,45 @@ pub fn get_panel_settings(
             |row| {
                 let json = serde_json::json!({
                     "version": row.get::<_, i64>(0)?,
-                    "config_path": row.get::<_, String>(1)?,
-                    "profiles_path": row.get::<_, String>(2)?,
-                    "follow_config_profiles": row.get::<_, i64>(3)? != 0,
-                    "theme": row.get::<_, String>(4)?,
-                    "appearance_theme": row.get::<_, String>(5)?,
-                    "ui_font_size": row.get::<_, String>(6)?,
-                    "locale": row.get::<_, String>(7)?,
-                    "tray_icon": row.get::<_, i64>(8)? != 0,
-                    "sidebar_collapsed": row.get::<_, i64>(9)? != 0,
-                    "display_open_mode": row.get::<_, String>(10)?,
-                    "close_behavior": row.get::<_, String>(11)?,
-                    "terminal_app": row.get::<_, String>(12)?,
-                    "last_display_id": row.get::<_, Option<i64>>(13)?,
-                    "uiState": row.get::<_, Option<String>>(14)?
+                    "config_target": row.get::<_, String>(1)?,
+                    "config_path": row.get::<_, String>(2)?,
+                    "profiles_path": row.get::<_, String>(3)?,
+                    "follow_config_profiles": row.get::<_, i64>(4)? != 0,
+                    "theme": row.get::<_, String>(5)?,
+                    "appearance_theme": row.get::<_, String>(6)?,
+                    "ui_font_size": row.get::<_, String>(7)?,
+                    "locale": row.get::<_, String>(8)?,
+                    "tray_icon": row.get::<_, i64>(9)? != 0,
+                    "sidebar_collapsed": row.get::<_, i64>(10)? != 0,
+                    "display_open_mode": row.get::<_, String>(11)?,
+                    "close_behavior": row.get::<_, String>(12)?,
+                    "terminal_app": row.get::<_, String>(13)?,
+                    "last_display_id": row.get::<_, Option<i64>>(14)?,
+                    "uiState": row.get::<_, Option<String>>(15)?
                         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
-                    "favorites": row.get::<_, Option<String>>(15)?
+                    "favorites": row.get::<_, Option<String>>(16)?
                         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
-                    "backup_strategy": row.get::<_, String>(16)?,
-                    "backup_frequency": row.get::<_, String>(17)?,
-                    "backup_retention_count": row.get::<_, i64>(18)?,
-                    "backup_destination_type": row.get::<_, String>(19)?,
-                    "backup_local_path": row.get::<_, String>(20)?,
-                    "backup_webdav_url": row.get::<_, String>(21)?,
-                    "backup_webdav_username": row.get::<_, String>(22)?,
-                    "backup_webdav_password": row.get::<_, String>(23)?,
-                    "backup_webdav_path": row.get::<_, String>(24)?,
-                    "shortcuts": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(25)?).unwrap_or(serde_json::json!({})),
-                    "mcp_servers": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(26)?).unwrap_or(serde_json::json!({})),
-                    "insights_status": row.get::<_, String>(27)?,
-                    "insights_proxy_port": row.get::<_, Option<String>>(28)?
+                    "backup_strategy": row.get::<_, String>(17)?,
+                    "backup_frequency": row.get::<_, String>(18)?,
+                    "backup_retention_count": row.get::<_, i64>(19)?,
+                    "backup_destination_type": row.get::<_, String>(20)?,
+                    "backup_local_path": row.get::<_, String>(21)?,
+                    "backup_webdav_url": row.get::<_, String>(22)?,
+                    "backup_webdav_username": row.get::<_, String>(23)?,
+                    "backup_webdav_password": row.get::<_, String>(24)?,
+                    "backup_webdav_path": row.get::<_, String>(25)?,
+                    "shortcuts": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(26)?).unwrap_or(serde_json::json!({})),
+                    "mcp_servers": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(27)?).unwrap_or(serde_json::json!({})),
+                    "insights_status": row.get::<_, String>(28)?,
+                    "insights_proxy_port": row.get::<_, Option<String>>(29)?
                         .and_then(|s| if s == "auto" { Some(serde_json::json!("auto")) } else { s.parse::<i64>().ok().map(|n| serde_json::json!(n)) }),
-                    "insights_retention_days": row.get::<_, i64>(29)?,
-                    "insights_disk_warn_threshold_mb": row.get::<_, i64>(30)?,
-                    "insights_store_prompt_preview": row.get::<_, i64>(31)? != 0,
-                    "insights_onboarding_shown_at": row.get::<_, Option<String>>(32)?,
-                    "insights_last_known_port": row.get::<_, Option<i64>>(33)?,
-                    "insights_display_currency": row.get::<_, String>(34)?,
-                    "insights_currency_rates": row.get::<_, Option<String>>(35)?
+                    "insights_retention_days": row.get::<_, i64>(30)?,
+                    "insights_disk_warn_threshold_mb": row.get::<_, i64>(31)?,
+                    "insights_store_prompt_preview": row.get::<_, i64>(32)? != 0,
+                    "insights_onboarding_shown_at": row.get::<_, Option<String>>(33)?,
+                    "insights_last_known_port": row.get::<_, Option<i64>>(34)?,
+                    "insights_display_currency": row.get::<_, String>(35)?,
+                    "insights_currency_rates": row.get::<_, Option<String>>(36)?
                         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
                 });
                 Ok(json.to_string())
@@ -169,7 +176,7 @@ pub fn save_panel_settings(
     conn.execute(
         "INSERT INTO panel_settings (
             id, version,
-            config_path, profiles_path, follow_config_profiles,
+            config_target, config_path, profiles_path, follow_config_profiles,
             theme, appearance_theme, ui_font_size, locale,
             tray_icon, sidebar_collapsed, display_open_mode, close_behavior, terminal_app,
             last_display_id, ui_state, favorites,
@@ -184,22 +191,23 @@ pub fn save_panel_settings(
             updated_at, created_at
         ) VALUES (
             1, ?1,
-            ?2, ?3, ?4,
-            ?5, ?6, ?7, ?8,
-            ?9, ?10, ?11, ?12, ?13,
-            ?14, ?15, ?16,
-            ?17, ?18, ?19, ?20,
-            ?21, ?22, ?23,
-            ?24, ?25,
-            ?26, ?27,
-            ?28, ?29, ?30,
-            ?31, ?32,
-            ?33, ?34,
-            ?35, ?36,
-            ?37, ?37
+            ?2, ?3, ?4, ?5,
+            ?6, ?7, ?8, ?9,
+            ?10, ?11, ?12, ?13, ?14,
+            ?15, ?16, ?17,
+            ?18, ?19, ?20, ?21,
+            ?22, ?23, ?24,
+            ?25, ?26,
+            ?27, ?28,
+            ?29, ?30, ?31,
+            ?32, ?33,
+            ?34, ?35,
+            ?36, ?37,
+            ?38, ?38
         )
         ON CONFLICT(id) DO UPDATE SET
             version = excluded.version,
+            config_target = excluded.config_target,
             config_path = excluded.config_path,
             profiles_path = excluded.profiles_path,
             follow_config_profiles = excluded.follow_config_profiles,
@@ -238,6 +246,7 @@ pub fn save_panel_settings(
             updated_at = excluded.updated_at",
         rusqlite::params![
             get_i64("version"),
+            get_str("config_target"),
             get_str("config_path"),
             get_str("profiles_path"),
             get_bool("follow_config_profiles"),
@@ -386,7 +395,7 @@ mod tests {
         conn.execute(
             "INSERT INTO panel_settings (
                 id, version,
-                config_path, profiles_path, follow_config_profiles,
+                config_target, config_path, profiles_path, follow_config_profiles,
                 theme, appearance_theme, ui_font_size, locale,
                 tray_icon, sidebar_collapsed, display_open_mode, close_behavior, terminal_app,
                 last_display_id, ui_state, favorites,
@@ -401,22 +410,23 @@ mod tests {
                 updated_at, created_at
             ) VALUES (
                 1, ?1,
-                ?2, ?3, ?4,
-                ?5, ?6, ?7, ?8,
-                ?9, ?10, ?11, ?12, ?13,
-                ?14, ?15, ?16,
-                ?17, ?18, ?19, ?20,
-                ?21, ?22, ?23,
-                ?24, ?25,
-                ?26, ?27,
-                ?28, ?29, ?30,
-                ?31, ?32,
-                ?33, ?34,
-                ?35, ?36,
-                ?37, ?37
+                ?2, ?3, ?4, ?5,
+                ?6, ?7, ?8, ?9,
+                ?10, ?11, ?12, ?13, ?14,
+                ?15, ?16, ?17,
+                ?18, ?19, ?20, ?21,
+                ?22, ?23, ?24,
+                ?25, ?26,
+                ?27, ?28,
+                ?29, ?30, ?31,
+                ?32, ?33,
+                ?34, ?35,
+                ?36, ?37,
+                ?38, ?38
             )
             ON CONFLICT(id) DO UPDATE SET
                 version = excluded.version,
+                config_target = excluded.config_target,
                 config_path = excluded.config_path,
                 profiles_path = excluded.profiles_path,
                 follow_config_profiles = excluded.follow_config_profiles,
@@ -455,6 +465,7 @@ mod tests {
                 updated_at = excluded.updated_at",
             rusqlite::params![
                 get_i64("version"),
+                get_str("config_target"),
                 get_str("config_path"),
                 get_str("profiles_path"),
                 get_bool("follow_config_profiles"),
@@ -506,7 +517,7 @@ mod tests {
         let row_json: Option<String> = conn
             .query_row(
                 "SELECT
-                    version, config_path, profiles_path, follow_config_profiles,
+                    version, config_target, config_path, profiles_path, follow_config_profiles,
                     theme, appearance_theme, ui_font_size, locale,
                     tray_icon, sidebar_collapsed, display_open_mode, close_behavior, terminal_app,
                     last_display_id, ui_state, favorites,
@@ -523,44 +534,45 @@ mod tests {
                 |row| {
                     let json = serde_json::json!({
                         "version": row.get::<_, i64>(0)?,
-                        "config_path": row.get::<_, String>(1)?,
-                        "profiles_path": row.get::<_, String>(2)?,
-                        "follow_config_profiles": row.get::<_, i64>(3)? != 0,
-                        "theme": row.get::<_, String>(4)?,
-                        "appearance_theme": row.get::<_, String>(5)?,
-                        "ui_font_size": row.get::<_, String>(6)?,
-                        "locale": row.get::<_, String>(7)?,
-                        "tray_icon": row.get::<_, i64>(8)? != 0,
-                        "sidebar_collapsed": row.get::<_, i64>(9)? != 0,
-                        "display_open_mode": row.get::<_, String>(10)?,
-                        "close_behavior": row.get::<_, String>(11)?,
-                        "terminal_app": row.get::<_, String>(12)?,
-                        "last_display_id": row.get::<_, Option<i64>>(13)?,
-                        "uiState": row.get::<_, Option<String>>(14)?
+                        "config_target": row.get::<_, String>(1)?,
+                        "config_path": row.get::<_, String>(2)?,
+                        "profiles_path": row.get::<_, String>(3)?,
+                        "follow_config_profiles": row.get::<_, i64>(4)? != 0,
+                        "theme": row.get::<_, String>(5)?,
+                        "appearance_theme": row.get::<_, String>(6)?,
+                        "ui_font_size": row.get::<_, String>(7)?,
+                        "locale": row.get::<_, String>(8)?,
+                        "tray_icon": row.get::<_, i64>(9)? != 0,
+                        "sidebar_collapsed": row.get::<_, i64>(10)? != 0,
+                        "display_open_mode": row.get::<_, String>(11)?,
+                        "close_behavior": row.get::<_, String>(12)?,
+                        "terminal_app": row.get::<_, String>(13)?,
+                        "last_display_id": row.get::<_, Option<i64>>(14)?,
+                        "uiState": row.get::<_, Option<String>>(15)?
                             .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
-                        "favorites": row.get::<_, Option<String>>(15)?
+                        "favorites": row.get::<_, Option<String>>(16)?
                             .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
-                        "backup_strategy": row.get::<_, String>(16)?,
-                        "backup_frequency": row.get::<_, String>(17)?,
-                        "backup_retention_count": row.get::<_, i64>(18)?,
-                        "backup_destination_type": row.get::<_, String>(19)?,
-                        "backup_local_path": row.get::<_, String>(20)?,
-                        "backup_webdav_url": row.get::<_, String>(21)?,
-                        "backup_webdav_username": row.get::<_, String>(22)?,
-                        "backup_webdav_password": row.get::<_, String>(23)?,
-                        "backup_webdav_path": row.get::<_, String>(24)?,
-                        "shortcuts": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(25)?).unwrap_or(serde_json::json!({})),
-                        "mcp_servers": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(26)?).unwrap_or(serde_json::json!({})),
-                        "insights_status": row.get::<_, String>(27)?,
-                        "insights_proxy_port": row.get::<_, Option<String>>(28)?
+                        "backup_strategy": row.get::<_, String>(17)?,
+                        "backup_frequency": row.get::<_, String>(18)?,
+                        "backup_retention_count": row.get::<_, i64>(19)?,
+                        "backup_destination_type": row.get::<_, String>(20)?,
+                        "backup_local_path": row.get::<_, String>(21)?,
+                        "backup_webdav_url": row.get::<_, String>(22)?,
+                        "backup_webdav_username": row.get::<_, String>(23)?,
+                        "backup_webdav_password": row.get::<_, String>(24)?,
+                        "backup_webdav_path": row.get::<_, String>(25)?,
+                        "shortcuts": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(26)?).unwrap_or(serde_json::json!({})),
+                        "mcp_servers": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(27)?).unwrap_or(serde_json::json!({})),
+                        "insights_status": row.get::<_, String>(28)?,
+                        "insights_proxy_port": row.get::<_, Option<String>>(29)?
                             .and_then(|s| if s == "auto" { Some(serde_json::json!("auto")) } else { s.parse::<i64>().ok().map(|n| serde_json::json!(n)) }),
-                        "insights_retention_days": row.get::<_, i64>(29)?,
-                        "insights_disk_warn_threshold_mb": row.get::<_, i64>(30)?,
-                        "insights_store_prompt_preview": row.get::<_, i64>(31)? != 0,
-                        "insights_onboarding_shown_at": row.get::<_, Option<String>>(32)?,
-                        "insights_last_known_port": row.get::<_, Option<i64>>(33)?,
-                        "insights_display_currency": row.get::<_, String>(34)?,
-                        "insights_currency_rates": row.get::<_, Option<String>>(35)?
+                        "insights_retention_days": row.get::<_, i64>(30)?,
+                        "insights_disk_warn_threshold_mb": row.get::<_, i64>(31)?,
+                        "insights_store_prompt_preview": row.get::<_, i64>(32)? != 0,
+                        "insights_onboarding_shown_at": row.get::<_, Option<String>>(33)?,
+                        "insights_last_known_port": row.get::<_, Option<i64>>(34)?,
+                        "insights_display_currency": row.get::<_, String>(35)?,
+                        "insights_currency_rates": row.get::<_, Option<String>>(36)?
                             .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
                     });
                     Ok(json.to_string())
@@ -577,6 +589,7 @@ mod tests {
         let state = make_test_state();
         let test_settings = serde_json::json!({
             "version": 1,
+            "config_target": "kimi-cli",
             "config_path": "~/.kimi/config.toml",
             "profiles_path": "~/.kimi/config.profiles.toml",
             "follow_config_profiles": true,
@@ -623,6 +636,7 @@ mod tests {
             .expect("settings should exist");
 
         let loaded_json: serde_json::Value = serde_json::from_str(&loaded).unwrap();
+        assert_eq!(loaded_json["config_target"], "kimi-cli");
         assert_eq!(loaded_json["theme"], "dark");
         assert_eq!(loaded_json["locale"], "zh-CN");
         assert_eq!(loaded_json["tray_icon"], true);
@@ -634,6 +648,7 @@ mod tests {
         let state = make_test_state();
         let test_settings = serde_json::json!({
             "version": 1,
+            "config_target": "kimi-code",
             "config_path": "~/.kimi/config.toml",
             "profiles_path": "~/.kimi/config.profiles.toml",
             "follow_config_profiles": true,
@@ -672,6 +687,7 @@ mod tests {
         let exported = get_test(&state).unwrap().unwrap();
         let exported_json: serde_json::Value = serde_json::from_str(&exported).unwrap();
 
+        assert_eq!(exported_json["config_target"], "kimi-code");
         assert_eq!(exported_json["theme"], "light");
         assert_eq!(exported_json["locale"], "en-US");
         assert_eq!(exported_json["insights_display_currency"], "CNY");

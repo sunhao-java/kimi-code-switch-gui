@@ -3,9 +3,13 @@
 import { invoke } from "@tauri-apps/api/core";
 
 import { compareReleaseVersions, normalizeReleaseVersion } from "@shared/versionUtils";
-import type { AppState, ModelConfig, ProfileConnectivityTestResult, ProviderConfig } from "@shared/types";
+import type { AppState, ConfigTarget, ModelConfig, ProfileConnectivityTestResult, ProviderConfig } from "@shared/types";
 
 const KIMI_CLI_PYPI_URL = "https://pypi.org/pypi/kimi-cli/json";
+const KIMI_CODE_HOMEBREW_URL = "https://formulae.brew.sh/api/formula/kimi-code.json";
+const KIMI_CODE_GITHUB_LATEST_URL = "https://api.github.com/repos/MoonshotAI/kimi-code/releases/latest";
+const KIMI_CODE_INSTALL_SCRIPT_SH = "https://code.kimi.com/kimi-code/install.sh";
+const KIMI_CODE_INSTALL_SCRIPT_URL = "https://code.kimi.com/kimi-code/install.ps1";
 
 interface ExecResult {
   code: number;
@@ -27,11 +31,20 @@ function http(method: string, url: string, headers?: Record<string, string>, bod
   return invoke<HttpResponse>("http_request", { method, url, headers: headers ?? null, body: body ?? null });
 }
 
+function extractSemver(value: string | undefined): string {
+  const match = value?.match(/(\d+\.\d+\.\d+)/);
+  return match ? match[1] : normalizeReleaseVersion(value ?? "");
+}
+
 export interface CliVersionResult {
   version: string;
   installed: boolean;
   latestVersion?: string;
   hasUpdate?: boolean;
+  target?: ConfigTarget;
+  packageName?: string;
+  installCommand?: string;
+  updateCommand?: string;
 }
 
 // GUI 期望的 kimi-cli 版本范围：低于 MIN 判定为过旧（功能可能不兼容）。
@@ -52,23 +65,159 @@ export function evaluateCliCompatibility(result: Pick<CliVersionResult, "version
   return compareReleaseVersions(version, MIN_CLI_VERSION) < 0 ? "outdated" : "compatible";
 }
 
-export async function getCliVersion(options: { checkLatest?: boolean } = {}): Promise<CliVersionResult> {
-  let result: CliVersionResult;
+function currentPlatform(): "windows" | "macos" | "linux" | "unknown" {
+  const platform = typeof navigator !== "undefined"
+    ? ((navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ?? navigator.platform ?? navigator.userAgent)
+    : "";
+  const value = platform.toLowerCase();
+  if (value.includes("win")) return "windows";
+  if (value.includes("mac")) return "macos";
+  if (value.includes("linux")) return "linux";
+  return "unknown";
+}
+
+function versionResultBase(target: ConfigTarget): Pick<CliVersionResult, "target" | "packageName" | "installCommand" | "updateCommand"> {
+  if (target === "kimi-code") {
+    const isWindows = currentPlatform() === "windows";
+    const installCommand = isWindows
+      ? `irm ${KIMI_CODE_INSTALL_SCRIPT_URL} | iex`
+      : "brew install kimi-code";
+    return {
+      target,
+      packageName: "Kimi Code",
+      installCommand,
+      updateCommand: isWindows ? installCommand : "brew upgrade kimi-code",
+    };
+  }
+  return {
+    target,
+    packageName: "Kimi CLI",
+    installCommand: "uv tool install kimi-cli --force",
+    updateCommand: "uv tool upgrade kimi-cli --no-cache",
+  };
+}
+
+async function detectKimiCommandVersion(target: ConfigTarget): Promise<CliVersionResult> {
+  const base = versionResultBase(target);
   try {
     const r = await exec("kimi", ["--version"], 3000);
     if (r.code !== 0) throw new Error(r.stderr);
-    const match = r.stdout.match(/(\d+\.\d+\.\d+)/);
-    result = { version: match ? match[1] : r.stdout.trim(), installed: true };
+    return { ...base, version: extractSemver(r.stdout) || r.stdout.trim(), installed: true };
   } catch {
-    result = { version: "", installed: false };
+    return { ...base, version: "", installed: false };
   }
-  if (!options.checkLatest) return result;
+}
+
+async function detectKimiCodeHomebrewVersion(): Promise<CliVersionResult> {
+  const base = versionResultBase("kimi-code");
+  try {
+    const r = await exec("brew", ["list", "--versions", "kimi-code"], 3000);
+    if (r.code !== 0) throw new Error(r.stderr);
+    const version = extractSemver(r.stdout);
+    if (!version) throw new Error("kimi-code Homebrew version not found");
+    return { ...base, version, installed: true };
+  } catch {
+    return { ...base, version: "", installed: false };
+  }
+}
+
+async function detectKimiCodeScriptVersion(): Promise<CliVersionResult> {
+  const installCommand = `curl -fsSL ${KIMI_CODE_INSTALL_SCRIPT_SH} | bash`;
+  const base = {
+    ...versionResultBase("kimi-code"),
+    installCommand,
+    updateCommand: installCommand,
+  };
+  try {
+    const script = 'p="${KIMI_INSTALL_DIR:-$HOME/.kimi-code}/bin/kimi"; [ -x "$p" ] && "$p" --version';
+    const r = await exec("sh", ["-lc", script], 3000);
+    if (r.code !== 0) throw new Error(r.stderr);
+    const version = extractSemver(`${r.stdout}\n${r.stderr}`);
+    if (!version) throw new Error("kimi-code script install version not found");
+    return { ...base, version, installed: true };
+  } catch {
+    return { ...versionResultBase("kimi-code"), version: "", installed: false };
+  }
+}
+
+function parseNpmPackageVersion(stdout: string, packageName: string): string {
+  try {
+    const payload = JSON.parse(stdout) as { dependencies?: Record<string, { version?: string }> };
+    return extractSemver(payload.dependencies?.[packageName]?.version);
+  } catch {
+    return "";
+  }
+}
+
+async function detectKimiCodeWindowsVersion(): Promise<CliVersionResult> {
+  const base = versionResultBase("kimi-code");
 
   try {
-    const resp = await http("GET", KIMI_CLI_PYPI_URL, { Accept: "application/json", "User-Agent": "kimi-code-switch-gui" });
-    if (!resp.ok) return result;
-    const payload = JSON.parse(resp.body) as { info?: { version?: string } };
-    const latestVersion = normalizeReleaseVersion(payload.info?.version ?? "");
+    const script = "$d = if ($env:KIMI_INSTALL_DIR) { $env:KIMI_INSTALL_DIR } else { Join-Path $env:USERPROFILE '.kimi-code' }; $p = Join-Path (Join-Path $d 'bin') 'kimi.exe'; if (Test-Path -LiteralPath $p -PathType Leaf) { & $p --version } else { exit 1 }";
+    const r = await exec("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], 3000);
+    if (r.code !== 0) throw new Error(r.stderr);
+    const version = extractSemver(`${r.stdout}\n${r.stderr}`);
+    if (!version) throw new Error("kimi-code Windows install version not found");
+    return { ...base, version, installed: true };
+  } catch {
+    // Continue with npm and identifiable PATH fallbacks.
+  }
+
+  try {
+    const r = await exec("npm", ["list", "-g", "@moonshot-ai/kimi-code", "--depth=0", "--json"], 5000);
+    const version = parseNpmPackageVersion(r.stdout, "@moonshot-ai/kimi-code");
+    if (r.code === 0 && version) {
+      return { ...base, version, installed: true };
+    }
+  } catch {
+    // Ignore npm lookup failures; official script installs do not require Node.js.
+  }
+
+  try {
+    const r = await exec("kimi", ["--version"], 3000);
+    const output = `${r.stdout}\n${r.stderr}`;
+    if (r.code !== 0 || !/kimi[-\s]?code|@moonshot-ai\/kimi-code/i.test(output)) {
+      throw new Error("kimi command is not identifiable as Kimi Code");
+    }
+    return { ...base, version: extractSemver(output) || output.trim(), installed: true };
+  } catch {
+    return { ...base, version: "", installed: false };
+  }
+}
+
+async function detectKimiCodeVersion(): Promise<CliVersionResult> {
+  if (currentPlatform() === "windows") {
+    return detectKimiCodeWindowsVersion();
+  }
+  const homebrew = await detectKimiCodeHomebrewVersion();
+  if (homebrew.installed) return homebrew;
+  return detectKimiCodeScriptVersion();
+}
+
+async function getKimiCliLatestVersion(): Promise<string | null> {
+  const resp = await http("GET", KIMI_CLI_PYPI_URL, { Accept: "application/json", "User-Agent": "kimi-code-switch-gui" });
+  if (!resp.ok) return null;
+  const payload = JSON.parse(resp.body) as { info?: { version?: string } };
+  return extractSemver(payload.info?.version) || null;
+}
+
+async function getKimiCodeLatestVersion(): Promise<string | null> {
+  const platform = currentPlatform();
+  const url = platform === "windows" ? KIMI_CODE_GITHUB_LATEST_URL : KIMI_CODE_HOMEBREW_URL;
+  const resp = await http("GET", url, { Accept: "application/json", "User-Agent": "kimi-code-switch-gui" });
+  if (!resp.ok) return null;
+  const payload = JSON.parse(resp.body) as { versions?: { stable?: string }; tag_name?: string };
+  const rawVersion = platform === "windows"
+    ? payload.tag_name
+    : payload.versions?.stable;
+  return extractSemver(rawVersion) || null;
+}
+
+async function attachLatestVersion(result: CliVersionResult): Promise<CliVersionResult> {
+  try {
+    const latestVersion = result.target === "kimi-code"
+      ? await getKimiCodeLatestVersion()
+      : await getKimiCliLatestVersion();
     if (!latestVersion) return result;
     return {
       ...result,
@@ -78,6 +227,38 @@ export async function getCliVersion(options: { checkLatest?: boolean } = {}): Pr
   } catch {
     return result;
   }
+}
+
+export async function getCliVersion(options: { checkLatest?: boolean } = {}): Promise<CliVersionResult> {
+  return getTargetCliVersion("kimi-cli", options);
+}
+
+export async function getTargetCliVersion(target: ConfigTarget = "kimi-cli", options: { checkLatest?: boolean } = {}): Promise<CliVersionResult> {
+  const result = target === "kimi-code"
+    ? await detectKimiCodeVersion()
+    : await detectKimiCommandVersion(target);
+  if (!options.checkLatest) return result;
+  return attachLatestVersion(result);
+}
+
+export async function upgradeTargetCli(
+  target: ConfigTarget = "kimi-cli",
+  options: { install?: boolean } = {},
+): Promise<{ ok: true; stdout: string; stderr: string }> {
+  if (target === "kimi-code") {
+    const platform = currentPlatform();
+    const r = platform === "windows"
+      ? await exec("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", `irm ${KIMI_CODE_INSTALL_SCRIPT_URL} | iex`], 120000)
+      : await exec("brew", [options.install ? "install" : "upgrade", "kimi-code"], 120000);
+    if (r.code !== 0) throw new Error(r.stderr || "upgrade failed");
+    return { ok: true, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
+  }
+  if (options.install) {
+    const r = await exec("uv", ["tool", "install", "kimi-cli", "--force"], 120000);
+    if (r.code !== 0) throw new Error(r.stderr || "install failed");
+    return { ok: true, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
+  }
+  return upgradeKimiCli();
 }
 
 export async function upgradeKimiCli(): Promise<{ ok: true; stdout: string; stderr: string }> {

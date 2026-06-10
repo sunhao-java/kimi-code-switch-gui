@@ -3,7 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type { MutableRefObject } from "react";
 
 import { cloneState, normalizeStatePaths } from "@shared/configStore";
-import type { AppState, ConfigDoctorReport, FileSnapshotBundle, Locale, PreviewBundle, SaveStateConflictResult } from "@shared/types";
+import type { AppState, ConfigDoctorReport, ConfigTarget, FileSnapshotBundle, Locale, PreviewBundle, SaveStateConflictResult } from "@shared/types";
 import { getApi } from "./appHelpers";
 import { translateError } from "./i18n";
 import type { DiagnosticsState } from "./overviewDashboard";
@@ -232,6 +232,26 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     await persistState(state);
   }, [persistState, state]);
 
+  const persistConfigTarget = useCallback(async (configTarget: ConfigTarget): Promise<void> => {
+    const api = getApi();
+    if (!api?.saveConfigTargetPreference) {
+      const message = "Kimi Switch API does not support config target switching.";
+      setError(message);
+      setDiagnostics((current) => ({ ...current, lastError: message }));
+      throw new Error(message);
+    }
+
+    await api.saveConfigTargetPreference(configTarget);
+    const nextState = cloneState(state);
+    nextState.configTarget = configTarget;
+    nextState.panelSettings.config_target = configTarget;
+    const normalized = normalizeStatePaths(nextState);
+    setState(normalized);
+    setSavedState(normalized);
+    setError("");
+    setNotice("");
+  }, [setDiagnostics, setError, setNotice, setSavedState, setState, state]);
+
   const persistImmediateState = useCallback(async (
     nextVisibleState: AppState,
     nextSavedStateOverride?: AppState,
@@ -363,6 +383,7 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     loadState,
     persistState,
     onSave,
+    persistConfigTarget,
     persistImmediateState,
     restoreSavedState,
   };
