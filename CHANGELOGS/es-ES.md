@@ -2,6 +2,17 @@
 
 Este archivo recoge los cambios relevantes del proyecto. El formato sigue Keep a Changelog y el proyecto adopta el esquema de versiones `major.minor.patch`.
 
+## [2.1.2] - 2026-06-10
+
+### Cambiado
+
+- Se limpió el registro de depuración y el código duplicado en los módulos de bandeja y atajos globales para reducir el ruido de registro en tiempo de ejecución.
+- Se fijó el título de la GitHub Release al número de versión; el cuerpo de la publicación ahora se genera de forma coherente a partir del contenido del CHANGELOG.
+
+### Corregido
+
+- Se corrigió que las estrategias de «copia de seguridad al cambiar» y «copia de seguridad programada» no se activaran: tras guardar la configuración, las copias ahora se ejecutan en silencio y se deduplican según una huella de la configuración principal, además de un nuevo temporizador programado (cada hora/diario/semanal) que ejecuta las copias automáticamente según la estrategia.
+
 ## [2.1.1] - 2026-06-09
 
 ### Cambiado

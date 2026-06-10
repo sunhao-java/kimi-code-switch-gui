@@ -2,6 +2,17 @@
 
 Diese Datei dokumentiert die wesentlichen Änderungen des Projekts. Das Format folgt Keep a Changelog; verwendet wird das `major.minor.patch`-Versionsschema.
 
+## [2.1.2] - 2026-06-10
+
+### Geändert
+
+- Debug-Logging und doppelten Code in den Modulen für Tray und globale Tastenkürzel bereinigt, um Log-Rauschen zur Laufzeit zu reduzieren.
+- Den GitHub-Release-Titel auf die Versionsnummer festgelegt; der Release-Text wird nun einheitlich aus dem CHANGELOG-Inhalt erzeugt.
+
+### Behoben
+
+- Behoben, dass die Strategien „Backup bei Änderung" und „geplantes Backup" nicht ausgelöst wurden: Nach dem Speichern der Konfiguration werden Backups nun anhand eines Fingerprints der Kernkonfiguration dedupliziert und still ausgeführt; zusätzlich führt ein neuer Zeitplan (stündlich/täglich/wöchentlich) Backups automatisch gemäß Strategie aus.
+
 ## [2.1.1] - 2026-06-09
 
 ### Geändert

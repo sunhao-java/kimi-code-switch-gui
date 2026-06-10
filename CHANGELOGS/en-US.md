@@ -2,6 +2,17 @@
 
 This file records the project's notable changes. Format follows Keep a Changelog; the project uses `major.minor.patch` versioning.
 
+## [2.1.2] - 2026-06-10
+
+### Changed
+
+- Cleaned up debug logging and duplicate code in the tray and global-shortcut modules to reduce runtime log noise.
+- Pinned the GitHub Release title to the version number; the release body is now consistently generated from CHANGELOG content.
+
+### Fixed
+
+- Fixed on-change and scheduled backup strategies not triggering: after saving config, backups now run silently and deduplicate based on a core-config fingerprint, plus a new scheduled timer (hourly/daily/weekly) runs backups automatically per strategy.
+
 ## [2.1.1] - 2026-06-09
 
 ### Changed
