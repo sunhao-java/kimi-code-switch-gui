@@ -5,9 +5,11 @@
 
 use std::sync::Mutex;
 
-use serde::Deserialize;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+
+/// 前端 close_behavior 取值，与 src/shared/types.ts 的 CloseBehavior 对齐。
+const CLOSE_BEHAVIOR_KEEP_IN_TRAY: &str = "keep-in-tray";
 
 #[derive(Default)]
 pub struct ShortcutRuntimeState {
@@ -17,23 +19,22 @@ pub struct ShortcutRuntimeState {
 #[derive(Default)]
 struct ShortcutRuntime {
     registered_window_toggle: Option<String>,
-    close_behavior: CloseBehavior,
+    close_behavior: String,
     tray_enabled: bool,
     toggling: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "kebab-case")]
-pub enum CloseBehavior {
-    #[default]
-    Quit,
-    KeepInTray,
+impl ShortcutRuntime {
+    /// 是否应在隐藏窗口时一并隐藏 Dock 图标。
+    fn hide_dock_on_close(&self) -> bool {
+        self.close_behavior == CLOSE_BEHAVIOR_KEEP_IN_TRAY && self.tray_enabled
+    }
 }
 
 #[tauri::command]
 pub fn sync_window_toggle_shortcut(
     accelerator: Option<String>,
-    close_behavior: CloseBehavior,
+    close_behavior: String,
     tray_enabled: bool,
     app: AppHandle,
     state: tauri::State<ShortcutRuntimeState>,
@@ -44,14 +45,10 @@ pub fn sync_window_toggle_shortcut(
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned);
 
-    {
-        let mut runtime = state.inner.lock().unwrap();
+    let previous_accelerator = {
+        let mut runtime = state.inner.lock().expect("shortcut runtime lock poisoned");
         runtime.close_behavior = close_behavior;
         runtime.tray_enabled = tray_enabled;
-    }
-
-    let previous_accelerator = {
-        let runtime = state.inner.lock().unwrap();
         runtime.registered_window_toggle.clone()
     };
 
@@ -63,7 +60,11 @@ pub fn sync_window_toggle_shortcut(
         app.global_shortcut()
             .unregister(previous.as_str())
             .map_err(|err| format!("unregister window.toggle shortcut '{previous}': {err}"))?;
-        state.inner.lock().unwrap().registered_window_toggle = None;
+        state
+            .inner
+            .lock()
+            .expect("shortcut runtime lock poisoned")
+            .registered_window_toggle = None;
     }
 
     if let Some(next) = next_accelerator {
@@ -73,11 +74,15 @@ pub fn sync_window_toggle_shortcut(
                     return;
                 }
                 if let Err(err) = toggle_main_window(app) {
-                    eprintln!("[SHORTCUT] window.toggle failed: {err}");
+                    log::error!("window.toggle shortcut failed: {err}");
                 }
             })
             .map_err(|err| format!("register window.toggle shortcut '{next}': {err}"))?;
-        state.inner.lock().unwrap().registered_window_toggle = Some(next);
+        state
+            .inner
+            .lock()
+            .expect("shortcut runtime lock poisoned")
+            .registered_window_toggle = Some(next);
     }
 
     Ok(())
@@ -87,7 +92,7 @@ fn toggle_main_window<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), Strin
     let state = app.state::<ShortcutRuntimeState>();
 
     {
-        let mut runtime = state.inner.lock().unwrap();
+        let mut runtime = state.inner.lock().expect("shortcut runtime lock poisoned");
         if runtime.toggling {
             return Ok(());
         }
@@ -99,42 +104,25 @@ fn toggle_main_window<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), Strin
             return Ok(());
         };
         let is_visible = window.is_visible().map_err(|err| err.to_string())?;
-        let (close_behavior, tray_enabled) = {
-            let runtime = state.inner.lock().unwrap();
-            (runtime.close_behavior, runtime.tray_enabled)
+        let hide_dock = {
+            let runtime = state.inner.lock().expect("shortcut runtime lock poisoned");
+            runtime.hide_dock_on_close()
         };
 
         if is_visible {
             window.hide().map_err(|err| err.to_string())?;
-            set_dock_icon_visible(app, !(close_behavior == CloseBehavior::KeepInTray && tray_enabled))?;
+            crate::tray::apply_dock_icon_visibility(app, !hide_dock)?;
             return Ok(());
         }
 
-        if close_behavior == CloseBehavior::KeepInTray && tray_enabled {
-            set_dock_icon_visible(app, true)?;
+        if hide_dock {
+            crate::tray::apply_dock_icon_visibility(app, true)?;
         }
         window.show().map_err(|err| err.to_string())?;
         window.set_focus().map_err(|err| err.to_string())?;
         Ok(())
     })();
 
-    state.inner.lock().unwrap().toggling = false;
+    state.inner.lock().expect("shortcut runtime lock poisoned").toggling = false;
     result
-}
-
-fn set_dock_icon_visible<R: tauri::Runtime>(app: &AppHandle<R>, visible: bool) -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        app.set_activation_policy(if visible {
-            tauri::ActivationPolicy::Regular
-        } else {
-            tauri::ActivationPolicy::Accessory
-        })
-        .map_err(|err| err.to_string())?;
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (app, visible);
-    }
-    Ok(())
 }
