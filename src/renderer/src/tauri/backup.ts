@@ -125,8 +125,8 @@ export async function createBackupSnapshot(state: AppState, trigger = "manual"):
   return { ...result, backupName };
 }
 
-export async function runBackup(state: AppState): Promise<BackupResult> {
-  return createBackupSnapshot(state, "manual");
+export async function runBackup(state: AppState, trigger = "manual"): Promise<BackupResult> {
+  return createBackupSnapshot(state, trigger);
 }
 
 // ── 列表/删除 ──

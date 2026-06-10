@@ -10,6 +10,7 @@ import type { DiagnosticsState } from "./overviewDashboard";
 import { applyPrimarySelections, getDefaultPrimarySelections, getRetainedPrimarySelections } from "./primarySelections";
 import { applyAppearanceMode, applyAppearanceTheme, applyUiFontSize, createFallbackState } from "./tabComponents";
 import { isExternalChangeConflict } from "./useSafetyActions";
+import { initBackupBaseline, maybeBackupAfterSave, maybeRunScheduledBackup } from "./backupAuto";
 
 interface AppPersistenceContext {
   state: AppState;
@@ -117,6 +118,9 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
         previewState: "ok",
         lastError: "",
       });
+      // 设置自动备份会话基线，并在定时备份到期时补做一次。
+      await initBackupBaseline(normalized);
+      void maybeRunScheduledBackup(normalized);
     } catch (loadError) {
       const fallback = createFallbackState();
       setState(fallback);
@@ -196,6 +200,8 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
       void refreshSkills(normalized, { silent: true });
       setError("");
       setNotice("");
+      // 修改后备份：核心配置指纹变化时静默触发（指纹去重使纯 UI 操作成为 no-op）。
+      void maybeBackupAfterSave(normalized);
     } catch (saveError) {
       const message = saveError instanceof Error ? saveError.message : String(saveError);
       setError(translateError(locale, message));
@@ -294,6 +300,8 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
       void refreshSkills(normalizedVisibleState, { silent: true });
       setError("");
       setNotice("");
+      // 修改后备份（on-change）：核心配置指纹变化时静默触发，纯 UI 操作为 no-op。
+      void maybeBackupAfterSave(normalizedSavedState);
     } catch (saveError) {
       const message = saveError instanceof Error ? saveError.message : String(saveError);
       setSavedState(previousSavedState ?? null);

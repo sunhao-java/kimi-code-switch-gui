@@ -480,7 +480,7 @@ export const kimiSwitchTauri = {
   },
 
   // ── backup ──
-  runBackup: (state: AppState) => backup.runBackup(state),
+  runBackup: (state: AppState, trigger?: string) => backup.runBackup(state, trigger),
   listBackups: (state: AppState) => backup.listBackups(state),
   deleteBackup: (state: AppState, backupName: string) => backup.deleteBackup(state, backupName),
   restoreBackup: (state: AppState, backupName: string) => backup.restoreBackup(state, backupName),

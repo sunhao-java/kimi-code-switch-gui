@@ -18,6 +18,7 @@ import { getCascadePreview } from "@shared/configRelations";
 import type { CascadeImpact } from "@shared/configRelations";
 import { deleteProvider, deleteModel, deleteProfile } from "@shared/configStore";
 import { useAppHandlers } from "./useAppHandlers";
+import { maybeRunScheduledBackup } from "./backupAuto";
 import { useShortcuts } from "./useShortcuts";
 import { TAB_ITEMS, ABOUT_TAB, LOCALE_OPTIONS, THEME_OPTIONS, ASSISTANT_SUB_ITEMS } from "./appOptions";
 import type { TabId } from "./appOptions";
@@ -157,6 +158,17 @@ export function App(): JSX.Element {
     window.addEventListener("kimi-open-insights", handleOpenInsights);
     return () => window.removeEventListener("kimi-open-insights", handleOpenInsights);
   }, [runAfterUnsavedHandled, setActiveTab]);
+
+  // 定时备份（scheduled 策略）：每 5 分钟检查一次是否到期，到期则补做。
+  // 用 ref 持有最新 state，避免把 state 放进 effect 依赖导致定时器反复重建。
+  const latestStateRef = useRef(state);
+  latestStateRef.current = state;
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void maybeRunScheduledBackup(latestStateRef.current);
+    }, 5 * 60 * 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const handleCommandPaletteSelect = useCallback((result: SearchResult): void => {
     setCommandPaletteOpen(false);
