@@ -2,6 +2,29 @@
 
 This file records the project's notable changes. Format follows Keep a Changelog; the project uses `major.minor.patch` versioning.
 
+## [2.2.0] - 2026-06-12
+
+### Added
+
+- **Kimi Code standard configuration support**: the GUI now treats Kimi Code as the only configuration target, with main config, MCP config, Skills, and panel data aligned to the standard `~/.kimi-code/` locations.
+- **SQLite Profile storage**: Profiles, the active Profile, and private panel settings now live in `~/.kimi-code/.panel/app.db`; the app no longer writes the non-standard `config.profiles.toml`.
+- **Kimi OAuth login entry**: the settings page can start the official Kimi Code `kimi login` device-code flow and shows clearer messages based on the failure reason.
+- **Full MCP JSON viewer**: the MCP page now includes a complete standard `mcp.json` preview dialog with one-click copy.
+
+### Changed
+
+- **Redesigned MCP editing experience**: stdio and http now have dedicated forms; args, environment variables, and headers use line-numbered code editors; editing an existing MCP server locks the transport type to prevent accidental protocol changes.
+- **Kimi Code-aware paths, backup, and history**: configuration history, backups, Usage Insights, and document previews now operate around Kimi Code standard files plus SQLite panel data.
+- **Configuration target renamed to Kimi Code Instance**: the settings page shows version, executable, and resolved path, with the resolved path spanning a full row for readability.
+- **Overview page polish**: Profile cards and the active Profile summary now fall back to the main configured model, while system overview, config paths, and dialog scrims are more consistent.
+
+### Fixed
+
+- Fixed the configuration doctor reporting a blank `default_model` as a missing model reference.
+- Fixed the configuration doctor reporting `profile_label` as an unknown field.
+- Fixed the full MCP JSON dialog scrim not covering the whole GUI.
+- Fixed Homebrew-packaged terminal login/launch failures caused by AppleScript keystroke permissions.
+
 ## [2.1.2] - 2026-06-10
 
 ### Changed

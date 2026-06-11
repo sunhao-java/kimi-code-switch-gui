@@ -2,6 +2,30 @@
 
 Diese Datei dokumentiert die wesentlichen Änderungen des Projekts. Das Format folgt Keep a Changelog; verwendet wird das `major.minor.patch`-Versionsschema.
 
+
+## [2.2.0] - 2026-06-12
+
+### Hinzugefügt
+
+- **Unterstützung für die Kimi-Code-Standardkonfiguration**: Die GUI behandelt Kimi Code nun als einziges Konfigurationsziel; Hauptkonfiguration, MCP-Konfiguration, Skills und Panel-Daten verwenden die Standardpfade unter `~/.kimi-code/`.
+- **SQLite-Speicherung für Profile**: Profile, aktives Profil und private Panel-Einstellungen liegen nun in `~/.kimi-code/.panel/app.db`; die nicht standardisierte Datei `config.profiles.toml` wird nicht mehr geschrieben.
+- **Kimi-OAuth-Login**: Die Einstellungsseite kann den offiziellen Kimi-Code-Flow `kimi login` mit Gerätecode starten und zeigt verständlichere Meldungen je nach Fehlergrund.
+- **Vollständiger MCP-JSON-Viewer**: Die MCP-Seite enthält nun einen Dialog zur Vorschau der vollständigen Standarddatei `mcp.json` inklusive Kopieren per Klick.
+
+### Geändert
+
+- **MCP-Bearbeitung überarbeitet**: Für stdio und http gibt es eigene Formulare; Argumente, Umgebungsvariablen und Header nutzen Code-Editoren mit Zeilennummern; beim Bearbeiten bestehender MCP-Server ist der Transporttyp gesperrt, um versehentliche Protokollwechsel zu verhindern.
+- **Pfade, Backups und Verlauf an Kimi Code angepasst**: Konfigurationsverlauf, Backups, Usage Insights und Dokumentvorschau arbeiten nun mit Kimi-Code-Standarddateien und SQLite-Paneldaten.
+- **Konfigurationsziel in Kimi-Code-Instanz umbenannt**: Die Einstellungsseite zeigt Version, ausführbare Datei und aufgelösten Pfad; der aufgelöste Pfad belegt für bessere Lesbarkeit eine ganze Zeile.
+- **Übersichtsseite verbessert**: Profile-Karten und die Zusammenfassung des aktiven Profils verwenden das Hauptmodell als Fallback; Systemübersicht, Konfigurationspfade und Dialog-Scrims sind konsistenter.
+
+### Behoben
+
+- Behoben, dass ein leerer `default_model` in der Konfigurationsprüfung fälschlich als fehlende Modellreferenz gemeldet wurde.
+- Behoben, dass `profile_label` in der Konfigurationsprüfung fälschlich als unbekanntes Feld gemeldet wurde.
+- Behoben, dass der Scrim des vollständigen MCP-JSON-Dialogs nicht die gesamte GUI abdeckte.
+- Behoben, dass Terminal-Login/-Start in der Homebrew-Paketversion wegen AppleScript-Tastendruckberechtigungen fehlschlagen konnte.
+
 ## [2.1.2] - 2026-06-10
 
 ### Geändert

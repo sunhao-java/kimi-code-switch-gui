@@ -2,6 +2,29 @@
 
 本文件记录项目的重要变更。格式参考 Keep a Changelog，当前项目采用 `major.minor.patch` 版本号方案。
 
+## [2.2.0] - 2026-06-12
+
+### 新增
+
+- **Kimi Code 标准配置支持**：GUI 现在以 Kimi Code 为唯一配置目标，主配置、MCP 配置、Skills 目录和面板数据统一使用 `~/.kimi-code/` 标准位置。
+- **SQLite Profile 存储**：Profile、当前激活 Profile 和面板私有设置迁移到 `~/.kimi-code/.panel/app.db`，不再写入非标准的 `config.profiles.toml`。
+- **Kimi OAuth 登录入口**：配置页提供 Kimi Code 官方 `kimi login` 设备码登录流程入口，并按失败原因展示更易读的提示。
+- **完整 MCP JSON 查看器**：MCP 页面新增完整标准 `mcp.json` 预览弹框，支持一键复制。
+
+### 变更
+
+- **MCP 编辑体验重做**：新增 stdio / http 分类型配置界面，参数、环境变量和请求头使用带行号的代码编辑框，编辑已有 MCP 时锁定类型，避免误改协议。
+- **配置路径与备份/历史适配 Kimi Code**：配置历史、备份、用量洞察和文档预览改为围绕 Kimi Code 标准文件与 SQLite 面板数据工作。
+- **设置页配置目标改为 Kimi Code 实例**：展示版本、可执行文件和解析路径；解析路径独占一行，信息层级更清晰。
+- **首页总览优化**：Profile 列表和当前激活卡片会使用主配置模型兜底展示，系统概览、配置路径和弹框蒙层样式更一致。
+
+### 修复
+
+- 修复空 `default_model` 被安全体检误报为缺失模型引用的问题。
+- 修复 `profile_label` 被安全体检误报为未知字段的问题。
+- 修复 MCP 完整 JSON 弹框蒙层未覆盖整个 GUI 的问题。
+- 修复通过 Homebrew 打包后调用终端登录/启动时因 AppleScript 发送按键权限导致失败的问题。
+
 ## [2.1.2] - 2026-06-10
 
 ### 变更

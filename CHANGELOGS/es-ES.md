@@ -2,6 +2,30 @@
 
 Este archivo recoge los cambios relevantes del proyecto. El formato sigue Keep a Changelog y el proyecto adopta el esquema de versiones `major.minor.patch`.
 
+
+## [2.2.0] - 2026-06-12
+
+### Añadido
+
+- **Compatibilidad con la configuración estándar de Kimi Code**: la GUI ahora trata Kimi Code como único objetivo de configuración; configuración principal, MCP, Skills y datos del panel usan las rutas estándar bajo `~/.kimi-code/`.
+- **Almacenamiento de Profiles en SQLite**: Profiles, Profile activo y ajustes privados del panel se migran a `~/.kimi-code/.panel/app.db`; la app ya no escribe el archivo no estándar `config.profiles.toml`.
+- **Entrada de inicio de sesión OAuth de Kimi**: la página de ajustes puede iniciar el flujo oficial `kimi login` con código de dispositivo y muestra mensajes más claros según la causa del fallo.
+- **Visor completo de MCP JSON**: la página MCP incluye un diálogo de vista previa del `mcp.json` estándar completo con copia en un clic.
+
+### Cambiado
+
+- **Experiencia de edición MCP rediseñada**: stdio y http tienen formularios dedicados; argumentos, variables de entorno y cabeceras usan editores de código con números de línea; al editar un MCP existente se bloquea el tipo de transporte para evitar cambios accidentales de protocolo.
+- **Rutas, copias e historial adaptados a Kimi Code**: historial de configuración, copias de seguridad, Usage Insights y vistas previas de documentos ahora trabajan con archivos estándar de Kimi Code y datos del panel en SQLite.
+- **Objetivo de configuración renombrado a Instancia Kimi Code**: la página de ajustes muestra versión, ejecutable y ruta resuelta; la ruta resuelta ocupa una fila completa para mejorar la legibilidad.
+- **Mejoras en la página de resumen**: las tarjetas de Profile y el resumen del Profile activo usan el modelo principal como respaldo; la vista general del sistema, las rutas de configuración y las capas de diálogo son más coherentes.
+
+### Corregido
+
+- Se corrigió que un `default_model` vacío se informara erróneamente como referencia a modelo faltante en el diagnóstico de configuración.
+- Se corrigió que `profile_label` se informara erróneamente como campo desconocido en el diagnóstico de configuración.
+- Se corrigió que la capa del diálogo de MCP JSON completo no cubriera toda la GUI.
+- Se corrigieron fallos de inicio de sesión/arranque en terminal en paquetes Homebrew causados por permisos de pulsaciones de AppleScript.
+
 ## [2.1.2] - 2026-06-10
 
 ### Cambiado
