@@ -6,7 +6,6 @@ import type { AppState, Locale } from "@shared/types";
 import { ABOUT_INFO } from "./aboutPage";
 import { APPEARANCE_THEME_OPTIONS, labelForLocale } from "./appOptions";
 import { t } from "./i18n";
-import { evaluateCliCompatibility, MIN_CLI_VERSION } from "./tauri/cli";
 
 export type DiagnosticLevel = "ok" | "failed" | "pending" | "unavailable";
 
@@ -91,18 +90,17 @@ export function OverviewDashboard(props: {
   const [cliVersion, setCliVersion] = useState<CliVersionState>({ version: "", installed: false });
   const [isCliVersionChecking, setIsCliVersionChecking] = useState(false);
   const [isCliUpdating, setIsCliUpdating] = useState(false);
-  const configTarget = state.configTarget ?? "kimi-code";
   const checkCliVersion = useCallback(async (checkLatest = false): Promise<void> => {
     setIsCliVersionChecking(true);
     try {
-      const version = await window.kimiSwitch?.getCliVersion?.({ checkLatest, target: configTarget });
+      const version = await window.kimiSwitch?.getCliVersion?.({ checkLatest, target: "kimi-code" });
       setCliVersion(version ?? { version: "", installed: false });
     } catch {
       setCliVersion({ version: "", installed: false });
     } finally {
       setIsCliVersionChecking(false);
     }
-  }, [configTarget]);
+  }, []);
 
   useEffect(() => {
     void checkCliVersion();
@@ -111,12 +109,12 @@ export function OverviewDashboard(props: {
   const upgradeCli = useCallback(async (): Promise<void> => {
     setIsCliUpdating(true);
     try {
-      await window.kimiSwitch?.upgradeKimiCli?.(configTarget, { install: !cliVersion.installed });
+      await window.kimiSwitch?.upgradeKimiCli?.("kimi-code", { install: !cliVersion.installed });
       await checkCliVersion(true);
     } finally {
       setIsCliUpdating(false);
     }
-  }, [checkCliVersion, cliVersion.installed, configTarget]);
+  }, [checkCliVersion, cliVersion.installed]);
 
   const cliVersionText = cliVersion.installed
     ? cliVersion.hasUpdate && cliVersion.latestVersion
@@ -124,28 +122,19 @@ export function OverviewDashboard(props: {
       : cliVersion.version
     : t(locale, "overviewCliNotFound");
 
-  const cliCompatStatus = configTarget === "kimi-cli" ? evaluateCliCompatibility(cliVersion) : "unknown";
-  const cliCompatLabel =
-    cliCompatStatus === "compatible"
-      ? t(locale, "cliCompatCompatible")
-      : cliCompatStatus === "outdated"
-        ? t(locale, "cliOutdated")
-        : t(locale, "cliCompatUnknown");
-  const cliCompatTitle =
-    cliCompatStatus === "outdated"
-      ? t(locale, "cliCompatOutdatedHint").replace("{min}", MIN_CLI_VERSION)
-      : t(locale, "cliCompatTitle");
-  const versionLabel = configTarget === "kimi-cli"
-    ? t(locale, "overviewCliVersion")
-    : t(locale, "overviewKimiCodeVersion");
-  const checkVersionLabel = configTarget === "kimi-cli"
-    ? t(locale, "overviewCliCheck")
-    : t(locale, "overviewKimiCodeCheck");
-  const updateVersionLabel = configTarget === "kimi-cli"
-    ? (cliVersion.installed ? t(locale, "overviewCliUpdate") : t(locale, "overviewCliInstall"))
-    : (cliVersion.installed ? t(locale, "overviewKimiCodeUpdate") : t(locale, "overviewKimiCodeInstall"));
+  const versionLabel = t(locale, "overviewKimiCodeVersion");
+  const checkVersionLabel = t(locale, "overviewKimiCodeCheck");
+  const updateVersionLabel = cliVersion.installed ? t(locale, "overviewKimiCodeUpdate") : t(locale, "overviewKimiCodeInstall");
 
   const boolLabel = (v: boolean): string => t(locale, v ? "overviewOn" : "overviewOff");
+  const resolveProfileModelName = (profile: AppState["profiles"][string]): string =>
+    profile.default_model || state.mainConfig.default_model || "";
+  const activeProfileModelName = activeProfile ? resolveProfileModelName(activeProfile) : state.mainConfig.default_model;
+  const formatProfileModes = (profile: AppState["profiles"][string]): string => [
+    `${t(locale, "overviewThinking")}: ${boolLabel(!!profile.default_thinking)}`,
+    `${t(locale, "overviewYolo")}: ${boolLabel(!!profile.default_yolo)}`,
+    `${t(locale, "overviewPlanMode")}: ${boolLabel(!!profile.default_plan_mode)}`,
+  ].join(" · ");
 
   function themeLabel(theme: string): string {
     const option = APPEARANCE_THEME_OPTIONS.find((o) => o.value === theme);
@@ -177,8 +166,8 @@ export function OverviewDashboard(props: {
         <div className="overview-hero-body">
           <div className="overview-hero-col">
             <div className="overview-hero-col-title">{t(locale, "overviewAppVersion")}</div>
-            <div className="overview-hero-kv"><span className="overview-hero-kv-label">{versionLabel}</span><span className={cliVersion.installed ? "overview-hero-kv-value overview-cli-version-value" : "overview-hero-kv-value overview-cli-version-value text-warn"}><span>{cliVersionText}</span>{cliVersion.installed && configTarget === "kimi-cli" ? <span className={`cli-compat-badge cli-compat-${cliCompatStatus}`} title={cliCompatTitle}>{cliCompatLabel}</span> : null}<button className="overview-cli-check-button" type="button" title={checkVersionLabel} aria-label={checkVersionLabel} disabled={isCliVersionChecking || isCliUpdating} onClick={() => void checkCliVersion(true)}>{isCliVersionChecking ? <LoaderCircle size={13} className="button-spinner" /> : <RefreshCw size={13} />}</button>{cliVersion.hasUpdate || !cliVersion.installed ? <button className="overview-cli-check-button" type="button" title={cliVersion.installed ? updateVersionLabel : `${updateVersionLabel}: ${cliVersion.installCommand ?? ""}`} aria-label={updateVersionLabel} disabled={isCliUpdating || isCliVersionChecking} onClick={() => void upgradeCli()}>{isCliUpdating ? <LoaderCircle size={13} className="button-spinner" /> : <Download size={13} />}</button> : null}</span></div>
-            <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewDefaultModel")}</span><span className="overview-hero-kv-value">{activeProfile?.default_model || "-"}</span></div>
+            <div className="overview-hero-kv"><span className="overview-hero-kv-label">{versionLabel}</span><span className={cliVersion.installed ? "overview-hero-kv-value overview-cli-version-value" : "overview-hero-kv-value overview-cli-version-value text-warn"}><span>{cliVersionText}</span><button className="overview-cli-check-button" type="button" title={checkVersionLabel} aria-label={checkVersionLabel} disabled={isCliVersionChecking || isCliUpdating} onClick={() => void checkCliVersion(true)}>{isCliVersionChecking ? <LoaderCircle size={13} className="button-spinner" /> : <RefreshCw size={13} />}</button>{cliVersion.hasUpdate || !cliVersion.installed ? <button className="overview-cli-check-button" type="button" title={cliVersion.installed ? updateVersionLabel : `${updateVersionLabel}: ${cliVersion.installCommand ?? ""}`} aria-label={updateVersionLabel} disabled={isCliUpdating || isCliVersionChecking} onClick={() => void upgradeCli()}>{isCliUpdating ? <LoaderCircle size={13} className="button-spinner" /> : <Download size={13} />}</button> : null}</span></div>
+            <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewDefaultModel")}</span><span className="overview-hero-kv-value">{activeProfileModelName || "-"}</span></div>
             <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewTheme")}</span><span className="overview-hero-kv-value">{themeLabel(state.panelSettings.appearance_theme)}</span></div>
           </div>
           <div className="overview-hero-col">
@@ -192,7 +181,6 @@ export function OverviewDashboard(props: {
           <div className="overview-hero-paths-title">{t(locale, "overviewConfigPaths")}</div>
           <div className="overview-hero-paths-grid">
             <div className="overview-hero-path"><span className="overview-hero-path-label">{t(locale, "overviewConfigTitle")}</span><span className="overview-hero-path-value">{state.configPath}</span></div>
-            <div className="overview-hero-path"><span className="overview-hero-path-label">{t(locale, "overviewProfilesTitle")}</span><span className="overview-hero-path-value">{state.profilesPath}</span></div>
             <div className="overview-hero-path"><span className="overview-hero-path-label">{t(locale, "overviewMcpTitle")}</span><span className="overview-hero-path-value">{state.mcpConfigPath}</span></div>
           </div>
         </div>
@@ -218,11 +206,17 @@ export function OverviewDashboard(props: {
         <div className="overview-profile-grid">
           {visibleProfiles.map(([name, profile]) => {
             const isActive = name === state.activeProfile;
+            const profileModelName = resolveProfileModelName(profile);
             return (
               <div key={name} className={isActive ? "overview-profile-chip active" : "overview-profile-chip"}>
                 <div className="overview-profile-info">
-                  <strong>{profile.label || name}</strong>
-                  <span>{profile.default_model || "-"}</span>
+                  <strong title={profile.label || name}>{profile.label || name}</strong>
+                  <div className={profileModelName ? "overview-profile-model" : "overview-profile-model is-empty"}>
+                    {profileModelName || t(locale, "overviewProfileModelUnset")}
+                  </div>
+                  <div className="overview-profile-modes" title={formatProfileModes(profile)}>
+                    {formatProfileModes(profile)}
+                  </div>
                 </div>
                 {isActive ? (
                   <span className="overview-profile-active"><Check size={14} /></span>

@@ -1,5 +1,111 @@
 /* 用量洞察页面样式 */
 
+.insights-first-run-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(var(--primary-rgb), 0.12), transparent 36%),
+    rgba(4, 10, 20, 0.56);
+}
+
+:root[data-theme="light"] .insights-first-run-backdrop {
+  background:
+    radial-gradient(circle at 50% 18%, rgba(var(--primary-rgb), 0.1), transparent 36%),
+    rgba(15, 28, 44, 0.36);
+}
+
+.insights-first-run-dialog {
+  width: min(600px, calc(100vw - 48px));
+  padding: 28px;
+  border: 1px solid rgba(124, 179, 255, 0.12);
+  box-shadow:
+    0 30px 80px rgba(4, 14, 28, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.insights-first-run-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.insights-first-run-header h2 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.45rem;
+  font-weight: 700;
+}
+
+.insights-first-run-icon,
+.insights-first-run-step-index {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  color: #fff;
+}
+
+.insights-first-run-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  box-shadow: 0 10px 24px rgba(4, 14, 28, 0.18);
+}
+
+.insights-first-run-description {
+  margin: 0 0 20px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.insights-first-run-steps {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 22px;
+  padding: 16px;
+  border: 1px solid rgba(124, 179, 255, 0.1);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.insights-first-run-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+
+.insights-first-run-step-index {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
+.insights-first-run-step p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.insights-first-run-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+:root[data-theme="light"] .insights-first-run-steps {
+  background: rgba(255, 255, 255, 0.68);
+  border-color: rgba(40, 92, 160, 0.1);
+}
+
 .insights-status-card {
   background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.08), rgba(var(--primary-2-rgb), 0.04));
   border-radius: 20px;
@@ -1326,4 +1432,3 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-

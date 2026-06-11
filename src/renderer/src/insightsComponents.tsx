@@ -70,30 +70,30 @@ interface FirstRunDialogProps {
 
 export function FirstRunDialog({ locale, onConfirm, onCancel }: FirstRunDialogProps): JSX.Element {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="glass-panel w-[600px] p-8 shadow-2xl">
-        <div className="mb-6 flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg">
-            <TrendingUp size={24} className="text-white" />
+    <div className="insights-first-run-backdrop">
+      <div className="glass-panel insights-first-run-dialog" role="dialog" aria-modal="true" aria-labelledby="insights-first-run-title">
+        <div className="insights-first-run-header">
+          <div className="insights-first-run-icon">
+            <TrendingUp size={24} />
           </div>
-          <h2 className="text-2xl font-semibold">{t(locale, "insightsFirstRunTitle")}</h2>
+          <h2 id="insights-first-run-title">{t(locale, "insightsFirstRunTitle")}</h2>
         </div>
-        <p className="mb-6 text-gray-700 dark:text-gray-300">
+        <p className="insights-first-run-description">
           {t(locale, "insightsFirstRunDescription")}
         </p>
-        <div className="mb-6 space-y-3 rounded-xl bg-gray-50/50 p-4 dark:bg-gray-800/30">
+        <div className="insights-first-run-steps">
           {[1, 2, 3, 4].map((step) => (
-            <div key={step} className="flex items-start gap-3 transition-all hover:translate-x-1">
-              <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-xs font-bold text-white shadow-sm">
+            <div key={step} className="insights-first-run-step">
+              <div className="insights-first-run-step-index">
                 {step}
               </div>
-              <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+              <p>
                 {t(locale, `insightsFirstRunStep${step}` as never)}
               </p>
             </div>
           ))}
         </div>
-        <div className="flex justify-end gap-3">
+        <div className="insights-first-run-actions">
           <button onClick={onCancel} className="insights-button-secondary">
             {t(locale, "insightsFirstRunCancel")}
           </button>
@@ -281,7 +281,7 @@ export function InsightsSettingsPanel({ locale, onStateChange }: InsightsSetting
                     {t(locale, "insightsMetricDataSource")}
                   </div>
                   <div className="insights-metric-value" style={{ fontSize: "0.875rem" }}>
-                    ~/.kimi/logs/kimi.log
+                    ~/.kimi-code/logs/kimi-code.log
                   </div>
                 </div>
                 <div className="insights-metric-card">
