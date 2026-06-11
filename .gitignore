@@ -21,6 +21,7 @@ src-tauri/gen
 .workflow/scratch/
 .workflow/state.json
 .workflow/wiki-index.json
+.workflow/specs/.hit-log.jsonl
 
 # Workflow runtime files in src/
 src/.workflow/spec-analytics.jsonl
