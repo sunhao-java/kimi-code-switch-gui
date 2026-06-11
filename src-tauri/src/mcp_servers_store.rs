@@ -1,7 +1,7 @@
 //! MCP 服务器配置存储（SQLite）。
 //!
 //! 设计：结构化表存储，支持启用/禁用状态管理。
-//! 启用：同步到 ~/.kimi/config.mcp.json
+//! 启用：同步到 ~/.kimi-code/mcp.json
 //! 禁用：从 mcp.json 删除，数据库保留（enabled=0）
 //! 删除：从数据库物理删除
 

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  Boxes, Check, Eye, EyeOff, FileText, FolderOpen, LoaderCircle,
+  Boxes, Check, Copy, Eye, EyeOff, FileText, FolderOpen, LoaderCircle,
   MoonStar, PenSquare, Play, RefreshCw, Sparkles, X,
 } from "lucide-react";
 
@@ -18,14 +18,14 @@ import { resolveModelPricing } from "@shared/pricing";
 
 import { getApi } from "./appHelpers";
 import {
-  labelForLocale, MCP_TRANSPORT_OPTIONS, MODEL_CAPABILITY_OPTIONS,
+  labelForLocale, MODEL_CAPABILITY_OPTIONS,
   PROVIDER_TYPE_OPTIONS, UI_FONT_SIZE_OPTIONS,
 } from "./appOptions";
 import { useDialogEscape, useFocusTrap } from "./dialogs";
 import { t } from "./i18n";
 import {
-  ActionFooter, Field, KeyValueListField, MultiSelectField,
-  ReadOnlyField, SelectField, TextAreaField, Toggle,
+  ActionFooter, Field, MultiSelectField,
+  ReadOnlyField, SelectField, Toggle,
 } from "./formControls";
 
 export function createCopyName(sourceName: string, existing: Record<string, unknown>): string {
@@ -112,6 +112,128 @@ export function formatRecordLines(value: Record<string, string>): string {
   return Object.entries(value)
     .map(([key, entryValue]) => `${key}=${entryValue}`)
     .join("\n");
+}
+
+function hasValidRecordLines(value: string): boolean {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .every((line) => {
+      const separatorIndex = line.includes("=") ? line.indexOf("=") : line.indexOf(":");
+      return separatorIndex > 0 && Boolean(line.slice(0, separatorIndex).trim());
+    });
+}
+
+function LineCodeField(props: {
+  label: string;
+  hint: string;
+  fieldKey: string;
+  resetKey: string;
+  value: string;
+  placeholder: string;
+  invalidMessage: string;
+  rows?: number;
+  onValidChange: (value: string) => boolean;
+  onValidityChange: (fieldKey: string, isValid: boolean) => void;
+}): JSX.Element {
+  const [draft, setDraft] = useState(props.value);
+  const [isInvalid, setIsInvalid] = useState(false);
+  const [scrollTop, setScrollTop] = useState(0);
+  const lineCount = Math.max(1, draft.split("\n").length);
+
+  useEffect(() => {
+    setDraft(props.value);
+    setIsInvalid(false);
+    setScrollTop(0);
+    props.onValidityChange(props.fieldKey, true);
+  }, [props.resetKey]);
+
+  return (
+    <label className={isInvalid ? "field mcp-code-field is-invalid" : "field mcp-code-field"}>
+      <span>{props.label}</span>
+      <small>{props.hint}</small>
+      <div className="mcp-line-editor">
+        <div className="mcp-line-numbers" aria-hidden="true">
+          <div style={{ transform: `translateY(-${scrollTop}px)` }}>
+            {Array.from({ length: lineCount }, (_, index) => (
+              <span key={index}>{index + 1}</span>
+            ))}
+          </div>
+        </div>
+        <textarea
+          rows={props.rows ?? 4}
+          spellCheck={false}
+          value={draft}
+          placeholder={props.placeholder}
+          onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+          onChange={(event) => {
+            const nextValue = event.target.value;
+            setDraft(nextValue);
+            const isValid = props.onValidChange(nextValue);
+            setIsInvalid(!isValid);
+            props.onValidityChange(props.fieldKey, isValid);
+          }}
+        />
+      </div>
+      {isInvalid ? <em role="alert">{props.invalidMessage}</em> : null}
+    </label>
+  );
+}
+
+function McpTransportRadioGroup(props: {
+  locale: Locale;
+  value: McpTransport;
+  readOnly: boolean;
+  onChange: (value: McpTransport) => void;
+}): JSX.Element {
+  const transportValue = props.value === "stdio" ? "stdio" : "streamable-http";
+  const options: Array<{ value: McpTransport; label: string; description: string }> = [
+    {
+      value: "stdio",
+      label: "stdio",
+      description: t(props.locale, "mcpTransportStdioDescription"),
+    },
+    {
+      value: "streamable-http",
+      label: "http",
+      description: t(props.locale, "mcpTransportHttpDescription"),
+    },
+  ];
+
+  return (
+    <fieldset className="mcp-transport-field">
+      <legend>{t(props.locale, "mcpTransportType")}</legend>
+      <div className="mcp-transport-options">
+        {options.map((option) => (
+          <button
+            key={option.value}
+            className={[
+              "mcp-transport-option",
+              transportValue === option.value ? "is-active" : "",
+              props.readOnly ? "is-readonly" : "",
+            ].filter(Boolean).join(" ")}
+            type="button"
+            role="radio"
+            aria-checked={transportValue === option.value}
+            disabled={props.readOnly}
+            onClick={() => {
+              if (!props.readOnly) {
+                props.onChange(option.value);
+              }
+            }}
+          >
+            <span className="mcp-transport-radio-dot" aria-hidden="true" />
+            <span className="mcp-transport-copy">
+              <strong>{option.label}</strong>
+              <small>{option.description}</small>
+            </span>
+          </button>
+        ))}
+      </div>
+      {props.readOnly ? <p className="mcp-transport-readonly-hint">{t(props.locale, "mcpTransportReadonlyHint")}</p> : null}
+    </fieldset>
+  );
 }
 
 export function ProviderForm(props: {
@@ -382,41 +504,71 @@ export function McpServerForm(props: {
   onSave: () => void;
   onDelete: () => void;
 }): JSX.Element {
-  const transportOptions = MCP_TRANSPORT_OPTIONS.map((option) => ({
-    value: option.value,
-    label: labelForLocale(option.label, props.locale),
-  }));
+  const isRemoteTransport = isRemoteMcpTransport(props.value.transport);
+  const [invalidLineFields, setInvalidLineFields] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    setInvalidLineFields(new Set());
+  }, [props.name, props.value.transport]);
+
+  const updateLineFieldValidity = (fieldKey: string, isValid: boolean): void => {
+    setInvalidLineFields((current) => {
+      const next = new Set(current);
+      if (isValid) {
+        next.delete(fieldKey);
+      } else {
+        next.add(fieldKey);
+      }
+      return next;
+    });
+  };
 
   return (
-    <section className="glass-panel form-panel">
-      <div className="section-title">{t(props.locale, "mcpEditor")}</div>
-      {props.nameEditable ? (
-        <Field label={t(props.locale, "formName")} value={props.name} onChange={(next) => props.onChange(next, { ...props.value })} />
-      ) : (
-        <ReadOnlyField label={t(props.locale, "formName")} value={props.name} />
-      )}
-      <SelectField
-        label={t(props.locale, "formTransport")}
+    <section className="glass-panel form-panel mcp-wizard-panel">
+      <div className="mcp-wizard-header">
+        <div>
+          <div className="section-title">{t(props.locale, "mcpWizardTitle")}</div>
+          <p>{t(props.locale, "mcpWizardDescription")}</p>
+        </div>
+      </div>
+      <McpTransportRadioGroup
+        locale={props.locale}
         value={props.value.transport}
-        onChange={(next) => props.onChange(props.name, switchMcpTransport(props.value, next as McpTransport))}
-        options={transportOptions}
-        popoverClassName="field-select-popover-full"
+        readOnly={!props.nameEditable}
+        onChange={(next) => props.onChange(props.name, switchMcpTransport(props.value, next))}
       />
-      {isRemoteMcpTransport(props.value.transport) ? (
+      {props.nameEditable ? (
+        <Field label={t(props.locale, "mcpServerTitle")} value={props.name} onChange={(next) => props.onChange(next, { ...props.value })} />
+      ) : (
+        <ReadOnlyField label={t(props.locale, "mcpServerTitle")} value={props.name} />
+      )}
+      {props.value.transport === "sse" || /\/sse([/?#]|$)/.test(props.value.url.trim()) ? (
+        <p className="form-hint form-hint-warning">{t(props.locale, "mcpSseUnsupportedHint")}</p>
+      ) : null}
+      {isRemoteTransport ? (
         <>
           <Field
             label={t(props.locale, "formUrl")}
             value={props.value.url}
             onChange={(next) => props.onChange(props.name, { ...props.value, url: next })}
           />
-          <KeyValueListField
-            locale={props.locale}
-            label={t(props.locale, "formHeaders")}
-            value={props.value.headers}
-            addLabel={t(props.locale, "addHeader")}
-            keyPlaceholder={t(props.locale, "headerNamePlaceholder")}
-            valuePlaceholder={t(props.locale, "headerValuePlaceholder")}
-            onChange={(next) => props.onChange(props.name, { ...props.value, headers: next })}
+          <LineCodeField
+            label={t(props.locale, "mcpHeadersOptional")}
+            hint={t(props.locale, "mcpHeadersLineHint")}
+            fieldKey="headers"
+            resetKey={`${props.name}:${props.value.transport}:headers`}
+            value={formatRecordLines(props.value.headers)}
+            placeholder={t(props.locale, "mcpHeadersLinePlaceholder")}
+            invalidMessage={t(props.locale, "mcpKeyValueLineInvalid")}
+            rows={4}
+            onValidityChange={updateLineFieldValidity}
+            onValidChange={(next) => {
+              if (!hasValidRecordLines(next)) {
+                return false;
+              }
+              props.onChange(props.name, { ...props.value, headers: parseRecordLines(next) });
+              return true;
+            }}
           />
         </>
       ) : (
@@ -426,28 +578,47 @@ export function McpServerForm(props: {
             value={props.value.command}
             onChange={(next) => props.onChange(props.name, { ...props.value, command: next })}
           />
-          <TextAreaField
+          <LineCodeField
             label={t(props.locale, "formArgs")}
+            hint={t(props.locale, "mcpArgsLineHint")}
+            fieldKey="args"
+            resetKey={`${props.name}:${props.value.transport}:args`}
             value={formatListLines(props.value.args)}
-            placeholder={t(props.locale, "formArgsPlaceholder")}
-            onChange={(next) => props.onChange(props.name, { ...props.value, args: parseListLines(next) })}
+            placeholder={t(props.locale, "mcpArgsLinePlaceholder")}
+            invalidMessage={t(props.locale, "mcpLineListInvalid")}
+            rows={4}
+            onValidityChange={updateLineFieldValidity}
+            onValidChange={(next) => {
+              props.onChange(props.name, { ...props.value, args: parseListLines(next) });
+              return true;
+            }}
           />
-          <KeyValueListField
-            locale={props.locale}
+          <LineCodeField
             label={t(props.locale, "formEnv")}
-            value={props.value.env}
-            addLabel={t(props.locale, "addEnv")}
-            keyPlaceholder={t(props.locale, "variableNamePlaceholder")}
-            valuePlaceholder={t(props.locale, "variableValuePlaceholder")}
-            onChange={(next) => props.onChange(props.name, { ...props.value, env: next })}
+            hint={t(props.locale, "mcpEnvLineHint")}
+            fieldKey="env"
+            resetKey={`${props.name}:${props.value.transport}:env`}
+            value={formatRecordLines(props.value.env)}
+            placeholder={t(props.locale, "mcpEnvLinePlaceholder")}
+            invalidMessage={t(props.locale, "mcpKeyValueLineInvalid")}
+            rows={4}
+            onValidityChange={updateLineFieldValidity}
+            onValidChange={(next) => {
+              if (!hasValidRecordLines(next)) {
+                return false;
+              }
+              props.onChange(props.name, { ...props.value, env: parseRecordLines(next) });
+              return true;
+            }}
           />
         </>
       )}
       <ActionFooter
         onSave={props.onSave}
         onDelete={props.onDelete}
-        saveLabel={t(props.locale, "saveMcpServer")}
+        saveLabel={t(props.locale, "mcpApplyConfig")}
         deleteLabel={t(props.locale, "delete")}
+        isSaveDisabled={invalidLineFields.size > 0}
       >
         <button
           className={props.isTesting ? "action-button is-loading" : "action-button"}
@@ -513,6 +684,81 @@ export function McpImportDialog(props: {
         />
       </section>
     </div>
+  );
+}
+
+export function McpJsonViewerDialog(props: {
+  locale: Locale;
+  value: string;
+  onClose: () => void;
+}): JSX.Element {
+  const dialogRef = useRef<HTMLElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  useDialogEscape(props.onClose);
+  useFocusTrap(dialogRef);
+
+  const copyJson = (): void => {
+    const writeClipboard = navigator.clipboard?.writeText
+      ? navigator.clipboard.writeText(props.value)
+      : Promise.reject(new Error("Clipboard API is unavailable."));
+    void writeClipboard.then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    }).catch(() => {
+      setCopied(false);
+    });
+  };
+
+  return createPortal(
+    <div
+      className="mcp-json-viewer-backdrop"
+      role="presentation"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          props.onClose();
+        }
+      }}
+    >
+      <section ref={dialogRef} className="glass-panel form-panel mcp-import-dialog" role="dialog" aria-modal="true" aria-labelledby="mcp-json-viewer-title">
+        <div className="mcp-import-header">
+          <div>
+            <div className="section-title" id="mcp-json-viewer-title">{t(props.locale, "mcpJsonViewerTitle")}</div>
+            <p className="mcp-import-hint">{t(props.locale, "mcpJsonViewerHint")}</p>
+          </div>
+          <div className="mcp-json-viewer-actions">
+            <button
+              className="action-button compact icon-only"
+              type="button"
+              aria-label={t(props.locale, "copyContent")}
+              title={copied ? t(props.locale, "copied") : t(props.locale, "copyContent")}
+              onClick={copyJson}
+            >
+              {copied ? <Check size={15} /> : <Copy size={15} />}
+            </button>
+            <button className="action-button compact icon-only" type="button" aria-label={t(props.locale, "close")} onClick={props.onClose}>
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+        <label className="field">
+          <span>{t(props.locale, "mcpJsonViewerContent")}</span>
+          <textarea
+            className="mcp-import-textarea mcp-json-viewer-textarea"
+            readOnly
+            rows={14}
+            value={props.value}
+          />
+        </label>
+        <div className="button-row">
+          <button className="action-button" type="button" onClick={props.onClose}>
+            <X size={16} />
+            <span>{t(props.locale, "close")}</span>
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body,
   );
 }
 
@@ -826,7 +1072,10 @@ export function PathField(props: {
 export function createFallbackState(): AppState {
   const panelSettings = {
     version: 1,
-    config_path: "~/.kimi/config.toml",
+    config_target: "kimi-code" as const,
+    config_path: "~/.kimi-code/config.toml",
+    profiles: {},
+    active_profile: "default",
     profiles_path: "",
     follow_config_profiles: true,
     theme: "auto" as AppearanceMode,
@@ -841,7 +1090,7 @@ export function createFallbackState(): AppState {
     backup_frequency: "daily" as BackupFrequency,
     backup_retention_count: 10,
     backup_destination_type: "local" as BackupDestinationType,
-    backup_local_path: "~/.kimi/.panel/backups",
+    backup_local_path: "~/.kimi-code/.panel/backups",
     backup_webdav_url: "",
     backup_webdav_username: "",
     backup_webdav_password: "",
@@ -852,9 +1101,10 @@ export function createFallbackState(): AppState {
 
   return {
     configPath: panelSettings.config_path,
-    profilesPath: "~/.kimi/config.profiles.toml",
-    panelSettingsPath: "~/.kimi/.panel/config.panel.toml",
-    mcpConfigPath: "~/.kimi/mcp.json",
+    configTarget: "kimi-code",
+    profilesPath: "",
+    panelSettingsPath: "~/.kimi-code/.panel/config.panel.toml",
+    mcpConfigPath: "~/.kimi-code/mcp.json",
     mainConfig: {
       default_model: "",
       default_thinking: true,

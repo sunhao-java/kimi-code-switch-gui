@@ -1,6 +1,6 @@
 import type { McpConfig, McpServerConfig } from "./types";
 
-export const DEFAULT_MCP_CONFIG_PATH = "~/.kimi/mcp.json";
+export const DEFAULT_MCP_CONFIG_PATH = "~/.kimi-code/mcp.json";
 
 export function createDefaultMcpConfig(): McpConfig {
   return {
@@ -50,7 +50,7 @@ export function parseMcpConfigStrict(document: string): McpConfig {
 export function buildMcpConfigDocument(config: McpConfig): string {
   const mcpServers = Object.fromEntries(
     Object.entries(config.mcpServers)
-      .filter(([, server]) => server.enabled !== false)
+      .filter(([, server]) => server.enabled !== false && !isUnsupportedSseServer(server))
       .map(([name, server]) => [name, buildMcpServerDocument(server)]),
   );
   return `${JSON.stringify({ mcpServers }, null, 2)}\n`;
@@ -106,22 +106,36 @@ function buildMcpServerDocument(server: McpServerConfig): Record<string, unknown
   const base =
     server.transport === "stdio"
       ? {
-          transport: "stdio",
           ...(server.command ? { command: server.command } : {}),
           ...(server.args.length ? { args: server.args } : {}),
           ...(Object.keys(server.env).length ? { env: server.env } : {}),
         }
       : {
-          transport: server.transport,
           ...(server.url ? { url: server.url } : {}),
           ...(Object.keys(server.headers).length ? { headers: server.headers } : {}),
         };
 
   return {
+    ...sanitizeMcpExtra(server.extra),
     ...base,
     ...(server.enabled === false ? { enabled: false } : {}),
-    ...(server.extra ?? {}),
   };
+}
+
+export function isUnsupportedSseServer(server: McpServerConfig): boolean {
+  return server.transport === "sse" || isSseEndpoint(server.url);
+}
+
+function isSseEndpoint(url: string): boolean {
+  return /\/sse([/?#]|$)/.test(url.trim());
+}
+
+function sanitizeMcpExtra(extra: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!extra) {
+    return {};
+  }
+  const blockedKeys = new Set(["transport", "type"]);
+  return Object.fromEntries(Object.entries(extra).filter(([key]) => !blockedKeys.has(key)));
 }
 
 function normalizeMcpTransport(transport: unknown, url: unknown, command: unknown): McpServerConfig["transport"] {

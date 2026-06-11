@@ -3,12 +3,13 @@
  *
  * 设计：
  * - 数据保存在 SQLite 数据库中
- * - 启用时：自动同步到 ~/.kimi/config.mcp.json
+ * - 启用时：自动同步到 ~/.kimi-code/mcp.json
  * - 禁用时：从 mcp.json 删除，数据库保留（enabled=false）
  * - 删除时：从数据库物理删除
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { buildMcpConfigDocument } from "@shared/mcpStore";
 import type { McpServerConfig } from "../../shared/types";
 
 export interface McpServerRecord extends McpServerConfig {
@@ -88,7 +89,7 @@ export async function migrateMcpFromJson(jsonPath: string): Promise<void> {
 /**
  * 同步启用的 MCP 服务器到 mcp.json 文件
  *
- * 只写入 enabled=true 的服务器，构建 kimi-code-cli 需要的格式
+ * 只写入 enabled=true 的服务器，构建 Kimi Code 需要的格式
  */
 export async function syncEnabledToMcpFile(mcpPath: string): Promise<void> {
   const { writeFile } = await import("./fileAccess");
@@ -112,12 +113,7 @@ export async function syncEnabledToMcpFile(mcpPath: string): Promise<void> {
     };
   }
 
-  // 写入文件
-  const mcpConfig = {
-    mcpServers,
-  };
-
-  await writeFile(mcpPath, JSON.stringify(mcpConfig, null, 2));
+  await writeFile(mcpPath, buildMcpConfigDocument({ mcpServers }));
 }
 
 /**

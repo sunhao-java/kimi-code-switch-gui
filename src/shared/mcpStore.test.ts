@@ -18,7 +18,7 @@ describe("mcpStore", () => {
     expect(config.mcpServers.context7.url).toBe("https://mcp.context7.com/mcp");
   });
 
-  it("infers sse transport from url when transport is absent", () => {
+  it("keeps legacy sse imports visible in the GUI state", () => {
     const config = parseMcpConfig(`{
       "mcpServers": {
         "linear": {
@@ -48,7 +48,7 @@ describe("mcpStore", () => {
     );
   });
 
-  it("serializes remote and stdio transports explicitly", () => {
+  it("serializes only Kimi Code supported MCP transports", () => {
     const document = buildMcpConfigDocument({
       mcpServers: {
         context7: {
@@ -70,6 +70,9 @@ describe("mcpStore", () => {
           command: "",
           args: [],
           env: {},
+          extra: {
+            transport: "sse",
+          },
         },
         chrome_devtools: {
           enabled: true,
@@ -85,10 +88,14 @@ describe("mcpStore", () => {
       },
     });
 
-    expect(document).toContain('"transport": "streamable-http"');
-    expect(document).toContain('"transport": "sse"');
-    expect(document).toContain('"transport": "stdio"');
-    expect(document).not.toContain('"transport": "http"');
+    expect(document).toContain('"context7"');
+    expect(document).toContain('"url": "https://mcp.context7.com/mcp"');
+    expect(document).toContain('"chrome_devtools"');
+    expect(document).toContain('"command": "npx"');
+    expect(document).not.toContain('"linear"');
+    expect(document).not.toContain('"transport"');
+    expect(document).not.toContain('"type"');
+    expect(document).not.toContain("/sse");
   });
 
   it("preserves enabled and explicit extra fields without nesting them into extra", () => {
