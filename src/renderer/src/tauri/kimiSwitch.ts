@@ -366,6 +366,10 @@ export const kimiSwitchTauri = {
   runProvidersHealthCheck: (state: AppState) => cli.runProvidersHealthCheck(state),
   upgradeKimiCli: (target?: AppState["configTarget"], options?: { install?: boolean }) =>
     cli.upgradeTargetCli(target ?? "kimi-cli", options),
+  startKimiOAuthLogin: (target: AppState["configTarget"], onEvent?: (event: cli.KimiOAuthLoginEvent) => void) =>
+    cli.startKimiOAuthLogin(target, onEvent),
+  startKimiCodeOAuthLogin: (onEvent?: (event: cli.KimiOAuthLoginEvent) => void) =>
+    cli.startKimiOAuthLogin("kimi-code", onEvent),
   testMcpServer: (name: string) => cli.runKimiMcpCommand(["test", name]),
   authMcpServer: (name: string) => cli.runKimiMcpCommand(["auth", name]),
   resetMcpServerAuth: (name: string) => cli.runKimiMcpCommand(["reset-auth", name]),

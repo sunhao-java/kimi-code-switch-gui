@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Activity, Bug, Copy, Download, FileInput, FolderOpen, History, LoaderCircle, Plus, Power, RefreshCw, RotateCcw, Star, Terminal, Trash2, Upload, X } from "lucide-react";
+import { Activity, Bug, Copy, Download, ExternalLink, FileInput, FolderOpen, History, LoaderCircle, LogIn, Plus, Power, RefreshCw, RotateCcw, Star, Terminal, Trash2, Upload, X } from "lucide-react";
 import { applyProfile, cloneProfile, deleteModel, deleteProfile, deleteProvider, exportConfig, getImportPreview, importConfig, toggleFavorite, validateImportData, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
 import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
 import { getCascadePreview } from "@shared/configRelations";
@@ -48,7 +48,7 @@ import { EmptyState, SplitLayout } from "../layoutComponents";
 import { ProviderHealthBanner } from "../providerHealthBanner";
 import { OverviewDashboard } from "../overviewDashboard";
 import { SkillsWorkspace } from "../skillsWorkspace";
-import type { ProviderHealthResult } from "../tauri/cli";
+import type { KimiOAuthLoginEvent, ProviderHealthResult } from "../tauri/cli";
 import type { AppContext } from "./appContext";
 import {
   ProviderForm, ModelForm, ProfileForm, McpServerForm,
@@ -141,6 +141,66 @@ type TabPanelsProps = Pick<
 type SettingsSubTab = "general" | "config-target" | "shortcuts" | "backup" | "doctor" | "insights" | "history";
 const POST_CONFIG_TARGET_SWITCH_TAB_KEY = "kimi-switch:post-config-target-switch-tab";
 
+type KimiOAuthLoginState = {
+  status: "idle" | "running" | "success" | "failed" | "account-required";
+  url: string;
+  userCode: string;
+  expiresIn: number | null;
+  message: string;
+  messageKey: string;
+};
+
+function isOAuthAccountRequiredMessage(message: string | undefined): boolean {
+  return Boolean(message?.includes("402 Payment Required") || message?.includes("Payment Required"));
+}
+
+function oauthFailureMessageKey(message: string | undefined): string {
+  const normalized = message?.toLowerCase() ?? "";
+  if (isOAuthAccountRequiredMessage(message)) return "kimiOauthAccountRequired";
+  if (normalized.includes("expired")) return "kimiOauthExpired";
+  if (normalized.includes("cancelled") || normalized.includes("canceled") || normalized.includes("denied") || normalized.includes("reject")) {
+    return "kimiOauthCancelled";
+  }
+  if (normalized.includes("already running")) return "kimiOauthAlreadyRunning";
+  if (normalized.includes("spawn") || normalized.includes("not found") || normalized.includes("no such file")) return "kimiOauthCommandUnavailable";
+  return "kimiOauthFailed";
+}
+
+function oauthStatusForEvent(event: KimiOAuthLoginEvent): KimiOAuthLoginState["status"] {
+  if (event.kind === "account-required" || isOAuthAccountRequiredMessage(event.message ?? event.line)) {
+    return "account-required";
+  }
+  if (event.kind === "failed" || event.kind === "error") {
+    return "failed";
+  }
+  if (event.kind === "success" || event.kind === "complete") {
+    return "success";
+  }
+  return "running";
+}
+
+function oauthMessageKeyForEvent(event: KimiOAuthLoginEvent): string {
+  if (event.kind === "account-required" || isOAuthAccountRequiredMessage(event.message ?? event.line)) {
+    return "kimiOauthAccountRequired";
+  }
+  switch (event.kind) {
+    case "start":
+    case "device-code":
+    case "user-code":
+    case "expires-in":
+    case "output":
+      return "kimiOauthWaiting";
+    case "success":
+    case "complete":
+      return "kimiOauthSuccess";
+    case "failed":
+    case "error":
+      return oauthFailureMessageKey(event.message ?? event.line);
+    default:
+      return "kimiOauthWaiting";
+  }
+}
+
 export function TabPanels(props: TabPanelsProps): JSX.Element {
   const {
     state,
@@ -227,6 +287,16 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   const shortcutLabels = Object.fromEntries(
     SHORTCUT_ACTIONS.map((definition) => [definition.action, labelForLocale(definition.label, locale)]),
   ) as Record<ShortcutAction, string>;
+  const [kimiCodeOAuthLogin, setKimiCodeOAuthLogin] = useState<KimiOAuthLoginState>({
+    status: "idle",
+    url: "",
+    userCode: "",
+    expiresIn: null,
+    message: "",
+    messageKey: "kimiOauthReady",
+  });
+  const currentConfigTarget = state.panelSettings.config_target ?? "kimi-code";
+  const currentConfigTargetLabel = currentConfigTarget === "kimi-code" ? "Kimi Code" : "Kimi CLI";
   const shortcutGroups = [
     {
       scope: "global" as const,
@@ -251,6 +321,62 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   const [isProviderHealthChecking, setIsProviderHealthChecking] = useState(false);
   const [providerHealthBannerOpen, setProviderHealthBannerOpen] = useState(false);
   const [providerHealthBannerKey, setProviderHealthBannerKey] = useState(0);
+
+  const startKimiOAuthLogin = (): void => {
+    const api = getApi();
+    const loginTarget = currentConfigTarget;
+    const loginTargetLabel = currentConfigTargetLabel;
+    if (!api?.startKimiOAuthLogin) {
+      setError(formatMessage(t(locale, "kimiOauthUnavailable"), { target: loginTargetLabel }));
+      return;
+    }
+    setError("");
+    setNotice("");
+    setKimiCodeOAuthLogin({
+      status: "running",
+      url: "",
+      userCode: "",
+      expiresIn: null,
+      message: formatMessage(t(locale, "kimiOauthWaiting"), { target: loginTargetLabel }),
+      messageKey: "kimiOauthWaiting",
+    });
+    void api.startKimiOAuthLogin(loginTarget, (event) => {
+      console.debug("[kimi-oauth-login]", event);
+      if (event.target !== loginTarget) {
+        return;
+      }
+      setKimiCodeOAuthLogin((current) => ({
+        status: oauthStatusForEvent(event),
+        url: event.url ?? current.url,
+        userCode: event.user_code ?? current.userCode,
+        expiresIn: event.expires_in ?? current.expiresIn,
+        message: event.message ?? event.line ?? current.message,
+        messageKey: oauthMessageKeyForEvent(event),
+      }));
+    })
+      .then(async () => {
+        setKimiCodeOAuthLogin((current) => ({
+          ...current,
+          status: "success",
+          message: formatMessage(t(locale, "kimiOauthSuccess"), { target: loginTargetLabel }),
+          messageKey: "kimiOauthSuccess",
+        }));
+        setNotice(formatMessage(t(locale, "kimiOauthSuccess"), { target: loginTargetLabel }));
+        await loadState();
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        const messageKey = oauthFailureMessageKey(message);
+        setKimiCodeOAuthLogin((current) => ({
+          ...current,
+          status: isOAuthAccountRequiredMessage(message) ? "account-required" : "failed",
+          message,
+          messageKey,
+        }));
+        console.debug("[kimi-oauth-login]", { kind: "failed", target: loginTarget, message });
+        setError(formatMessage(t(locale, messageKey), { target: loginTargetLabel, message }));
+      });
+  };
 
   const runProvidersHealthCheck = (): void => {
     const api = getApi();
@@ -601,6 +727,17 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             dirtyLabel={t(locale, "editedBadge")}
             selectedItem={selectedProfileName}
             highlightedItem={state.activeProfile}
+            renderItemLabel={(name) => {
+              const profile = state.profiles[name];
+              const displayName = profile?.label?.trim() || name;
+              return (
+                <span className="list-label-stack">
+                  <strong>{displayName}</strong>
+                  <small>{name}</small>
+                </span>
+              );
+            }}
+            itemTitle={(name) => state.profiles[name]?.label?.trim() || name}
             itemClassName={() => "profile-list-row"}
             onSelect={(item) => setSelectedProfile(item)}
             addLabel={t(locale, "newProfile")}
@@ -752,6 +889,9 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       draft.activeProfile = normalizedName;
                     }
                     draft.profiles = nextProfiles;
+                    if (draft.configTarget === "kimi-cli") {
+                      draft.mainConfig.profile_label = normalizedProfile.label;
+                    }
                     setSelectedProfile(normalizedName);
                   }, { persist: false })
                 }
@@ -1085,11 +1225,55 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             </div>
             {activeSettingsSubTab === "config-target" ? (
               <div className="settings-tab-panel">
+                <div className={`oauth-login-panel oauth-login-${kimiCodeOAuthLogin.status}`}>
+                  <div className="oauth-login-copy">
+                    <strong>{formatMessage(t(locale, "kimiOauthTitle"), { target: currentConfigTargetLabel })}</strong>
+                    <span>{formatMessage(t(locale, "kimiOauthDescription"), { target: currentConfigTargetLabel })}</span>
+                  </div>
+                  <div className="oauth-login-actions">
+                    <button
+                      className={kimiCodeOAuthLogin.status === "running" ? "action-button is-loading" : "action-button"}
+                      type="button"
+                      disabled={kimiCodeOAuthLogin.status === "running"}
+                      onClick={startKimiOAuthLogin}
+                    >
+                      {kimiCodeOAuthLogin.status === "running" ? <LoaderCircle size={14} className="button-spinner" /> : <LogIn size={14} />}
+                      <span>{formatMessage(t(locale, kimiCodeOAuthLogin.status === "running" ? "kimiOauthRunning" : "kimiOauthLogin"), { target: currentConfigTargetLabel })}</span>
+                    </button>
+                    {kimiCodeOAuthLogin.url ? (
+                      <button
+                        className="action-button secondary"
+                        type="button"
+                        onClick={() => void getApi()?.openExternal?.(kimiCodeOAuthLogin.url)}
+                      >
+                        <ExternalLink size={14} />
+                        <span>{t(locale, "kimiCodeOauthOpenBrowser")}</span>
+                      </button>
+                    ) : null}
+                  </div>
+                  {kimiCodeOAuthLogin.url || kimiCodeOAuthLogin.userCode || kimiCodeOAuthLogin.message ? (
+                    <div className="oauth-login-status">
+                      {kimiCodeOAuthLogin.url ? (
+                        <div><span>{t(locale, "kimiCodeOauthUrl")}</span><code>{kimiCodeOAuthLogin.url}</code></div>
+                      ) : null}
+                      {kimiCodeOAuthLogin.userCode ? (
+                        <div><span>{t(locale, "kimiCodeOauthUserCode")}</span><strong>{kimiCodeOAuthLogin.userCode}</strong></div>
+                      ) : null}
+                      {kimiCodeOAuthLogin.expiresIn !== null ? (
+                        <div><span>{t(locale, "kimiCodeOauthExpiresIn")}</span><strong>{kimiCodeOAuthLogin.expiresIn}s</strong></div>
+                      ) : null}
+                      <div>
+                        <span>{t(locale, "kimiCodeOauthStatus")}</span>
+                        <em>{formatMessage(t(locale, kimiCodeOAuthLogin.messageKey), { target: currentConfigTargetLabel, message: kimiCodeOAuthLogin.message })}</em>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
                 <SettingsGroup title={t(locale, "settingsGroupConfigTarget")}>
                   <SelectField
                     locale={locale}
                     label={t(locale, "configTargetLabel")}
-                    value={state.panelSettings.config_target ?? "kimi-code"}
+                    value={currentConfigTarget}
                     options={[
                       { value: "kimi-code", label: "Kimi Code" },
                       { value: "kimi-cli", label: "Kimi CLI" },

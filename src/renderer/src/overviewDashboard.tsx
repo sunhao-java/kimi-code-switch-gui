@@ -83,6 +83,7 @@ export function OverviewDashboard(props: {
   const providerEntries = Object.entries(state.mainConfig.providers);
   const modelEntries = Object.entries(state.mainConfig.models);
   const profileEntries = Object.entries(state.profiles);
+  const activeProfileDisplayName = activeProfile?.label?.trim() || state.activeProfile || "-";
   const visibleProviders = providerEntries.slice(0, 3);
   const visibleModels = modelEntries.slice(0, 3);
   const visibleProfiles = profileEntries.slice(0, 4);
@@ -170,7 +171,7 @@ export function OverviewDashboard(props: {
           <span>{t(locale, "overviewActiveProfile")}</span>
         </div>
         <div className="overview-app-title">
-          <span className="overview-app-name">Kimi Code Switch</span>
+          <span className="overview-app-name">{activeProfileDisplayName}</span>
           <span className="overview-app-ver">v{ABOUT_INFO.version}</span>
         </div>
         <div className="overview-hero-body">

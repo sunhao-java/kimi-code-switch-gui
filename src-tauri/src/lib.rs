@@ -38,6 +38,7 @@ pub fn run() {
             fs_access::list_subdirs,
             // 系统集成
             system::exec_command,
+            system::start_kimi_oauth_login,
             system::write_executable,
             system::file_stat,
             system::read_file_slice,

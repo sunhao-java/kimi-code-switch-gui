@@ -537,11 +537,11 @@ export function ProfileForm(props: {
     <section className="glass-panel form-panel">
       <div className="section-title">{t(props.locale, "profileEditor")}</div>
       {props.nameEditable ? (
-        <Field label={t(props.locale, "formName")} value={props.name} onChange={(next) => props.onChange(next, { ...value, name: next })} />
+        <Field label={t(props.locale, "profileFormUniqueId")} value={props.name} onChange={(next) => props.onChange(next, { ...value, name: next })} />
       ) : (
-        <ReadOnlyField label={t(props.locale, "formName")} value={props.name} />
+        <ReadOnlyField label={t(props.locale, "profileFormUniqueId")} value={props.name} />
       )}
-      <Field label={t(props.locale, "formLabel")} value={value.label} onChange={(next) => props.onChange(props.name, { ...value, label: next })} />
+      <Field label={t(props.locale, "profileFormDisplayName")} value={value.label} onChange={(next) => props.onChange(props.name, { ...value, label: next })} />
       <SelectField
         label={t(props.locale, "formDefaultModel")}
         value={value.default_model}

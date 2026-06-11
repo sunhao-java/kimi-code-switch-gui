@@ -58,6 +58,7 @@ export interface ModelConfig {
 }
 
 export interface MainConfig {
+  profile_label?: string;
   default_model: string;
   default_thinking: boolean;
   default_yolo: boolean;

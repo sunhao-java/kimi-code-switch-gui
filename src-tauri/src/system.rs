@@ -3,10 +3,51 @@
 //! 纯逻辑（正则解析、URL 构建、流式解析等）保留在前端。
 
 use std::collections::HashMap;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+
+use tauri::Emitter;
+
+static KIMI_OAUTH_LOGIN_RUNNING: AtomicBool = AtomicBool::new(false);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum KimiOAuthTarget {
+    KimiCli,
+    KimiCode,
+}
+
+impl KimiOAuthTarget {
+    fn from_config_target(target: &str) -> Self {
+        if target == "kimi-cli" {
+            Self::KimiCli
+        } else {
+            Self::KimiCode
+        }
+    }
+
+    fn as_config_target(self) -> &'static str {
+        match self {
+            Self::KimiCli => "kimi-cli",
+            Self::KimiCode => "kimi-code",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::KimiCli => "Kimi CLI",
+            Self::KimiCode => "Kimi Code",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct OAuthLoginCommand {
+    program: String,
+    args: Vec<String>,
+}
 
 fn resolve_home(path: &str) -> PathBuf {
     if let Some(stripped) = path.strip_prefix("~/") {
@@ -17,22 +58,132 @@ fn resolve_home(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
+fn executable_path_if_exists(path: PathBuf) -> Option<PathBuf> {
+    if path.is_file() {
+        Some(path)
+    } else {
+        None
+    }
+}
+
+fn find_kimi_cli_login_command() -> OAuthLoginCommand {
+    if let Some(home) = dirs::home_dir() {
+        for candidate in [
+            home.join(".local/share/uv/tools/kimi-cli/bin/kimi"),
+            home.join(".local/bin/kimi"),
+        ] {
+            if let Some(path) = executable_path_if_exists(candidate) {
+                return OAuthLoginCommand {
+                    program: path.to_string_lossy().to_string(),
+                    args: vec!["login".to_string()],
+                };
+            }
+        }
+    }
+    OAuthLoginCommand {
+        program: "uv".to_string(),
+        args: vec![
+            "tool".to_string(),
+            "run".to_string(),
+            "kimi-cli".to_string(),
+            "kimi".to_string(),
+            "login".to_string(),
+        ],
+    }
+}
+
+fn find_kimi_code_login_command() -> OAuthLoginCommand {
+    if cfg!(windows) {
+        if let Some(home) = dirs::home_dir() {
+            let root = std::env::var("KIMI_INSTALL_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| home.join(".kimi-code"));
+            if let Some(path) = executable_path_if_exists(root.join("bin/kimi.exe")) {
+                return OAuthLoginCommand {
+                    program: path.to_string_lossy().to_string(),
+                    args: vec!["login".to_string()],
+                };
+            }
+        }
+        return OAuthLoginCommand {
+            program: "kimi".to_string(),
+            args: vec!["login".to_string()],
+        };
+    }
+
+    if let Ok(prefix) = Command::new("brew")
+        .arg("--prefix")
+        .arg("kimi-code")
+        .env("PATH", augmented_path())
+        .output()
+    {
+        if prefix.status.success() {
+            let path = String::from_utf8_lossy(&prefix.stdout).trim().to_string();
+            if let Some(candidate) = executable_path_if_exists(PathBuf::from(path).join("bin/kimi")) {
+                return OAuthLoginCommand {
+                    program: candidate.to_string_lossy().to_string(),
+                    args: vec!["login".to_string()],
+                };
+            }
+        }
+    }
+
+    if let Some(home) = dirs::home_dir() {
+        let root = std::env::var("KIMI_INSTALL_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| home.join(".kimi-code"));
+        if let Some(path) = executable_path_if_exists(root.join("bin/kimi")) {
+            return OAuthLoginCommand {
+                program: path.to_string_lossy().to_string(),
+                args: vec!["login".to_string()],
+            };
+        }
+    }
+
+    OAuthLoginCommand {
+        program: "kimi".to_string(),
+        args: vec!["login".to_string()],
+    }
+}
+
+fn find_oauth_login_command(target: KimiOAuthTarget) -> OAuthLoginCommand {
+    match target {
+        KimiOAuthTarget::KimiCli => find_kimi_cli_login_command(),
+        KimiOAuthTarget::KimiCode => find_kimi_code_login_command(),
+    }
+}
+
 /// macOS / 类 Unix：在常见路径基础上补齐 CLI 查找路径（对应 cli.ts 的 getCliEnv）。
 fn augmented_path() -> String {
     let mut entries: Vec<String> = Vec::new();
+    let separator = if cfg!(windows) { ';' } else { ':' };
     if let Ok(p) = std::env::var("PATH") {
-        entries.extend(p.split(':').map(|s| s.to_string()));
+        entries.extend(p.split(separator).map(|s| s.to_string()));
     }
     if let Some(home) = dirs::home_dir() {
-        for extra in [
-            "/opt/homebrew/bin".to_string(),
-            "/usr/local/bin".to_string(),
-            home.join(".local/bin").to_string_lossy().to_string(),
-            home.join(".cargo/bin").to_string_lossy().to_string(),
-            home.join(".npm-global/bin").to_string_lossy().to_string(),
-            home.join(".volta/bin").to_string_lossy().to_string(),
-        ] {
-            entries.push(extra);
+        if cfg!(windows) {
+            for extra in [
+                home.join(".kimi-code/bin").to_string_lossy().to_string(),
+                home.join("AppData/Roaming/npm")
+                    .to_string_lossy()
+                    .to_string(),
+                home.join(".cargo/bin").to_string_lossy().to_string(),
+                home.join(".volta/bin").to_string_lossy().to_string(),
+            ] {
+                entries.push(extra);
+            }
+        } else {
+            for extra in [
+                "/opt/homebrew/bin".to_string(),
+                "/usr/local/bin".to_string(),
+                home.join(".kimi-code/bin").to_string_lossy().to_string(),
+                home.join(".local/bin").to_string_lossy().to_string(),
+                home.join(".cargo/bin").to_string_lossy().to_string(),
+                home.join(".npm-global/bin").to_string_lossy().to_string(),
+                home.join(".volta/bin").to_string_lossy().to_string(),
+            ] {
+                entries.push(extra);
+            }
         }
     }
     let mut seen = std::collections::HashSet::new();
@@ -41,7 +192,7 @@ fn augmented_path() -> String {
         .map(|e| e.trim().to_string())
         .filter(|e| !e.is_empty() && seen.insert(e.clone()))
         .collect::<Vec<_>>()
-        .join(":")
+        .join(if cfg!(windows) { ";" } else { ":" })
 }
 
 #[derive(serde::Serialize)]
@@ -49,6 +200,214 @@ pub struct ExecResult {
     pub code: i32,
     pub stdout: String,
     pub stderr: String,
+}
+
+#[derive(Clone, serde::Serialize)]
+pub struct KimiOAuthLoginEvent {
+    pub kind: String,
+    pub target: String,
+    pub stream: Option<String>,
+    pub line: Option<String>,
+    pub url: Option<String>,
+    pub user_code: Option<String>,
+    pub expires_in: Option<u64>,
+    pub message: Option<String>,
+}
+
+fn emit_oauth_login_event(app: &tauri::AppHandle, event: KimiOAuthLoginEvent) {
+    let _ = app.emit("kimi-oauth-login", event);
+}
+
+fn extract_query_value(url: &str, key: &str) -> Option<String> {
+    let query = url.split_once('?')?.1;
+    for part in query.split('&') {
+        let (candidate_key, value) = part.split_once('=')?;
+        if candidate_key == key && !value.trim().is_empty() {
+            return Some(value.trim().to_string());
+        }
+    }
+    None
+}
+
+fn parse_device_login_line(target: KimiOAuthTarget, line: &str) -> KimiOAuthLoginEvent {
+    if let Some(url) = line.strip_prefix("Opening browser for Kimi device login: ") {
+        return KimiOAuthLoginEvent {
+            kind: "device-code".to_string(),
+            target: target.as_config_target().to_string(),
+            stream: None,
+            line: Some(line.to_string()),
+            url: Some(url.trim().to_string()),
+            user_code: None,
+            expires_in: None,
+            message: None,
+        };
+    }
+    if let Some(url) = line.strip_prefix("Verification URL: ") {
+        let url = url.trim();
+        return KimiOAuthLoginEvent {
+            kind: "device-code".to_string(),
+            target: target.as_config_target().to_string(),
+            stream: None,
+            line: Some(line.to_string()),
+            url: Some(url.to_string()),
+            user_code: extract_query_value(url, "user_code"),
+            expires_in: None,
+            message: None,
+        };
+    }
+    if let Some(rest) =
+        line.strip_prefix("If the browser did not open, paste the URL above and enter code: ")
+    {
+        return KimiOAuthLoginEvent {
+            kind: "user-code".to_string(),
+            target: target.as_config_target().to_string(),
+            stream: None,
+            line: Some(line.to_string()),
+            url: None,
+            user_code: Some(rest.trim().to_string()),
+            expires_in: None,
+            message: None,
+        };
+    }
+    if let Some(rest) = line.strip_prefix("User Code: ") {
+        return KimiOAuthLoginEvent {
+            kind: "user-code".to_string(),
+            target: target.as_config_target().to_string(),
+            stream: None,
+            line: Some(line.to_string()),
+            url: None,
+            user_code: Some(rest.trim().to_string()),
+            expires_in: None,
+            message: None,
+        };
+    }
+    if let Some(rest) = line.strip_prefix("Code expires in ") {
+        let seconds = rest
+            .trim_end_matches('.')
+            .trim_end_matches('s')
+            .trim()
+            .parse::<u64>()
+            .ok();
+        return KimiOAuthLoginEvent {
+            kind: "expires-in".to_string(),
+            target: target.as_config_target().to_string(),
+            stream: None,
+            line: Some(line.to_string()),
+            url: None,
+            user_code: None,
+            expires_in: seconds,
+            message: None,
+        };
+    }
+    if let Some(rest) = line.strip_prefix("Logged in to ") {
+        return KimiOAuthLoginEvent {
+            kind: "success".to_string(),
+            target: target.as_config_target().to_string(),
+            stream: None,
+            line: Some(line.to_string()),
+            url: None,
+            user_code: None,
+            expires_in: None,
+            message: Some(format!("Logged in to {}", rest.trim_end_matches('.'))),
+        };
+    }
+    if line.trim() == "Logged in successfully." {
+        return KimiOAuthLoginEvent {
+            kind: "success".to_string(),
+            target: target.as_config_target().to_string(),
+            stream: None,
+            line: Some(line.to_string()),
+            url: None,
+            user_code: None,
+            expires_in: None,
+            message: Some("Logged in successfully.".to_string()),
+        };
+    }
+    if is_oauth_models_payment_required(line) {
+        return KimiOAuthLoginEvent {
+            kind: "account-required".to_string(),
+            target: target.as_config_target().to_string(),
+            stream: None,
+            line: Some(line.to_string()),
+            url: None,
+            user_code: None,
+            expires_in: None,
+            message: Some(kimi_oauth_account_required_message()),
+        };
+    }
+    if let Some(rest) = line.strip_prefix("Login failed: ") {
+        return KimiOAuthLoginEvent {
+            kind: "error".to_string(),
+            target: target.as_config_target().to_string(),
+            stream: None,
+            line: Some(line.to_string()),
+            url: None,
+            user_code: None,
+            expires_in: None,
+            message: Some(rest.to_string()),
+        };
+    }
+    KimiOAuthLoginEvent {
+        kind: "output".to_string(),
+        target: target.as_config_target().to_string(),
+        stream: None,
+        line: Some(line.to_string()),
+        url: None,
+        user_code: None,
+        expires_in: None,
+        message: None,
+    }
+}
+
+fn read_oauth_login_stream<R: Read + Send + 'static>(
+    app: tauri::AppHandle,
+    target: KimiOAuthTarget,
+    stream_name: &'static str,
+    reader: R,
+) -> std::thread::JoinHandle<String> {
+    std::thread::spawn(move || {
+        let mut collected = String::new();
+        let reader = BufReader::new(reader);
+        for line in reader.lines().map_while(Result::ok) {
+            collected.push_str(&line);
+            collected.push('\n');
+            let mut event = parse_device_login_line(target, &line);
+            event.stream = Some(stream_name.to_string());
+            emit_oauth_login_event(&app, event);
+        }
+        collected
+    })
+}
+
+fn is_oauth_models_payment_required(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    let mentions_models = lower.contains("models") || lower.contains("coding/v1/models");
+    let mentions_payment =
+        lower.contains("payment required") || lower.contains("http 402") || lower.contains(" 402,") || lower.contains(": 402");
+    mentions_models && mentions_payment
+}
+
+fn kimi_oauth_account_required_message() -> String {
+    "Kimi OAuth authorization completed, but the Kimi models endpoint returned 402 Payment Required. Check account billing, plan, or quota, then retry.".to_string()
+}
+
+fn last_non_empty_line(value: &str) -> Option<String> {
+    value
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_string)
+}
+
+fn summarize_oauth_login_failure(result: &ExecResult) -> String {
+    let combined_output = format!("{}\n{}", result.stderr, result.stdout);
+    if is_oauth_models_payment_required(&combined_output) {
+        return kimi_oauth_account_required_message();
+    }
+    last_non_empty_line(&result.stderr)
+        .or_else(|| last_non_empty_line(&result.stdout))
+        .unwrap_or_else(|| format!("Kimi OAuth login failed with exit code {}.", result.code))
 }
 
 /// 执行外部命令，拿 stdout/stderr/退出码。覆盖 kimi/uv/open/osascript 等调用。
@@ -68,12 +427,10 @@ pub async fn exec_command(
 
     // 简单超时：spawn_blocking 无法直接 kill，这里用 tokio timeout 包裹 join。
     let output = match timeout_ms {
-        Some(ms) if ms > 0 => {
-            match tokio::time::timeout(Duration::from_millis(ms), handle).await {
-                Ok(joined) => joined.map_err(|e| format!("join error: {e}"))?,
-                Err(_) => return Err(format!("command timed out after {ms}ms")),
-            }
-        }
+        Some(ms) if ms > 0 => match tokio::time::timeout(Duration::from_millis(ms), handle).await {
+            Ok(joined) => joined.map_err(|e| format!("join error: {e}"))?,
+            Err(_) => return Err(format!("command timed out after {ms}ms")),
+        },
         _ => handle.await.map_err(|e| format!("join error: {e}"))?,
     };
 
@@ -83,6 +440,123 @@ pub async fn exec_command(
         stdout: String::from_utf8_lossy(&output.stdout).to_string(),
         stderr: String::from_utf8_lossy(&output.stderr).to_string(),
     })
+}
+
+/// 启动当前配置目标的官方 `kimi login` 设备码登录流程。
+///
+/// 该命令不持有、不读取、不写入 OAuth token；token 仍由对应 CLI 自己写入本机。
+/// 这里仅选择目标对应的可执行文件，并转发 stdout/stderr 到 renderer。
+#[tauri::command]
+pub async fn start_kimi_oauth_login(
+    app: tauri::AppHandle,
+    target: String,
+) -> Result<ExecResult, String> {
+    let target = KimiOAuthTarget::from_config_target(&target);
+    let target_label = target.label();
+    if KIMI_OAUTH_LOGIN_RUNNING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Err("Kimi OAuth login is already running.".to_string());
+    }
+
+    emit_oauth_login_event(
+        &app,
+        KimiOAuthLoginEvent {
+            kind: "start".to_string(),
+            target: target.as_config_target().to_string(),
+            stream: None,
+            line: None,
+            url: None,
+            user_code: None,
+            expires_in: None,
+            message: Some(format!("Starting {target_label} OAuth login.")),
+        },
+    );
+
+    let app_for_task = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let login_command = find_oauth_login_command(target);
+        let mut child = Command::new(&login_command.program)
+            .args(&login_command.args)
+            .env("PATH", augmented_path())
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("spawn {}: {e}", target.label()))?;
+
+        let stdout_handle = child
+            .stdout
+            .take()
+            .map(|stdout| read_oauth_login_stream(app_for_task.clone(), target, "stdout", stdout));
+        let stderr_handle = child
+            .stderr
+            .take()
+            .map(|stderr| read_oauth_login_stream(app_for_task.clone(), target, "stderr", stderr));
+
+        let status = child.wait().map_err(|e| format!("wait {}: {e}", target.label()))?;
+        let stdout = stdout_handle
+            .map(|handle| handle.join().unwrap_or_default())
+            .unwrap_or_default();
+        let stderr = stderr_handle
+            .map(|handle| handle.join().unwrap_or_default())
+            .unwrap_or_default();
+        Ok(ExecResult {
+            code: status.code().unwrap_or(-1),
+            stdout,
+            stderr,
+        })
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"));
+
+    KIMI_OAUTH_LOGIN_RUNNING.store(false, Ordering::SeqCst);
+
+    match result {
+        Ok(Ok(exec_result)) => {
+            let ok = exec_result.code == 0;
+            let message = if ok {
+                format!("{target_label} OAuth login completed.")
+            } else {
+                summarize_oauth_login_failure(&exec_result)
+            };
+            emit_oauth_login_event(
+                &app,
+                KimiOAuthLoginEvent {
+                    kind: if ok { "complete" } else { "failed" }.to_string(),
+                    target: target.as_config_target().to_string(),
+                    stream: None,
+                    line: None,
+                    url: None,
+                    user_code: None,
+                    expires_in: None,
+                    message: Some(message.clone()),
+                },
+            );
+            if ok {
+                Ok(exec_result)
+            } else {
+                Err(message)
+            }
+        }
+        Ok(Err(err)) | Err(err) => {
+            emit_oauth_login_event(
+                &app,
+                KimiOAuthLoginEvent {
+                    kind: "failed".to_string(),
+                    target: target.as_config_target().to_string(),
+                    stream: None,
+                    line: None,
+                    url: None,
+                    user_code: None,
+                    expires_in: None,
+                    message: Some(err.clone()),
+                },
+            );
+            Err(err)
+        }
+    }
 }
 
 /// 写文件并赋可执行权限（terminal.ts 的 iTerm 启动脚本用）。
@@ -238,21 +712,245 @@ mod tests {
     #[test]
     fn augmented_path_dedupes_and_includes_homebrew() {
         let path = augmented_path();
-        let parts: Vec<&str> = path.split(':').collect();
+        let separator = if cfg!(windows) { ';' } else { ':' };
+        let parts: Vec<&str> = path.split(separator).collect();
         // 去重：每个条目唯一。
         let mut seen = std::collections::HashSet::new();
         for p in &parts {
             assert!(seen.insert(*p), "duplicate path entry: {p}");
         }
         // 补齐常见 CLI 路径。
-        assert!(parts.contains(&"/opt/homebrew/bin"));
-        assert!(parts.contains(&"/usr/local/bin"));
+        #[cfg(not(windows))]
+        {
+            assert!(parts.contains(&"/opt/homebrew/bin"));
+            assert!(parts.contains(&"/usr/local/bin"));
+        }
+        #[cfg(windows)]
+        {
+            assert!(parts.iter().any(|part| part.ends_with(".kimi-code/bin")));
+            assert!(parts.iter().any(|part| part.ends_with("AppData/Roaming/npm")));
+        }
+    }
+
+    #[test]
+    fn config_target_parses_kimi_cli_explicitly() {
+        assert!(matches!(
+            KimiOAuthTarget::from_config_target("kimi-cli"),
+            KimiOAuthTarget::KimiCli
+        ));
+        assert!(matches!(
+            KimiOAuthTarget::from_config_target("kimi-code"),
+            KimiOAuthTarget::KimiCode
+        ));
+        assert!(matches!(
+            KimiOAuthTarget::from_config_target("unknown"),
+            KimiOAuthTarget::KimiCode
+        ));
+    }
+
+    #[test]
+    fn kimi_cli_login_command_uses_uv_tool_or_uv_fallback() {
+        let command = find_oauth_login_command(KimiOAuthTarget::KimiCli);
+
+        if command.program.ends_with("/kimi") {
+            assert_eq!(command.args, vec!["login"]);
+            assert!(
+                command.program.contains("kimi-cli") || command.program.ends_with(".local/bin/kimi")
+            );
+        } else {
+            assert_eq!(command.program, "uv");
+            assert_eq!(command.args, vec!["tool", "run", "kimi-cli", "kimi", "login"]);
+        }
+    }
+
+    #[test]
+    fn kimi_code_login_command_targets_kimi_code_install_when_available() {
+        let command = find_oauth_login_command(KimiOAuthTarget::KimiCode);
+
+        assert_eq!(command.args, vec!["login"]);
+        if command.program != "kimi" {
+            assert!(
+                command.program.contains("kimi-code"),
+                "unexpected kimi-code command path: {}",
+                command.program
+            );
+        }
+    }
+
+    #[test]
+    fn parse_device_login_line_extracts_authorization_url() {
+        let event = parse_device_login_line(
+            KimiOAuthTarget::KimiCli,
+            "Opening browser for Kimi device login: https://auth.example/device?code=abc",
+        );
+
+        assert_eq!(event.kind, "device-code");
+        assert_eq!(event.target, "kimi-cli");
+        assert_eq!(event.url.as_deref(), Some("https://auth.example/device?code=abc"));
+        assert_eq!(event.line.as_deref(), Some("Opening browser for Kimi device login: https://auth.example/device?code=abc"));
+    }
+
+    #[test]
+    fn parse_device_login_line_extracts_kimi_cli_verification_url_and_user_code() {
+        let event = parse_device_login_line(
+            KimiOAuthTarget::KimiCli,
+            "Verification URL: https://www.kimi.com/code/authorize_device?user_code=RSSI-UYYI",
+        );
+
+        assert_eq!(event.kind, "device-code");
+        assert_eq!(event.target, "kimi-cli");
+        assert_eq!(
+            event.url.as_deref(),
+            Some("https://www.kimi.com/code/authorize_device?user_code=RSSI-UYYI")
+        );
+        assert_eq!(event.user_code.as_deref(), Some("RSSI-UYYI"));
+    }
+
+    #[test]
+    fn parse_device_login_line_extracts_user_code() {
+        let event = parse_device_login_line(
+            KimiOAuthTarget::KimiCode,
+            "If the browser did not open, paste the URL above and enter code: ABCD-1234",
+        );
+
+        assert_eq!(event.kind, "user-code");
+        assert_eq!(event.target, "kimi-code");
+        assert_eq!(event.user_code.as_deref(), Some("ABCD-1234"));
+    }
+
+    #[test]
+    fn parse_device_login_line_extracts_standalone_user_code() {
+        let event = parse_device_login_line(KimiOAuthTarget::KimiCli, "User Code: RSSI-UYYI");
+
+        assert_eq!(event.kind, "user-code");
+        assert_eq!(event.user_code.as_deref(), Some("RSSI-UYYI"));
+    }
+
+    #[test]
+    fn parse_device_login_line_extracts_expiry_seconds() {
+        let event = parse_device_login_line(KimiOAuthTarget::KimiCode, "Code expires in 600s.");
+
+        assert_eq!(event.kind, "expires-in");
+        assert_eq!(event.expires_in, Some(600));
+    }
+
+    #[test]
+    fn parse_device_login_line_marks_success() {
+        let event = parse_device_login_line(KimiOAuthTarget::KimiCode, "Logged in to Moonshot.");
+
+        assert_eq!(event.kind, "success");
+        assert_eq!(event.message.as_deref(), Some("Logged in to Moonshot"));
+    }
+
+    #[test]
+    fn parse_device_login_line_marks_kimi_cli_success() {
+        let event = parse_device_login_line(KimiOAuthTarget::KimiCli, "Logged in successfully.");
+
+        assert_eq!(event.kind, "success");
+        assert_eq!(event.message.as_deref(), Some("Logged in successfully."));
+    }
+
+    #[test]
+    fn parse_device_login_line_marks_models_payment_required() {
+        let event = parse_device_login_line(
+            KimiOAuthTarget::KimiCli,
+            "Failed to get models: 402, message='Payment Required', url='https://api.kimi.com/coding/v1/models'",
+        );
+
+        assert_eq!(event.kind, "account-required");
+        assert_eq!(event.target, "kimi-cli");
+        assert_eq!(
+            event.message.as_deref(),
+            Some("Kimi OAuth authorization completed, but the Kimi models endpoint returned 402 Payment Required. Check account billing, plan, or quota, then retry.")
+        );
+    }
+
+    #[test]
+    fn parse_device_login_line_marks_login_failure() {
+        let event = parse_device_login_line(KimiOAuthTarget::KimiCode, "Login failed: authorization expired");
+
+        assert_eq!(event.kind, "error");
+        assert_eq!(event.message.as_deref(), Some("authorization expired"));
+    }
+
+    #[test]
+    fn parse_device_login_line_keeps_unrecognized_output() {
+        let event = parse_device_login_line(
+            KimiOAuthTarget::KimiCode,
+            "Waiting for authorization to complete...",
+        );
+
+        assert_eq!(event.kind, "output");
+        assert_eq!(
+            event.line.as_deref(),
+            Some("Waiting for authorization to complete...")
+        );
+    }
+
+    #[test]
+    fn oauth_failure_summary_prefers_stderr() {
+        let result = ExecResult {
+            code: 1,
+            stdout: "Verification URL: https://www.kimi.com/code/authorize_device?user_code=ABCD\n".to_string(),
+            stderr: "\nLogin failed: authorization expired\n".to_string(),
+        };
+
+        assert_eq!(
+            summarize_oauth_login_failure(&result),
+            "Login failed: authorization expired"
+        );
+    }
+
+    #[test]
+    fn oauth_failure_summary_identifies_models_payment_required() {
+        let result = ExecResult {
+            code: 1,
+            stdout: [
+                "Please visit the following URL to finish authorization.",
+                "Verification URL: https://www.kimi.com/code/authorize_device?user_code=0FR7-01JN",
+                "Failed to get models: 402, message='Payment Required',",
+                "url='https://api.kimi.com/coding/v1/models'",
+            ].join("\n"),
+            stderr: String::new(),
+        };
+
+        assert_eq!(
+            summarize_oauth_login_failure(&result),
+            "Kimi OAuth authorization completed, but the Kimi models endpoint returned 402 Payment Required. Check account billing, plan, or quota, then retry."
+        );
+    }
+
+    #[test]
+    fn oauth_failure_summary_falls_back_to_stdout() {
+        let result = ExecResult {
+            code: 1,
+            stdout: "\nKimi OAuth login failed because the code expired\n".to_string(),
+            stderr: "\n".to_string(),
+        };
+
+        assert_eq!(
+            summarize_oauth_login_failure(&result),
+            "Kimi OAuth login failed because the code expired"
+        );
+    }
+
+    #[test]
+    fn oauth_failure_summary_reports_exit_code_without_output() {
+        let result = ExecResult {
+            code: 42,
+            stdout: String::new(),
+            stderr: String::new(),
+        };
+
+        assert_eq!(
+            summarize_oauth_login_failure(&result),
+            "Kimi OAuth login failed with exit code 42."
+        );
     }
 
     #[test]
     fn build_http_request_normalizes_method_to_uppercase() {
-        let req = build_http_request(&client(), "get", "https://example.com/", None, None)
-            .unwrap();
+        let req = build_http_request(&client(), "get", "https://example.com/", None, None).unwrap();
         assert_eq!(req.method().as_str(), "GET");
         assert_eq!(req.url().as_str(), "https://example.com/");
     }
@@ -283,10 +981,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(req.method().as_str(), "POST");
-        assert_eq!(
-            req.headers().get("authorization").unwrap(),
-            "Bearer t0ken"
-        );
+        assert_eq!(req.headers().get("authorization").unwrap(), "Bearer t0ken");
         assert_eq!(
             req.headers().get("content-type").unwrap(),
             "application/json"
@@ -298,8 +993,7 @@ mod tests {
     #[test]
     fn build_http_request_rejects_invalid_method() {
         // 含空格的非法方法名应报错而非 panic。
-        let err = build_http_request(&client(), "BAD METHOD", "https://x", None, None)
-            .unwrap_err();
+        let err = build_http_request(&client(), "BAD METHOD", "https://x", None, None).unwrap_err();
         assert!(err.contains("invalid method"));
     }
 }

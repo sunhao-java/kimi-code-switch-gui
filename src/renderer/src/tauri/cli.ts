@@ -1,6 +1,7 @@
 // CLI / MCP / 连通性测试前端适配（移植自 main/modules/cli.ts）。
 // 进程执行走 Rust exec_command，网络走 Rust http_request（绕过 CORS）。
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 import { compareReleaseVersions, normalizeReleaseVersion } from "@shared/versionUtils";
 import type { AppState, ConfigTarget, ModelConfig, ProfileConnectivityTestResult, ProviderConfig } from "@shared/types";
@@ -45,6 +46,17 @@ export interface CliVersionResult {
   packageName?: string;
   installCommand?: string;
   updateCommand?: string;
+}
+
+export interface KimiOAuthLoginEvent {
+  kind: "start" | "device-code" | "user-code" | "expires-in" | "output" | "success" | "error" | "complete" | "failed" | "account-required";
+  target: ConfigTarget;
+  stream?: "stdout" | "stderr";
+  line?: string;
+  url?: string;
+  user_code?: string;
+  expires_in?: number;
+  message?: string;
 }
 
 // GUI 期望的 kimi-cli 版本范围：低于 MIN 判定为过旧（功能可能不兼容）。
@@ -265,6 +277,22 @@ export async function upgradeKimiCli(): Promise<{ ok: true; stdout: string; stde
   const r = await exec("uv", ["tool", "upgrade", "kimi-cli", "--no-cache"], 120000);
   if (r.code !== 0) throw new Error(r.stderr || "upgrade failed");
   return { ok: true, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
+}
+
+export async function startKimiOAuthLogin(
+  target: ConfigTarget,
+  onEvent?: (event: KimiOAuthLoginEvent) => void,
+): Promise<{ ok: true; stdout: string; stderr: string }> {
+  const unlisten = onEvent
+    ? await listen<KimiOAuthLoginEvent>("kimi-oauth-login", (event) => onEvent(event.payload))
+    : null;
+  try {
+    const r = await invoke<ExecResult>("start_kimi_oauth_login", { target });
+    if (r.code !== 0) throw new Error(r.stderr || "kimi login failed");
+    return { ok: true, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
+  } finally {
+    unlisten?.();
+  }
 }
 
 export async function runKimiMcpCommand(args: string[]): Promise<{ ok: true; stdout: string; stderr: string }> {

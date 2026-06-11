@@ -215,6 +215,8 @@ export function App(): JSX.Element {
     }
   }, []);
 
+  const activeProfileDisplayName = state.profiles[state.activeProfile]?.label?.trim() || state.activeProfile || "-";
+
   const handleMainTabKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>): void => {
       const currentIndex = mainTabIds.indexOf(activeTab);
@@ -507,7 +509,7 @@ export function App(): JSX.Element {
             <div className="summary-card accent summary-active-card" title={state.activeProfile || undefined}>
               <div className="summary-active-copy">
                 <span>{t(locale, "summaryActive")}</span>
-                <strong>{state.activeProfile || "-"}</strong>
+                <strong>{activeProfileDisplayName}</strong>
               </div>
               <button
                 className="summary-terminal-button no-drag"

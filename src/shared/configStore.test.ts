@@ -140,6 +140,15 @@ describe("configStore", () => {
     expect(state.profiles.default.default_model).toBe("kimi_gateway/kimi-k2.5");
   });
 
+  it("bootstraps kimi-cli profile label from main config", () => {
+    const profiles = bootstrapProfiles({
+      ...createState().mainConfig,
+      profile_label: "Work",
+    });
+
+    expect(profiles.default.label).toBe("Work");
+  });
+
   it("applies profile values into main config", () => {
     const state = createState();
     upsertProvider(state, "alt_gateway", {
@@ -827,6 +836,7 @@ describe("dual-target configuration", () => {
   it("loads kimi-cli config without profiles file", async () => {
     const files = createMemoryFs({
       "~/.kimi/config.toml": `
+profile_label = "Work"
 default_model = "test-model"
 default_thinking = true
 [providers.test]
@@ -845,8 +855,22 @@ max_context_size = 8192
     expect(state.profilesPath).toBe("~/.kimi/config.toml");
     expect(state.mcpConfigPath).toBe("~/.kimi/mcp.json");
     expect(state.activeProfile).toBe("default");
+    expect(state.profiles.default.label).toBe("Work");
     expect(state.profiles.default.default_model).toBe("test-model");
     expect(state.mainConfig.providers.test).toBeDefined();
+  });
+
+  it("persists kimi-cli profile label in the main config", async () => {
+    const state = createState();
+    state.configTarget = "kimi-cli";
+    state.configPath = "~/.kimi/config.toml";
+    state.profilesPath = "~/.kimi/config.toml";
+    state.profiles.default.label = "Personal";
+    const files = createMemoryFs({});
+
+    await saveAppState(files, state);
+
+    expect(files.store["~/.kimi/config.toml"]).toContain('profile_label = "Personal"');
   });
 
   it("uses persisted panel config target to select kimi-cli paths", async () => {

@@ -100,6 +100,7 @@ const PROFILE_KEYS: readonly ProfileConfigKey[] = [
 ];
 
 const DEFAULTS = {
+  profile_label: "Default",
   default_model: "",
   default_thinking: true,
   default_yolo: false,
@@ -498,6 +499,9 @@ function panelSettingsFromUnknown(data: Record<string, unknown>, fallback: Panel
 export async function saveAppState(files: FileAccess, state: AppState): Promise<void> {
   const normalizedState = normalizeStatePaths(state);
   const resolver = new ConfigResolver(normalizedState.configTarget);
+  const stateToPersist = resolver.supportsProfiles()
+    ? normalizedState
+    : syncMainConfigProfileLabel(normalizedState);
 
   // kimi-cli 模式：config.toml 和 profiles 是同一个文件
   if (!resolver.supportsProfiles() && normalizedState.configPath === normalizedState.profilesPath) {
@@ -509,26 +513,26 @@ export async function saveAppState(files: FileAccess, state: AppState): Promise<
   await files.ensureDir(dirnamePath(normalizedState.configPath));
   await files.ensureDir(dirnamePath(normalizedState.panelSettingsPath));
   await files.ensureDir(dirnamePath(normalizedState.mcpConfigPath));
-  await files.writeText(normalizedState.configPath, buildConfigDocument(normalizedState));
+  await files.writeText(normalizedState.configPath, buildConfigDocument(stateToPersist));
 
   // kimi-code 才写 profiles 文件
   if (resolver.supportsProfiles()) {
     await files.ensureDir(dirnamePath(normalizedState.profilesPath));
-    await files.writeText(normalizedState.profilesPath, buildProfilesDocument(normalizedState));
+    await files.writeText(normalizedState.profilesPath, buildProfilesDocument(stateToPersist));
   }
 
   // Panel settings：优先使用 SQLite（若 writePanelSettings 存在）
   if (files.writePanelSettings) {
-    await files.writePanelSettings(normalizedState.panelSettingsPath, normalizedState.panelSettings);
+    await files.writePanelSettings(stateToPersist.panelSettingsPath, stateToPersist.panelSettings);
   } else {
     // 回退：TOML 文件（测试环境）
     await files.writeText(
-      normalizedState.panelSettingsPath,
-      buildPanelSettingsDocument(normalizedState.panelSettings),
+      stateToPersist.panelSettingsPath,
+      buildPanelSettingsDocument(stateToPersist.panelSettings),
     );
   }
 
-  await files.writeText(normalizedState.mcpConfigPath, buildMcpConfigDocument(normalizedState.mcpConfig));
+  await files.writeText(stateToPersist.mcpConfigPath, buildMcpConfigDocument(stateToPersist.mcpConfig));
 }
 
 export function buildConfigDocument(state: AppState): string {
@@ -563,7 +567,7 @@ export function bootstrapProfiles(mainConfig: MainConfig): Record<string, Profil
   return {
     [DEFAULT_PROFILE_NAME]: normalizeProfile({
       name: DEFAULT_PROFILE_NAME,
-      label: "Default",
+      label: mainConfig.profile_label || DEFAULTS.profile_label,
       default_model: String(mainConfig.default_model ?? DEFAULTS.default_model),
       default_thinking: Boolean(mainConfig.default_thinking),
       default_yolo: Boolean(mainConfig.default_yolo),
@@ -858,6 +862,7 @@ function formatErrorMessage(error: unknown): string {
 
 function normalizeMainConfig(input: Record<string, unknown>): MainConfig {
   return {
+    profile_label: asString(input.profile_label, ""),
     default_model: asString(input.default_model, DEFAULTS.default_model),
     default_thinking: asBoolean(input.default_thinking, DEFAULTS.default_thinking),
     default_yolo: asBoolean(input.default_yolo, DEFAULTS.default_yolo),
@@ -880,6 +885,20 @@ function normalizeMainConfig(input: Record<string, unknown>): MainConfig {
     notifications: isRecord(input.notifications) ? input.notifications : {},
     services: isRecord(input.services) ? input.services : {},
     mcp: isRecord(input.mcp) ? input.mcp : {},
+  };
+}
+
+function syncMainConfigProfileLabel(state: AppState): AppState {
+  const activeProfile = state.profiles[state.activeProfile]
+    ?? state.profiles[DEFAULT_PROFILE_NAME]
+    ?? Object.values(state.profiles)[0];
+  const label = activeProfile?.label?.trim() || DEFAULTS.profile_label;
+  return {
+    ...state,
+    mainConfig: {
+      ...state.mainConfig,
+      profile_label: label,
+    },
   };
 }
 
@@ -1032,7 +1051,7 @@ function resolveProfilesPath(options: {
 function extractProfileFromMainConfig(mainConfig: MainConfig): Profile {
   return {
     name: DEFAULT_PROFILE_NAME,
-    label: "Default",
+    label: mainConfig.profile_label || DEFAULTS.profile_label,
     default_model: mainConfig.default_model || "",
     default_thinking: mainConfig.default_thinking ?? true,
     default_yolo: mainConfig.default_yolo ?? false,

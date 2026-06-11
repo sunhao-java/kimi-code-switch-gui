@@ -4036,6 +4036,30 @@ textarea:focus-visible {
   border-radius: 12px;
 }
 
+.list-label-stack {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.list-label-stack strong,
+.list-label-stack small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-label-stack strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.list-label-stack small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
 .list-row-actions {
   display: inline-grid;
   grid-auto-flow: column;
@@ -5586,6 +5610,106 @@ textarea:focus-visible {
 
 .settings-group-body .toggle-row {
   padding: 10px 0;
+}
+
+.oauth-login-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px 16px;
+  padding: 16px;
+  border: 1px solid rgba(var(--primary-rgb), 0.24);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, rgba(var(--primary-rgb), 0.14), rgba(var(--primary-2-rgb), 0.07)),
+    var(--panel);
+}
+
+.oauth-login-muted {
+  border-color: var(--border);
+  background: var(--panel);
+}
+
+.oauth-login-copy {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.oauth-login-copy strong {
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.oauth-login-copy span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.oauth-login-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.oauth-login-status {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.oauth-login-status div {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.oauth-login-status span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.oauth-login-status code,
+.oauth-login-status strong,
+.oauth-login-status em {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.78rem;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.oauth-login-status code {
+  font-family: "SFMono-Regular", "Cascadia Code", Consolas, monospace;
+}
+
+.oauth-login-success {
+  border-color: rgba(46, 204, 113, 0.3);
+}
+
+.oauth-login-failed {
+  border-color: rgba(255, 112, 112, 0.35);
+}
+
+.oauth-login-account-required {
+  border-color: rgba(255, 190, 90, 0.42);
+  background:
+    linear-gradient(135deg, rgba(255, 190, 90, 0.14), rgba(var(--primary-rgb), 0.06)),
+    var(--panel);
+}
+
+@media (max-width: 860px) {
+  .oauth-login-panel {
+    grid-template-columns: 1fr;
+  }
 }
 
 .settings-action-row {
