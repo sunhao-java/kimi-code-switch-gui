@@ -1,8 +1,8 @@
 //! 配置历史版本管理。
 //!
 //! 功能：自动快照、版本查询、回滚、自动清理。
-//! 存储：SQLite 元数据（~/.kimi/app.db 的 config_history 表）
-//!       + 文件系统快照内容（~/.kimi/.panel/history/{id}.toml.gz）
+//! 存储：SQLite 元数据（~/.kimi-code/.panel/app.db 的 config_history 表）
+//!       + 文件系统快照内容（~/.kimi-code/.panel/history/{id}.toml.gz）
 
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -87,7 +87,7 @@ fn gzip_compress(content: &str) -> Result<Vec<u8>, String> {
 /// 2. 计算 SHA256
 /// 3. 检查是否已存在（去重）
 /// 4. gzip 压缩
-/// 5. 保存到 ~/.kimi/.panel/history/{timestamp_ms}-{file_id}.{json|toml}.gz
+/// 5. 保存到 ~/.kimi-code/.panel/history/{timestamp_ms}-{file_id}.{json|toml}.gz
 /// 6. 插入 SQLite 记录
 ///
 /// 错误处理：快照失败时记录错误日志，返回 Ok(None)，不阻塞调用方。
@@ -363,9 +363,9 @@ pub fn restore_snapshot(
 
     // 其他配置文件：写入磁盘
     let config_file_path = match file_id.as_str() {
-        "config" => "~/.kimi/config.toml",
-        "profiles" => "~/.kimi/config.profiles.toml",
-        "mcp" => "~/.kimi/config.mcp.json",
+        "config" => "~/.kimi-code/config.toml",
+        "mcp" => "~/.kimi-code/mcp.json",
+        "profiles" => return Err("profiles snapshots are legacy-only; Profile data is stored in SQLite panel settings".to_string()),
         _ => return Err(format!("unknown file_id: {file_id}")),
     };
 

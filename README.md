@@ -100,18 +100,20 @@
 应用会维护下面几类文件：
 
 ```text
-~/.kimi/config.toml
-~/.kimi/config.profiles.toml
-~/.kimi/.panel/config.panel.toml
-~/.kimi/mcp.json
+~/.kimi-code/config.toml
+~/.kimi-code/mcp.json
+~/.kimi-code/skills/
+~/.kimi-code/.panel/app.db
 ```
 
 说明：
 
-- `config.toml`：`kimi-code-cli` 主配置，保存当前生效的默认模型、Provider、Model 和其他 CLI 配置。
-- `config.profiles.toml`：保存所有 Profile，以及当前激活的 `active_profile`。
-- `config.panel.toml`：保存 GUI 自身设置，例如语言、主题、快捷键、备份策略和终端应用。
-- `mcp.json`：保存 MCP Server 定义。
+- `config.toml`：Kimi Code 标准主配置，保存当前生效的默认模型、Provider、Model 和其他 CLI 配置。
+- `mcp.json`：Kimi Code 标准 MCP Server 定义。
+- `skills/`：Kimi Code 标准 Skills 目录。
+- `.panel/app.db`：GUI 自身 SQLite 数据库，保存 Profile、当前激活 Profile、语言、主题、快捷键、备份策略和终端应用等面板私有配置。
+
+`config.profiles.toml` 不是 Kimi Code 标准配置文件。旧版本生成过该文件时，GUI 会在启动时读取其中的 Profile 数据并迁移到 SQLite，后续不会继续写入该文件。
 
 ## 终端启动
 
@@ -146,7 +148,7 @@ kimi --config-file <临时配置文件>
 - 定时自动备份。
 - 修改后自动备份。
 
-备份文件包含主配置、Profiles、面板设置、MCP 配置和快捷键。恢复前会创建回滚点，避免误恢复后无法回退。
+备份文件包含主配置、面板设置（含 Profiles、当前激活 Profile、快捷键等 GUI 私有配置）和 MCP 配置。恢复前会创建回滚点，避免误恢复后无法回退。
 
 ## 配置历史
 
@@ -154,7 +156,7 @@ kimi --config-file <临时配置文件>
 
 **核心特性：**
 
-- **自动快照** — 每次保存配置时自动捕获 4 个配置文件（config.toml、config.profiles.toml、config.panel.toml、config.mcp.json）的快照
+- **自动快照** — 每次保存配置时自动捕获 Kimi 标准配置（config.toml、mcp.json）和 GUI SQLite 面板设置快照
 - **智能去重** — SHA256 内容去重，相同内容不重复存储
 - **gzip 压缩** — 快照文件 gzip 压缩存储，5KB 配置压缩后约 500B
 - **版本查询** — 按文件类型过滤、时间倒序查询历史快照

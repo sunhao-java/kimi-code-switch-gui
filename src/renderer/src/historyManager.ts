@@ -90,8 +90,7 @@ function createHistoryDetails(previousState: AppState, nextState: AppState): His
   const nextDocuments = buildManagedDocuments(nextState);
   const titles: Record<keyof typeof previousDocuments, string> = {
     config: "config.toml",
-    profiles: "config.profiles.toml",
-    panel: "config.panel.toml",
+    panel: "config.panel.json",
     mcp: "mcp.json",
   };
 

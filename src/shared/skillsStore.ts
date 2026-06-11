@@ -123,7 +123,7 @@ export async function scanSkills(
   const summary = buildSummary(skills);
 
   return {
-    builtinNotice: "Built-in skills are provided by Kimi CLI and are not enumerated from the local filesystem.",
+    builtinNotice: "Built-in skills are provided by Kimi Code and are not enumerated from the local filesystem.",
     discoveryMode,
     mergeAllAvailableSkills: options.mergeAllAvailableSkills,
     paths,
@@ -140,7 +140,7 @@ async function buildDiscoveryPaths(
 ): Promise<SkillDiscoveryPath[]> {
   const candidates = [
     createCandidate("builtin", "builtin", "(managed by CLI package)"),
-    createCandidate("user-brand-kimi", "user-brand", "~/.kimi/skills"),
+    createCandidate("user-brand-kimi", "user-brand", "~/.kimi-code/skills"),
     createCandidate("user-brand-claude", "user-brand", "~/.claude/skills"),
     createCandidate("user-brand-codex", "user-brand", "~/.codex/skills"),
     createCandidate("user-common-config", "user-common", "~/.config/agents/skills"),

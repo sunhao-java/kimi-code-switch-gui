@@ -1,11 +1,10 @@
 import {
   buildConfigDocument,
   buildPanelSettingsDocument,
-  buildProfilesDocument,
   createLineDiff,
   normalizeStatePaths,
 } from "./configStore";
-import { buildMcpConfigDocument } from "./mcpStore";
+import { buildMcpConfigDocument, isUnsupportedSseServer } from "./mcpStore";
 import { getShortcutConflicts } from "./shortcutStore";
 import type {
   AppState,
@@ -30,7 +29,6 @@ export function buildManagedDocuments(state: AppState): Record<ManagedFileId, st
   const normalizedState = normalizeStatePaths(state);
   return {
     config: buildConfigDocument(normalizedState),
-    profiles: buildProfilesDocument(normalizedState),
     panel: buildPanelSettingsDocument(normalizedState.panelSettings),
     mcp: buildMcpConfigDocument(normalizedState.mcpConfig),
   };
@@ -95,18 +93,15 @@ export function buildRedactedPreviewBundle(
 
   const redactedDisk = {
     config: redactDocumentText(disk.config ?? "").text,
-    profiles: redactDocumentText(disk.profiles ?? "").text,
     panel: redactDocumentText(disk.panel ?? "").text,
     mcp: redactDocumentText(disk.mcp ?? "").text,
   };
 
   return {
     configDocument: draftDocuments.config,
-    profilesDocument: draftDocuments.profiles,
     panelSettingsDocument: draftDocuments.panel,
     mcpDocument: draftDocuments.mcp,
     configDiff: createLineDiff(redactedDisk.config, draftDocuments.config),
-    profilesDiff: createLineDiff(redactedDisk.profiles, draftDocuments.profiles),
     panelDiff: createLineDiff(redactedDisk.panel, draftDocuments.panel),
     mcpDiff: createLineDiff(redactedDisk.mcp, draftDocuments.mcp),
     redaction: redactedState.summary,
@@ -146,7 +141,6 @@ export function buildConfigDoctorReport(
 function validateManagedPaths(state: AppState, issues: DoctorIssue[]): void {
   const pathEntries: Array<[ManagedFileId, string]> = [
     ["config", state.configPath],
-    ["profiles", state.profilesPath],
     ["panel", state.panelSettingsPath],
     ["mcp", state.mcpConfigPath],
   ];
@@ -173,7 +167,7 @@ function validateManagedPaths(state: AppState, issues: DoctorIssue[]): void {
 }
 
 function validateModelReferences(state: AppState, issues: DoctorIssue[]): void {
-  if (!state.mainConfig.models[state.mainConfig.default_model]) {
+  if (state.mainConfig.default_model.trim() && !state.mainConfig.models[state.mainConfig.default_model]) {
     issues.push(
       createDoctorIssue(
         "config.default-model.missing",
@@ -203,7 +197,7 @@ function validateModelReferences(state: AppState, issues: DoctorIssue[]): void {
   }
 
   for (const [profileName, profile] of Object.entries(state.profiles)) {
-    if (state.mainConfig.models[profile.default_model]) {
+    if (!profile.default_model.trim() || state.mainConfig.models[profile.default_model]) {
       continue;
     }
     issues.push(
@@ -266,6 +260,20 @@ function validateMcpServers(servers: Record<string, McpServerConfig>, issues: Do
           `MCP server "${serverName}" uses stdio transport but has no command.`,
           `mcpConfig.mcpServers.${serverName}.command`,
           "Provide a command for stdio transport.",
+        ),
+      );
+      continue;
+    }
+
+    if (isUnsupportedSseServer(server)) {
+      issues.push(
+        createDoctorIssue(
+          `mcp.sse-unsupported.${serverName}`,
+          "error",
+          "mcp",
+          `MCP server "${serverName}" uses an SSE endpoint. Kimi Code supports stdio and Streamable HTTP MCP only.`,
+          `mcpConfig.mcpServers.${serverName}.url`,
+          "Replace it with a Streamable HTTP MCP URL, or use a local stdio bridge.",
         ),
       );
       continue;
@@ -492,9 +500,6 @@ function labelManagedFile(id: ManagedFileId): string {
   if (id === "config") {
     return "Config";
   }
-  if (id === "profiles") {
-    return "Profiles";
-  }
   if (id === "panel") {
     return "Panel settings";
   }
@@ -640,7 +645,7 @@ const KNOWN_FIELD_SCHEMA: Partial<Record<ManagedFileId, FieldNode>> = {
   config: {
     known: [
       "default_model", "default_thinking", "default_yolo", "default_plan_mode",
-      "default_editor", "theme", "show_thinking_stream", "merge_all_available_skills",
+      "profile_label", "default_editor", "theme", "show_thinking_stream", "merge_all_available_skills",
       "hooks", "models", "providers", "loop_control", "background",
       "notifications", "services", "mcp",
     ],
@@ -652,20 +657,6 @@ const KNOWN_FIELD_SCHEMA: Partial<Record<ManagedFileId, FieldNode>> = {
       notifications: { open: true },
       services: { open: true },
       mcp: { open: true },
-    },
-  },
-  profiles: {
-    known: ["active_profile", "profiles"],
-    children: {
-      profiles: {
-        wildcard: {
-          known: [
-            "name", "label", "default_model", "default_thinking", "default_yolo",
-            "default_plan_mode", "default_editor", "theme", "show_thinking_stream",
-            "merge_all_available_skills",
-          ],
-        },
-      },
     },
   },
   mcp: {

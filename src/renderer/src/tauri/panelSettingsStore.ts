@@ -38,7 +38,7 @@ export async function getPanelSettings(): Promise<PanelSettings | null> {
 /**
  * 保存面板设置。
  *
- * 首次保存时，如果 ~/.kimi/config.panel.toml 存在，会自动重命名为 .toml.migrated。
+ * 首次保存时，如果旧版 ~/.kimi/config.panel.toml 存在，会自动重命名为 .toml.migrated。
  *
  * @param settings PanelSettings 对象
  * @returns 成功返回 true，失败返回 false
@@ -102,7 +102,7 @@ export async function importPanelSettings(json: string): Promise<boolean> {
 /**
  * 从 TOML 文件迁移到数据库。
  *
- * @param tomlPath TOML 文件路径（如 ~/.kimi/config.panel.toml）
+ * @param tomlPath TOML 文件路径（如旧版 ~/.kimi/config.panel.toml）
  * @param settings 已解析的 PanelSettings 对象
  * @returns 成功返回 true，失败返回 false
  */

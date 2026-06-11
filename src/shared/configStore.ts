@@ -41,10 +41,9 @@ export function getDefaultConfigPath(target: ConfigTarget): string {
 }
 
 export function getDefaultProfilesPath(target: ConfigTarget, configPath = getDefaultConfigPath(target)): string {
-  const resolver = new ConfigResolver(target);
-  return resolver.supportsProfiles()
-    ? defaultProfilesPath(configPath)
-    : configPath;
+  void target;
+  void configPath;
+  return "";
 }
 
 export function getDefaultMcpConfigPath(target: ConfigTarget): string {
@@ -67,21 +66,19 @@ export const LEGACY_PANEL_SETTINGS_PATH = "~/.kimi/config.panel.toml";
 export const PANEL_USAGE_DIRECTORY = `${DEFAULT_PANEL_DIRECTORY}/usage`;
 export const PANEL_USAGE_DB_PATH = `${PANEL_USAGE_DIRECTORY}/index.db`;
 export const LEGACY_USAGE_DIRECTORY = "~/.kimi/usage";
+export const LEGACY_CONFIG_PATH = "~/.kimi/config.toml";
 const LEGACY_PROFILES_PATH = "~/.kimi/config.profiles.toml";
 const LEGACY_MCP_CONFIG_PATH = "~/.kimi/config.mcp.json";
+const LEGACY_MCP_JSON_PATH = "~/.kimi/mcp.json";
+const LEGACY_MIGRATION_MARKER_PATH = `${DEFAULT_PANEL_DIRECTORY}/legacy-kimi-cli-config.migrated.json`;
 const KNOWN_DEFAULT_CONFIG_PATHS = [
   getDefaultConfigPath(ConfigTarget.KimiCode),
-  getDefaultConfigPath(ConfigTarget.KimiCli),
-] as const;
-const KNOWN_DEFAULT_PROFILES_PATHS = [
-  getDefaultProfilesPath(ConfigTarget.KimiCode),
-  getDefaultProfilesPath(ConfigTarget.KimiCli),
-  LEGACY_PROFILES_PATH,
+  LEGACY_CONFIG_PATH,
 ] as const;
 const KNOWN_DEFAULT_MCP_CONFIG_PATHS = [
   getDefaultMcpConfigPath(ConfigTarget.KimiCode),
-  getDefaultMcpConfigPath(ConfigTarget.KimiCli),
   DEFAULT_MCP_CONFIG_PATH,
+  LEGACY_MCP_JSON_PATH,
   LEGACY_MCP_CONFIG_PATH,
 ] as const;
 const SUPPORTED_LOCALES = new Set<PanelSettings["locale"]>(["zh-CN", "zh-TW", "en-US", "ja-JP", "de-DE", "es-ES"]);
@@ -110,6 +107,7 @@ const DEFAULTS = {
   show_thinking_stream: false,
   merge_all_available_skills: false,
 } as const;
+const REDACTION_PLACEHOLDER = "[REDACTED]";
 
 export interface FileAccess {
   readText(path: string): Promise<string | null>;
@@ -129,6 +127,8 @@ export function createDefaultPanelSettings(
     version: PANEL_SETTINGS_VERSION,
     config_target: ConfigTarget.KimiCode,
     config_path: configPath,
+    profiles: {},
+    active_profile: DEFAULT_PROFILE_NAME,
     profiles_path: "",
     follow_config_profiles: true,
     theme: "auto",
@@ -177,26 +177,20 @@ export async function loadAppState(
     mcpConfigPath?: string;
   },
 ): Promise<AppState> {
-  // 先加载 panelSettings 获取保存的 configTarget
+  // Panel settings may still contain historical target data, but the GUI now
+  // manages Kimi Code only.
   const panelSettingsPath = paths?.panelSettingsPath ?? DEFAULT_PANEL_SETTINGS_PATH;
   const panelSettingsResult = await loadPanelSettingsWithLegacyFallback(files, panelSettingsPath);
   const panelSettings = panelSettingsResult.settings;
 
-  // configTarget 优先级：参数 > panelSettings > 默认值
-  const configTarget = paths?.configTarget ?? panelSettings.config_target ?? ConfigTarget.KimiCode;
-  const resolver = new ConfigResolver(configTarget);
-
+  const configTarget = ConfigTarget.KimiCode;
   if (panelSettingsResult.migratedFromLegacy) {
     await files.ensureDir(dirnamePath(DEFAULT_PANEL_SETTINGS_PATH));
     await files.writeText(DEFAULT_PANEL_SETTINGS_PATH, buildPanelSettingsDocument(panelSettings));
   }
   const mcpConfigPath = sanitizePath(paths?.mcpConfigPath, getDefaultMcpConfigPath(configTarget));
   const configPath = sanitizePath(paths?.configPath, getDefaultConfigPath(configTarget));
-  const profilesPath = resolveProfilesPath({
-    explicitProfilesPath: paths?.profilesPath,
-    configPath,
-    supportsProfiles: resolver.supportsProfiles(),
-  });
+  const profilesPath = "";
   const resolvedPanelSettingsPath = sanitizePath(
     panelSettingsPath,
     DEFAULT_PANEL_SETTINGS_PATH,
@@ -205,18 +199,15 @@ export async function loadAppState(
   const fileMcpConfig = await loadMcpConfig(files, mcpConfigPath);
   const mcpConfig = mergePanelMcpServers(panelSettings.mcp_servers, fileMcpConfig.mcpServers);
 
-  // kimi-cli 不支持 profiles，使用 mainConfig 作为唯一配置源
-  const profiles = resolver.supportsProfiles()
-    ? parseProfiles(mainConfig, await loadTomlFile(files, profilesPath, "profiles config"))
-    : { [DEFAULT_PROFILE_NAME]: extractProfileFromMainConfig(mainConfig) };
-
-  const rawProfiles = resolver.supportsProfiles()
-    ? await loadTomlFile(files, profilesPath, "profiles config")
-    : {};
+  const legacyProfiles = await loadLegacyProfiles(files, paths?.profilesPath, configPath, mainConfig);
+  const panelProfiles = sanitizeProfilesRecord(panelSettings.profiles);
+  const profiles = Object.keys(panelProfiles).length > 0
+    ? panelProfiles
+    : legacyProfiles?.profiles ?? bootstrapProfiles(mainConfig);
   const activeProfile = ensureActiveProfile(
-    typeof rawProfiles.active_profile === "string"
-      ? rawProfiles.active_profile
-      : pickActiveProfile(mainConfig, profiles),
+    panelSettings.active_profile
+      || legacyProfiles?.activeProfile
+      || pickActiveProfile(mainConfig, profiles),
     profiles,
   );
 
@@ -233,7 +224,9 @@ export async function loadAppState(
       ...panelSettings,
       config_target: configTarget,
       config_path: configPath,
-      profiles_path: profilesPath,
+      profiles,
+      active_profile: activeProfile,
+      profiles_path: "",
       follow_config_profiles: true,
       mcp_servers: cloneMcpServers(mcpConfig.mcpServers),
     },
@@ -424,6 +417,8 @@ function panelSettingsFromUnknown(data: Record<string, unknown>, fallback: Panel
     version: PANEL_SETTINGS_VERSION,
     config_target: parseConfigTarget(data.config_target ?? fallback.config_target),
     config_path: configPath,
+    profiles: sanitizeProfilesRecord(data.profiles, fallback.profiles),
+    active_profile: asString(data.active_profile, fallback.active_profile),
     profiles_path:
       typeof data.profiles_path === "string" ? data.profiles_path : fallback.profiles_path,
     follow_config_profiles:
@@ -498,28 +493,22 @@ function panelSettingsFromUnknown(data: Record<string, unknown>, fallback: Panel
 
 export async function saveAppState(files: FileAccess, state: AppState): Promise<void> {
   const normalizedState = normalizeStatePaths(state);
-  const resolver = new ConfigResolver(normalizedState.configTarget);
-  const stateToPersist = resolver.supportsProfiles()
-    ? normalizedState
-    : syncMainConfigProfileLabel(normalizedState);
-
-  // kimi-cli 模式：config.toml 和 profiles 是同一个文件
-  if (!resolver.supportsProfiles() && normalizedState.configPath === normalizedState.profilesPath) {
-    // 合法：kimi-cli 不分离 profiles
-  } else if (normalizedState.configPath === normalizedState.profilesPath) {
-    throw new Error("Config path and profiles path must be different.");
-  }
+  const stateToPersist: AppState = {
+    ...normalizedState,
+    panelSettings: {
+      ...normalizedState.panelSettings,
+      profiles: sanitizeProfilesRecord(normalizedState.profiles),
+      active_profile: normalizedState.activeProfile,
+      profiles_path: "",
+      follow_config_profiles: true,
+    },
+  };
 
   await files.ensureDir(dirnamePath(normalizedState.configPath));
   await files.ensureDir(dirnamePath(normalizedState.panelSettingsPath));
   await files.ensureDir(dirnamePath(normalizedState.mcpConfigPath));
-  await files.writeText(normalizedState.configPath, buildConfigDocument(stateToPersist));
-
-  // kimi-code 才写 profiles 文件
-  if (resolver.supportsProfiles()) {
-    await files.ensureDir(dirnamePath(normalizedState.profilesPath));
-    await files.writeText(normalizedState.profilesPath, buildProfilesDocument(stateToPersist));
-  }
+  const stateForConfig = await restoreRedactedProviderSecrets(files, stateToPersist);
+  await files.writeText(normalizedState.configPath, buildConfigDocument(stateForConfig));
 
   // Panel settings：优先使用 SQLite（若 writePanelSettings 存在）
   if (files.writePanelSettings) {
@@ -535,8 +524,74 @@ export async function saveAppState(files: FileAccess, state: AppState): Promise<
   await files.writeText(stateToPersist.mcpConfigPath, buildMcpConfigDocument(stateToPersist.mcpConfig));
 }
 
+export interface LegacyKimiCliMigrationResult {
+  migrated: boolean;
+  configMerged: boolean;
+  profilesCopied: boolean;
+  mcpMerged: boolean;
+  reason?: string;
+}
+
+export async function migrateLegacyKimiCliConfigToKimiCode(files: FileAccess): Promise<LegacyKimiCliMigrationResult> {
+  const marker = await safeReadText(files, LEGACY_MIGRATION_MARKER_PATH);
+  if (marker?.trim()) {
+    return { migrated: false, configMerged: false, profilesCopied: false, mcpMerged: false, reason: "already-migrated" };
+  }
+
+  const legacyConfigDocument = await safeReadText(files, LEGACY_CONFIG_PATH);
+  if (!legacyConfigDocument?.trim()) {
+    await writeLegacyMigrationMarker(files, { migrated: false, configMerged: false, profilesCopied: false, mcpMerged: false, reason: "legacy-config-missing" });
+    return { migrated: false, configMerged: false, profilesCopied: false, mcpMerged: false, reason: "legacy-config-missing" };
+  }
+
+  let configMerged = false;
+  let profilesCopied = false;
+  let mcpMerged = false;
+
+  try {
+    const legacyConfig = parseDocument(legacyConfigDocument);
+    const currentConfigDocument = await safeReadText(files, DEFAULT_CONFIG_PATH);
+    const currentConfig = parseDocument(currentConfigDocument);
+    const { value, changed } = mergeLegacyMainConfig(currentConfig, legacyConfig);
+    if (changed) {
+      await files.ensureDir(dirnamePath(DEFAULT_CONFIG_PATH));
+      await files.writeText(DEFAULT_CONFIG_PATH, stringify(value));
+      configMerged = true;
+    }
+  } catch (error) {
+    await writeLegacyMigrationMarker(files, { migrated: false, configMerged: false, profilesCopied: false, mcpMerged: false, reason: formatErrorMessage(error) });
+    throw new Error(`Failed to migrate legacy Kimi CLI config: ${formatErrorMessage(error)}`);
+  }
+
+  // Profile data is GUI-private state now. Do not create config.profiles.toml
+  // for Kimi Code; loadAppState performs a one-time in-memory legacy import
+  // from old files into SQLite panel settings on the next save.
+  profilesCopied = false;
+
+  const targetMcpPath = getDefaultMcpConfigPath(ConfigTarget.KimiCode);
+  const currentMcpDocument = await safeReadText(files, targetMcpPath);
+  const legacyMcpDocument = (await safeReadText(files, LEGACY_MCP_JSON_PATH)) ?? (await safeReadText(files, LEGACY_MCP_CONFIG_PATH));
+  if (legacyMcpDocument?.trim()) {
+    const merged = mergeJsonMcpDocuments(currentMcpDocument, legacyMcpDocument);
+    if (merged.changed) {
+      await files.ensureDir(dirnamePath(targetMcpPath));
+      await files.writeText(targetMcpPath, JSON.stringify(merged.value, null, 2));
+      mcpMerged = true;
+    }
+  }
+
+  const result = {
+    migrated: configMerged || profilesCopied || mcpMerged,
+    configMerged,
+    profilesCopied,
+    mcpMerged,
+  };
+  await writeLegacyMigrationMarker(files, result);
+  return result;
+}
+
 export function buildConfigDocument(state: AppState): string {
-  return stringify(state.mainConfig as unknown as Record<string, unknown>);
+  return normalizeTomlIndentation(stringify(state.mainConfig as unknown as Record<string, unknown>));
 }
 
 export function buildProfilesDocument(state: AppState): string {
@@ -560,7 +615,35 @@ export function buildPanelSettingsDocument(settings: PanelSettings): string {
       cleaned[key] = value;
     }
   }
-  return normalizePanelTomlIndentation(stringify(cleaned));
+  return normalizeTomlIndentation(stringify(cleaned));
+}
+
+async function restoreRedactedProviderSecrets(files: FileAccess, state: AppState): Promise<AppState> {
+  const providers = state.mainConfig.providers;
+  const redactedProviderNames = Object.entries(providers)
+    .filter(([, provider]) => provider.api_key === REDACTION_PLACEHOLDER)
+    .map(([name]) => name);
+
+  if (!redactedProviderNames.length) {
+    return state;
+  }
+
+  const diskConfig = await loadTomlFile(files, state.configPath, "main config");
+  const diskProviders = isRecord(diskConfig.providers) ? diskConfig.providers : {};
+  const next = cloneState(state);
+
+  for (const name of redactedProviderNames) {
+    const diskProvider = diskProviders[name];
+    if (!isRecord(diskProvider) || typeof diskProvider.api_key !== "string" || !diskProvider.api_key.trim()) {
+      continue;
+    }
+    next.mainConfig.providers[name] = {
+      ...next.mainConfig.providers[name],
+      api_key: diskProvider.api_key,
+    };
+  }
+
+  return next;
 }
 
 export function bootstrapProfiles(mainConfig: MainConfig): Record<string, Profile> {
@@ -712,23 +795,19 @@ export function deleteProfile(state: AppState, name: string): void {
 
 export function buildPreviewBundle(state: AppState, disk: {
   configDocument?: string | null;
-  profilesDocument?: string | null;
   panelSettingsDocument?: string | null;
   mcpDocument?: string | null;
 }): PreviewBundle {
   const normalizedState = normalizeStatePaths(state);
   const configDocument = buildConfigDocument(normalizedState);
-  const profilesDocument = buildProfilesDocument(normalizedState);
   const panelSettingsDocument = buildPanelSettingsDocument(normalizedState.panelSettings);
   const mcpDocument = buildMcpConfigDocument(normalizedState.mcpConfig);
 
   return {
     configDocument,
-    profilesDocument,
     panelSettingsDocument,
     mcpDocument,
     configDiff: createLineDiff(disk.configDocument ?? "", configDocument),
-    profilesDiff: createLineDiff(disk.profilesDocument ?? "", profilesDocument),
     panelDiff: createLineDiff(disk.panelSettingsDocument ?? "", panelSettingsDocument),
     mcpDiff: createLineDiff(disk.mcpDocument ?? "", mcpDocument),
   };
@@ -771,7 +850,7 @@ export function formatMissingModelError(
   return `${options.context}引用的默认模型不存在：${normalizedName}。这里需要填写 [models] 下的模型 key，不是 model 字段值。${availableHint}请先创建对应模型，或把配置Profile默认模型改成现有模型。`;
 }
 
-function parseProfiles(
+export function parseProfiles(
   mainConfig: MainConfig,
   rawProfiles: Record<string, unknown>,
 ): Record<string, Profile> {
@@ -830,11 +909,166 @@ function ensureActiveProfile(activeProfile: string, profiles: Record<string, Pro
   return profiles[activeProfile] ? activeProfile : Object.keys(profiles)[0] ?? DEFAULT_PROFILE_NAME;
 }
 
+function sanitizeProfilesRecord(
+  value: unknown,
+  fallback: Record<string, Profile> = {},
+): Record<string, Profile> {
+  if (!isRecord(value)) {
+    return structuredClone(fallback) as Record<string, Profile>;
+  }
+  const entries = Object.entries(value).map(([name, raw]) => [name, profileFromUnknown(name, raw)] as const);
+  return Object.fromEntries(entries);
+}
+
+function legacyProfilesPathForConfig(configPath: string): string {
+  return joinPath(dirnamePath(configPath), PROFILE_FILENAME);
+}
+
+async function loadLegacyProfiles(
+  files: FileAccess,
+  explicitProfilesPath: string | undefined,
+  configPath: string,
+  mainConfig: MainConfig,
+): Promise<{ profiles: Record<string, Profile>; activeProfile: string } | null> {
+  const candidates = [
+    explicitProfilesPath,
+    legacyProfilesPathForConfig(configPath),
+    LEGACY_PROFILES_PATH,
+  ].filter((path): path is string => typeof path === "string" && path.trim().length > 0);
+
+  for (const path of new Set(candidates)) {
+    let raw: Record<string, unknown>;
+    try {
+      raw = await loadTomlFile(files, path, "legacy profiles config");
+    } catch {
+      continue;
+    }
+    if (!Object.keys(raw).length) {
+      continue;
+    }
+    const profiles = parseProfiles(mainConfig, raw);
+    if (!Object.keys(profiles).length) {
+      continue;
+    }
+    return {
+      profiles,
+      activeProfile: typeof raw.active_profile === "string" ? raw.active_profile : DEFAULT_PROFILE_NAME,
+    };
+  }
+  return null;
+}
+
 function parseDocument(document: string | null): Record<string, unknown> {
   if (!document?.trim()) {
     return {};
   }
   return (parse(document) as Record<string, unknown>) ?? {};
+}
+
+async function safeReadText(files: FileAccess, path: string): Promise<string | null> {
+  try {
+    return await files.readText(path);
+  } catch {
+    return null;
+  }
+}
+
+async function writeLegacyMigrationMarker(files: FileAccess, result: LegacyKimiCliMigrationResult): Promise<void> {
+  await files.ensureDir(dirnamePath(LEGACY_MIGRATION_MARKER_PATH));
+  await files.writeText(LEGACY_MIGRATION_MARKER_PATH, JSON.stringify({
+    ...result,
+    source: LEGACY_CONFIG_PATH,
+    target: DEFAULT_CONFIG_PATH,
+    migratedAt: new Date().toISOString(),
+  }, null, 2));
+}
+
+function hasProfilesDocumentContent(document: string | null): boolean {
+  if (!document?.trim()) return false;
+  try {
+    const parsed = parseDocument(document);
+    return isRecord(parsed.profiles) && Object.keys(parsed.profiles).length > 0;
+  } catch {
+    return true;
+  }
+}
+
+function isEmptyRecordValue(value: unknown): boolean {
+  return isRecord(value) && Object.keys(value).length === 0;
+}
+
+function isMissingOrBlank(value: unknown): boolean {
+  return value === undefined || value === null || (typeof value === "string" && value.trim() === "");
+}
+
+function mergeLegacyMainConfig(
+  current: Record<string, unknown>,
+  legacy: Record<string, unknown>,
+): { value: Record<string, unknown>; changed: boolean } {
+  const next = structuredClone(current) as Record<string, unknown>;
+  let changed = false;
+
+  for (const key of ["providers", "models"] as const) {
+    const legacyTable = isRecord(legacy[key]) ? legacy[key] : {};
+    const currentTable = isRecord(next[key]) ? { ...next[key] } : {};
+    for (const [entryKey, entryValue] of Object.entries(legacyTable)) {
+      if (currentTable[entryKey] === undefined) {
+        currentTable[entryKey] = entryValue;
+        changed = true;
+      }
+    }
+    if (Object.keys(currentTable).length > 0) {
+      next[key] = currentTable;
+    }
+  }
+
+  for (const key of [
+    "default_model",
+    "default_editor",
+    "theme",
+    "show_thinking_stream",
+    "merge_all_available_skills",
+    "default_thinking",
+    "default_yolo",
+    "default_plan_mode",
+  ]) {
+    if (legacy[key] !== undefined && isMissingOrBlank(next[key])) {
+      next[key] = legacy[key];
+      changed = true;
+    }
+  }
+
+  for (const key of ["hooks", "loop_control", "background", "notifications", "services"]) {
+    if (legacy[key] !== undefined && (next[key] === undefined || isEmptyRecordValue(next[key]) || (Array.isArray(next[key]) && next[key].length === 0))) {
+      next[key] = legacy[key];
+      changed = true;
+    }
+  }
+
+  return { value: next, changed };
+}
+
+function mergeJsonMcpDocuments(
+  currentDocument: string | null,
+  legacyDocument: string,
+): { value: Record<string, unknown>; changed: boolean } {
+  const current = currentDocument?.trim()
+    ? JSON.parse(currentDocument) as Record<string, unknown>
+    : {};
+  const legacy = JSON.parse(legacyDocument) as Record<string, unknown>;
+  const currentServers = isRecord(current.mcpServers) ? { ...current.mcpServers } : {};
+  const legacyServers = isRecord(legacy.mcpServers) ? legacy.mcpServers : {};
+  let changed = false;
+  for (const [name, server] of Object.entries(legacyServers)) {
+    if (currentServers[name] === undefined) {
+      currentServers[name] = server;
+      changed = true;
+    }
+  }
+  if (!changed) {
+    return { value: current, changed: false };
+  }
+  return { value: { ...current, mcpServers: currentServers }, changed: true };
 }
 
 async function loadTomlFile(
@@ -1031,41 +1265,8 @@ function defaultBackupPath(): string {
   return joinPath(DEFAULT_PANEL_DIRECTORY, BACKUP_DIRECTORY_NAME);
 }
 
-function resolveProfilesPath(options: {
-  explicitProfilesPath?: string;
-  configPath: string;
-  supportsProfiles: boolean;
-}): string {
-  if (!options.supportsProfiles) {
-    return options.configPath; // kimi-cli 使用 config.toml 本身
-  }
-  if (options.explicitProfilesPath?.trim()) {
-    return options.explicitProfilesPath.trim();
-  }
-  return defaultProfilesPath(options.configPath);
-}
-
-/**
- * 从 MainConfig 提取 Profile（用于 kimi-cli 模式）
- */
-function extractProfileFromMainConfig(mainConfig: MainConfig): Profile {
-  return {
-    name: DEFAULT_PROFILE_NAME,
-    label: mainConfig.profile_label || DEFAULTS.profile_label,
-    default_model: mainConfig.default_model || "",
-    default_thinking: mainConfig.default_thinking ?? true,
-    default_yolo: mainConfig.default_yolo ?? false,
-    default_plan_mode: mainConfig.default_plan_mode ?? false,
-    default_editor: mainConfig.default_editor || "",
-    theme: mainConfig.theme || "dark",
-    show_thinking_stream: mainConfig.show_thinking_stream ?? false,
-    merge_all_available_skills: mainConfig.merge_all_available_skills ?? true,
-  };
-}
-
 export function normalizeStatePaths(state: AppState): AppState {
-  const configTarget = state.configTarget ?? ConfigTarget.KimiCode;
-  const resolver = new ConfigResolver(configTarget);
+  const configTarget = ConfigTarget.KimiCode;
   const defaultConfigPath = getDefaultConfigPath(configTarget);
   const configPath = resolveTargetDefaultPath(
     state.configPath,
@@ -1078,13 +1279,9 @@ export function normalizeStatePaths(state: AppState): AppState {
     getDefaultMcpConfigPath(configTarget),
     KNOWN_DEFAULT_MCP_CONFIG_PATHS,
   );
-  const profilesPath = resolver.supportsProfiles()
-    ? resolveTargetDefaultPath(
-        state.profilesPath,
-        defaultProfilesPath(configPath),
-        KNOWN_DEFAULT_PROFILES_PATHS,
-      )
-    : configPath;
+  const profiles = sanitizeProfilesRecord(state.profiles);
+  const activeProfile = ensureActiveProfile(state.activeProfile, profiles);
+  const profilesPath = "";
   const panelSettings: PanelSettings = {
     ...state.panelSettings,
     config_target: configTarget,
@@ -1110,6 +1307,8 @@ export function normalizeStatePaths(state: AppState): AppState {
     shortcuts: normalizeShortcuts(state.panelSettings.shortcuts),
     last_display_id: state.panelSettings.last_display_id,
     mcp_servers: cloneMcpServers(state.mcpConfig.mcpServers),
+    profiles,
+    active_profile: activeProfile,
     profiles_path: profilesPath,
     follow_config_profiles: true,
   };
@@ -1124,8 +1323,12 @@ export function normalizeStatePaths(state: AppState): AppState {
       ...panelSettings,
       config_target: configTarget,
       mcp_servers: cloneMcpServers(state.mcpConfig.mcpServers),
+      profiles,
+      active_profile: activeProfile,
       profiles_path: profilesPath,
     },
+    profiles,
+    activeProfile,
   };
 }
 
@@ -1380,7 +1583,7 @@ function parseFavorites(value: unknown): PanelSettings["favorites"] {
   return (result.providers?.length || result.profiles?.length) ? result : undefined;
 }
 
-function normalizePanelTomlIndentation(document: string): string {
+function normalizeTomlIndentation(document: string): string {
   return document.replace(/^[ \t]+(?=(\[|[A-Za-z0-9_.-]+\s*=))/gm, "");
 }
 

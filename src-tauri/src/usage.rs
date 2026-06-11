@@ -3,7 +3,7 @@
 //! 设计：Rust 持有连接，前端传 SQL + 具名参数。SQL 语句、时间计算、游标编解码、
 //! 日志解析等纯逻辑全部保留在前端 TS（usageDb 的 27 条 SQL 几乎原样下传）。
 //!
-//! 数据库文件：~/.kimi/app.db（全局应用数据库）
+//! 数据库文件：~/.kimi-code/.panel/app.db（全局应用数据库）
 //! 包含表：usage 相关表、config_history、panel_settings
 
 use std::collections::HashMap;

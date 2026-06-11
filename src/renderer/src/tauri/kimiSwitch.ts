@@ -12,8 +12,8 @@ import {
   createDefaultPanelSettings,
   getDefaultConfigPath,
   getDefaultMcpConfigPath,
-  getDefaultProfilesPath,
   loadAppState,
+  migrateLegacyKimiCliConfigToKimiCode,
   normalizeStatePaths,
   saveAppState,
   cloneState,
@@ -23,7 +23,7 @@ import { buildConfigDoctorReport, buildRedactedPreviewBundle } from "@shared/con
 import { scanSkills } from "@shared/skillsStore";
 import { compareReleaseVersions } from "@shared/versionUtils";
 import { computeEventCost, resolveModelPricing } from "@shared/pricing";
-import type { AppState, ConfigTarget, ManagedFileId, ModelConfig, PanelSettings, PreviewBundle, OpenKimiTerminalRequest, FileSnapshotBundle } from "@shared/types";
+import type { AppState, ManagedFileId, ModelConfig, PanelSettings, PreviewBundle, OpenKimiTerminalRequest, FileSnapshotBundle } from "@shared/types";
 
 import { tauriFileAccess, pathExists } from "./fileAccess";
 import * as usageDb from "./usageDb";
@@ -44,12 +44,20 @@ const skillFileAccess = {
 
 // ── 用量洞察运行时（log watcher + db 生命周期）──
 // 全局应用数据库：包含 usage 数据、config_history、panel_settings
-const USAGE_DB_PATH = "~/.kimi/.panel/app.db";
-const USAGE_JSONL_DIR = "~/.kimi/.panel/usage";
+const USAGE_DB_PATH = "~/.kimi-code/.panel/app.db";
+const USAGE_JSONL_DIR = "~/.kimi-code/.panel/usage";
 let logWatcher: UsageLogWatcher | null = null;
 let usageOpen = false;
 let currentAppState: AppState | null = null;
 let shortcutSyncTask: Promise<void> = Promise.resolve();
+
+type LoadStatePaths = {
+  configTarget?: AppState["configTarget"];
+  configPath?: string;
+  profilesPath?: string;
+  panelSettingsPath?: string;
+  mcpConfigPath?: string;
+};
 
 function activeProfile(): string {
   return currentAppState?.activeProfile ?? "default";
@@ -144,23 +152,23 @@ function notImplemented(name: string): never {
 
 export const kimiSwitchTauri = {
   // ── 核心状态链路 ──
-  loadState: async (paths?: Record<string, string>): Promise<AppState> => {
+  loadState: async (paths?: LoadStatePaths): Promise<AppState> => {
     // 确保数据库打开（panel_settings 依赖数据库连接）
     if (!usageOpen) {
       // 迁移数据库文件到 .panel 目录（如果还在根目录）
       const oldDbPath = "~/.kimi/app.db";
-      const newDbPath = USAGE_DB_PATH; // ~/.kimi/.panel/app.db
+      const newDbPath = USAGE_DB_PATH; // ~/.kimi-code/.panel/app.db
       const { pathExists, ensureDir, moveFile, removeFile } = await import("./fileAccess");
 
       try {
         if (await pathExists(oldDbPath)) {
           console.log("Migrating app.db to .panel directory...");
           // 确保目标目录存在
-          await ensureDir("~/.kimi/.panel");
+          await ensureDir("~/.kimi-code/.panel");
           // 移动文件（如果目标已存在则删除旧文件）
           if (!(await pathExists(newDbPath))) {
             await moveFile(oldDbPath, newDbPath);
-            console.log("Database migrated to ~/.kimi/.panel/app.db");
+            console.log("Database migrated to ~/.kimi-code/.panel/app.db");
           } else {
             console.log("Target database already exists, removing old file...");
             await removeFile(oldDbPath);
@@ -193,12 +201,29 @@ export const kimiSwitchTauri = {
     const { initMcpServersStore, migrateMcpFromJson } = await import("./mcpServersStore");
     await initMcpServersStore();
 
+    const detectedTarget = await cli.detectActiveKimiTarget();
+    const effectiveTarget = "kimi-code";
+    const effectivePaths: LoadStatePaths = {
+      ...paths,
+      configTarget: effectiveTarget,
+    };
+
+    try {
+      const migration = await migrateLegacyKimiCliConfigToKimiCode(tauriFileAccess);
+      if (migration.migrated) {
+        console.log("Legacy Kimi CLI config migrated to Kimi Code:", migration);
+      }
+    } catch (err) {
+      console.warn("Legacy Kimi CLI config migration skipped:", err);
+    }
+
     // 自动迁移 mcp.json 到数据库（如果存在）
     try {
-      const migrationTarget = paths?.configTarget ?? (await getPanelSettings())?.config_target ?? "kimi-code";
+      const migrationTarget = effectiveTarget;
       const migrationPaths = new Set([
-        paths?.mcpConfigPath,
+        effectivePaths.mcpConfigPath,
         getDefaultMcpConfigPath(migrationTarget),
+        "~/.kimi-code/mcp.json",
         "~/.kimi/mcp.json",
         "~/.kimi/config.mcp.json",
       ].filter((path): path is string => Boolean(path)));
@@ -209,8 +234,29 @@ export const kimiSwitchTauri = {
       console.warn("MCP migration skipped:", err);
     }
 
-    const state = await loadAppState(tauriFileAccess, paths);
+    const state = await loadAppState(tauriFileAccess, effectivePaths);
+    state.kimiTargetDetection = detectedTarget;
     currentAppState = state;
+
+    const currentSettings = await getPanelSettings();
+    if (
+        currentSettings &&
+      (
+        currentSettings.config_target !== state.panelSettings.config_target ||
+        currentSettings.config_path !== state.panelSettings.config_path
+      )
+    ) {
+      void savePanelSettings({
+        ...currentSettings,
+        config_target: state.panelSettings.config_target,
+        config_path: state.panelSettings.config_path,
+        profiles: state.profiles,
+        active_profile: state.activeProfile,
+        profiles_path: "",
+        follow_config_profiles: true,
+      }).catch((err) => console.warn("Failed to sync detected config target:", err));
+    }
+
     if (state.panelSettings.insights_status === "enabled") {
       void ensureUsageRuntime().catch((e) => console.error("usage runtime", e));
     }
@@ -221,11 +267,10 @@ export const kimiSwitchTauri = {
     return state;
   },
   saveState: async (state: AppState): Promise<{ ok: true }> => {
-    // 保存前捕获快照（4 个配置文件）
+    // 保存前捕获快照（Kimi 标准配置 + GUI SQLite 导出）
     const normalized = normalizeStatePaths(state);
     await Promise.all([
       captureSnapshot("config", normalized.configPath),
-      captureSnapshot("profiles", normalized.profilesPath),
       captureSnapshot("panel", normalized.panelSettingsPath),
       captureSnapshot("mcp", normalized.mcpConfigPath),
     ]);
@@ -241,11 +286,10 @@ export const kimiSwitchTauri = {
     return { ok: true };
   },
   saveStateSafe: async (state: AppState): Promise<{ ok: true }> => {
-    // 保存前捕获快照（4 个配置文件）
+    // 保存前捕获快照（Kimi 标准配置 + GUI SQLite 导出）
     const normalized = normalizeStatePaths(state);
     await Promise.all([
       captureSnapshot("config", normalized.configPath),
-      captureSnapshot("profiles", normalized.profilesPath),
       captureSnapshot("panel", normalized.panelSettingsPath),
       captureSnapshot("mcp", normalized.mcpConfigPath),
     ]);
@@ -260,17 +304,17 @@ export const kimiSwitchTauri = {
 
     return { ok: true };
   },
-  saveConfigTargetPreference: async (configTarget: ConfigTarget): Promise<{ ok: true }> => {
+  saveConfigTargetPreference: async (): Promise<{ ok: true }> => {
     const currentSettings = (await getPanelSettings())
       ?? currentAppState?.panelSettings
       ?? createDefaultPanelSettings();
+    const configTarget = "kimi-code" as const;
     const configPath = getDefaultConfigPath(configTarget);
-    const profilesPath = getDefaultProfilesPath(configTarget, configPath);
     const saved = await savePanelSettings({
       ...currentSettings,
       config_target: configTarget,
       config_path: configPath,
-      profiles_path: profilesPath,
+      profiles_path: "",
       follow_config_profiles: true,
     });
     if (!saved) {
@@ -284,7 +328,7 @@ export const kimiSwitchTauri = {
           ...currentAppState.panelSettings,
           config_target: configTarget,
           config_path: configPath,
-          profiles_path: profilesPath,
+          profiles_path: "",
           follow_config_profiles: true,
         },
       };
@@ -298,7 +342,6 @@ export const kimiSwitchTauri = {
     const normalized = normalizeStatePaths(state);
     const disk = await readManagedDocuments({
       config: normalized.configPath,
-      profiles: normalized.profilesPath,
       panel: normalized.panelSettingsPath,
       mcp: normalized.mcpConfigPath,
     });
@@ -312,7 +355,6 @@ export const kimiSwitchTauri = {
     };
     const rawDocs: Partial<Record<ManagedFileId, unknown>> = {
       config: safeToml(disk.config),
-      profiles: safeToml(disk.profiles),
       panel: safeToml(disk.panel),
       mcp: safeJson(disk.mcp),
     };
@@ -322,7 +364,6 @@ export const kimiSwitchTauri = {
     const normalized = normalizeStatePaths(state);
     const disk = await readManagedDocuments({
       config: normalized.configPath,
-      profiles: normalized.profilesPath,
       panel: normalized.panelSettingsPath,
       mcp: normalized.mcpConfigPath,
     });
@@ -362,17 +403,27 @@ export const kimiSwitchTauri = {
   // ── CLI / MCP / 连通性 ──
   getInstallSource: (): Promise<"homebrew" | "manual" | "development"> => Promise.resolve("manual"),
   getCliVersion: (options?: { checkLatest?: boolean; target?: AppState["configTarget"] }) =>
-    cli.getTargetCliVersion(options?.target ?? "kimi-cli", { checkLatest: options?.checkLatest }),
+    cli.getTargetCliVersion(options?.target ?? "kimi-code", { checkLatest: options?.checkLatest }),
   runProvidersHealthCheck: (state: AppState) => cli.runProvidersHealthCheck(state),
   upgradeKimiCli: (target?: AppState["configTarget"], options?: { install?: boolean }) =>
-    cli.upgradeTargetCli(target ?? "kimi-cli", options),
+    cli.upgradeTargetCli(target ?? "kimi-code", options),
   startKimiOAuthLogin: (target: AppState["configTarget"], onEvent?: (event: cli.KimiOAuthLoginEvent) => void) =>
     cli.startKimiOAuthLogin(target, onEvent),
   startKimiCodeOAuthLogin: (onEvent?: (event: cli.KimiOAuthLoginEvent) => void) =>
     cli.startKimiOAuthLogin("kimi-code", onEvent),
-  testMcpServer: (name: string) => cli.runKimiMcpCommand(["test", name]),
-  authMcpServer: (name: string) => cli.runKimiMcpCommand(["auth", name]),
-  resetMcpServerAuth: (name: string) => cli.runKimiMcpCommand(["reset-auth", name]),
+  testMcpServer: (name: string) => {
+    const server = currentAppState?.mcpConfig.mcpServers[name];
+    if (!server) throw new Error(`MCP server not found: ${name}`);
+    return cli.runKimiMcpServerTest(name, server);
+  },
+  authMcpServer: (name: string) => {
+    void name;
+    throw new Error("Kimi Code does not expose MCP authorization commands in the current CLI.");
+  },
+  resetMcpServerAuth: (name: string) => {
+    void name;
+    throw new Error("Kimi Code does not expose MCP authorization reset commands in the current CLI.");
+  },
   testProfileConnectivity: (state: AppState, profileName: string, modelName?: string) => {
     const draft = cloneState(state);
     applyProfile(draft, profileName);

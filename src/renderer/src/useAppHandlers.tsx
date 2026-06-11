@@ -400,14 +400,9 @@ export function useAppHandlers() {
         format: "TOML",
         content: preview.configDocument,
       },
-      profiles: {
-        title: t(locale, "previewProfiles"),
-        format: "TOML",
-        content: preview.profilesDocument,
-      },
       panel: {
         title: t(locale, "previewPanel"),
-        format: "TOML",
+        format: "JSON",
         content: preview.panelSettingsDocument,
       },
       mcp: {

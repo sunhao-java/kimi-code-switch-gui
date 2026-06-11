@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 
 export type TabId = "overview" | "profiles" | "providers" | "models" | "mcp" | "skills" | "insights" | "settings" | "about";
-export type PreviewFileId = "config" | "profiles" | "panel" | "mcp";
+export type PreviewFileId = "config" | "panel" | "mcp";
 
 export const TAB_ITEMS: Array<{ id: TabId; icon: typeof Layers3; labelKey: string }> = [
   { id: "overview", icon: Sparkles, labelKey: "overview" },
@@ -43,11 +43,9 @@ export const ABOUT_TAB: { id: TabId; icon: typeof Info; labelKey: string } = {
 
 export const emptyPreview: PreviewBundle = {
   configDocument: "",
-  profilesDocument: "",
   panelSettingsDocument: "",
   mcpDocument: "",
   configDiff: "",
-  profilesDiff: "",
   panelDiff: "",
   mcpDiff: "",
 };
@@ -273,10 +271,6 @@ export const MCP_TRANSPORT_OPTIONS: Array<{
   {
     value: "streamable-http",
     label: { "zh-CN": "Streaming HTTP", "zh-TW": "Streaming HTTP", "en-US": "Streaming HTTP", "ja-JP": "Streaming HTTP", "de-DE": "Streaming HTTP", "es-ES": "Streaming HTTP" },
-  },
-  {
-    value: "sse",
-    label: { "zh-CN": "SSE", "zh-TW": "SSE", "en-US": "SSE", "ja-JP": "SSE", "de-DE": "SSE", "es-ES": "SSE" },
   },
   {
     value: "stdio",

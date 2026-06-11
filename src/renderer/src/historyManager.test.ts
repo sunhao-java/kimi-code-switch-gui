@@ -102,7 +102,7 @@ describe("historyManager", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "panel",
-          title: "config.panel.toml",
+          title: "config.panel.json",
           changeCount: expect.any(Number),
         }),
       ]),

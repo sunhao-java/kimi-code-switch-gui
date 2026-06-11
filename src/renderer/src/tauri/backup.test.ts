@@ -104,8 +104,8 @@ describe("createBackupSnapshot — local branch", () => {
     // stamp is YYYYMMDD-HHMMSS-mmm, host sanitized to lowercase
     expect(result.backupName).toMatch(/^backup-\d{8}-\d{6}-\d{3}-my-laptop$/);
     expect(result.backupPath).toContain("/backups/backup-");
-    // 5 backup docs + 1 metadata file written
-    expect(fa.writeText).toHaveBeenCalledTimes(6);
+    // 4 backup docs + 1 metadata file written; profiles live in config.panel.json.
+    expect(fa.writeText).toHaveBeenCalledTimes(5);
     expect(fa.ensureDir).toHaveBeenCalled();
     expect(webdav.uploadWebDavFile).not.toHaveBeenCalled();
   });
@@ -128,8 +128,8 @@ describe("createBackupSnapshot — webdav branch", () => {
 
     expect(result.ok).toBe(true);
     expect(webdav.ensureWebDavCollection).toHaveBeenCalled();
-    // 5 backup docs + metadata uploaded
-    expect(webdav.uploadWebDavFile).toHaveBeenCalledTimes(6);
+    // 4 backup docs + metadata uploaded; profiles live in config.panel.json.
+    expect(webdav.uploadWebDavFile).toHaveBeenCalledTimes(5);
     expect(webdav.pruneWebDavBackups).toHaveBeenCalled();
     expect(fa.writeText).not.toHaveBeenCalled();
   });
@@ -183,9 +183,9 @@ describe("restoreBackupSafe — rollback point", () => {
     if (!result.ok) return;
     // rollback snapshot is itself a backup -> rollbackBackupName follows the backup naming
     expect(result.rollbackBackupName).toMatch(/^backup-/);
-    // restored documents are written back to the managed paths (4 ids)
+    // restored documents are written back to the managed paths (3 ids)
     const restoredWrites = fa.writeText.mock.calls.filter(([p]) => String(p).startsWith("/cfg/"));
-    expect(restoredWrites.length).toBeGreaterThanOrEqual(4);
+    expect(restoredWrites.length).toBeGreaterThanOrEqual(3);
   });
 
   it("returns an external-change conflict result without writing when a conflict is detected", async () => {

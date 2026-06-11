@@ -35,7 +35,9 @@ function primeInvokeForHistoricalIngest(log: string): void {
       if (a.path?.endsWith("kimi.log")) return { size: 0, mtime_ms: 0, ino: 1 } as never;
       return { size: log.length, mtime_ms: 0, ino: 2 } as never;
     }
-    if (cmd === "read_file_slice") return log as never;
+    if (cmd === "read_file_slice") {
+      return a.path?.endsWith("kimi-code.log") ? "" as never : log as never;
+    }
     return undefined as never;
   });
 }

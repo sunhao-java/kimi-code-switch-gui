@@ -1,7 +1,8 @@
 export type Locale = "zh-CN" | "zh-TW" | "en-US" | "ja-JP" | "de-DE" | "es-ES";
 export type LocalizedText = Partial<Record<Locale, string>> & Record<"en-US", string>;
 export type AppearanceMode = "auto" | "dark" | "light";
-export type ConfigTarget = "kimi-cli" | "kimi-code";
+export type ConfigTarget = "kimi-code";
+export type KimiTargetDetectionStatus = "detected" | "not-installed";
 export type AppearanceTheme = "aurora" | "ocean" | "violet" | "sunset" | "forest" | "sakura" | "mint" | "cosmos" | "amber";
 export type UiFontSize = "mini" | "compact" | "small" | "standard" | "large" | "extra-large";
 export type DisplayOpenMode = "random" | "remember-last" | "active-display";
@@ -116,7 +117,11 @@ export interface PanelSettings {
   version: number;
   config_target?: ConfigTarget;
   config_path: string;
+  profiles: Record<string, Profile>;
+  active_profile: string;
+  /** @deprecated Profiles are stored in SQLite panel settings. Kept only for legacy imports. */
   profiles_path: string;
+  /** @deprecated Profiles are stored in SQLite panel settings. Kept only for legacy imports. */
   follow_config_profiles: boolean;
   theme: AppearanceMode;
   appearance_theme: AppearanceTheme;
@@ -161,6 +166,16 @@ export interface PanelSettings {
 
 export interface AppState {
   configTarget?: ConfigTarget;
+  kimiTargetDetection?: {
+    target: ConfigTarget;
+    installed: boolean;
+    status: KimiTargetDetectionStatus;
+    version: string;
+    executablePath: string;
+    resolvedPath: string;
+    candidates: string[];
+    reason: string;
+  };
   configPath: string;
   profilesPath: string;
   panelSettingsPath: string;
@@ -208,16 +223,14 @@ export interface ProfileDiff {
 
 export interface PreviewBundle {
   configDocument: string;
-  profilesDocument: string;
   panelSettingsDocument: string;
   mcpDocument: string;
   configDiff: string;
-  profilesDiff: string;
   panelDiff: string;
   mcpDiff: string;
 }
 
-export type ManagedFileId = "config" | "profiles" | "panel" | "mcp";
+export type ManagedFileId = "config" | "panel" | "mcp";
 
 export interface FileFingerprint {
   id: ManagedFileId;

@@ -31,7 +31,7 @@ description: Review helper
 
   it("merges all available brand directories when enabled", async () => {
     const files = createMemorySkillFs({
-      "~/.kimi/skills/planner/SKILL.md": `---
+      "~/.kimi-code/skills/planner/SKILL.md": `---
 name: planner
 description: Plan helper
 ---
@@ -65,7 +65,7 @@ description: Build helper
 
   it("marks later duplicate skills as overridden based on discovery priority", async () => {
     const files = createMemorySkillFs({
-      "~/.kimi/skills/reviewer/SKILL.md": `---
+      "~/.kimi-code/skills/reviewer/SKILL.md": `---
 name: reviewer
 description: Preferred reviewer
 ---
@@ -83,7 +83,7 @@ description: Secondary reviewer
       mergeAllAvailableSkills: true,
     });
 
-    const effective = report.skills.find((skill) => skill.sourceLabel.includes("~/.kimi/skills"));
+    const effective = report.skills.find((skill) => skill.sourceLabel.includes("~/.kimi-code/skills"));
     const overridden = report.skills.find((skill) => skill.sourceLabel.includes("~/.claude/skills"));
 
     expect(effective?.effective).toBe(true);
@@ -99,7 +99,7 @@ description: Custom directory
 ---
 # Custom
 `,
-      "~/.kimi/skills/ignored/SKILL.md": `---
+      "~/.kimi-code/skills/ignored/SKILL.md": `---
 name: ignored
 description: Should not load
 ---
@@ -118,7 +118,7 @@ description: Should not load
 
   it("still infers flow skills from frontmatter and diagram content", async () => {
     const files = createMemorySkillFs({
-      "~/.kimi/skills/flow-helper/SKILL.md": `---
+      "~/.kimi-code/skills/flow-helper/SKILL.md": `---
 name: FlowHelper
 type: flow
 ---
@@ -186,7 +186,7 @@ description:
 
   it("marks duplicate skills from disabled directories as not effective", async () => {
     const files = createMemorySkillFs({
-      "~/.kimi/skills/reviewer/SKILL.md": `---
+      "~/.kimi-code/skills/reviewer/SKILL.md": `---
 name: reviewer
 description: Preferred reviewer
 ---
@@ -204,7 +204,7 @@ description: Visible but disabled
       mergeAllAvailableSkills: false,
     });
 
-    const enabled = report.skills.find((skill) => skill.sourceLabel.includes("~/.kimi/skills"));
+    const enabled = report.skills.find((skill) => skill.sourceLabel.includes("~/.kimi-code/skills"));
     const disabled = report.skills.find((skill) => skill.sourceLabel.includes("~/.codex/skills"));
 
     expect(enabled?.enabled).toBe(true);

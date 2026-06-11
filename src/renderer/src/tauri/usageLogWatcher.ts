@@ -5,8 +5,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type { UsageEvent } from "@shared/usageTypes";
 import * as db from "./usageDb";
 
-const LOG_DIR = "~/.kimi/logs";
-const LOG_PATH = "~/.kimi/logs/kimi.log";
+const LOG_DIR = "~/.kimi-code/logs";
+const LOG_PATH = "~/.kimi-code/logs/kimi-code.log";
 
 const RE_LLM_STEP = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+) \| INFO\s+\| .+kimisoul:_step:\d+ \| ([0-9a-f-]+) - LLM step completed in ([\d.]+)s \(input=(\d+), output=(\d+)\)/;
 const RE_SESSION_CREATE = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+) \| INFO\s+\| .+:_run:\d+ \|  - Created new session: ([0-9a-f-]+)/;
@@ -88,7 +88,7 @@ export class UsageLogWatcher {
     try {
       const entries = await this.listDir(LOG_DIR);
       const rotated = entries
-        .filter((name) => name.startsWith("kimi.") && name.endsWith(".log") && name !== "kimi.log")
+        .filter((name) => name.endsWith(".log") && name !== "kimi-code.log")
         .sort();
       for (const name of rotated) {
         await this.ingestFile(`${LOG_DIR}/${name}`);

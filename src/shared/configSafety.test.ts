@@ -68,9 +68,22 @@ describe("configSafety", () => {
     const documents = buildManagedDocuments(createState());
 
     expect(documents.config).toContain('default_model = "kimi_gateway/kimi-k2.5"');
-    expect(documents.profiles).toContain("active_profile");
+    expect(documents.profiles).toBeUndefined();
     expect(documents.panel).toContain("backup_strategy");
+    expect(documents.panel).toContain("active_profile");
     expect(documents.mcp).toContain('"mcpServers"');
+  });
+
+  it("does not flag blank model references as missing model errors", () => {
+    const state = createState();
+    state.mainConfig.default_model = "";
+    state.profiles.default.default_model = "";
+
+    const report = buildConfigDoctorReport(state);
+    const ids = report.issues.map((issue) => issue.id);
+
+    expect(ids).not.toContain("config.default-model.missing");
+    expect(ids).not.toContain("profiles.default-model.missing.default");
   });
 
   it("redacts provider API keys and URL secrets from preview output", () => {
@@ -211,11 +224,30 @@ describe("configSafety", () => {
     expect(issueIds).toContain("webdav.path.invalid");
   });
 
+  it("reports SSE MCP servers as unsupported by Kimi Code", () => {
+    const state = createState();
+    state.mcpConfig.mcpServers["amap-maps"] = {
+      enabled: true,
+      transport: "sse",
+      url: "https://mcp.api-inference.modelscope.net/example/sse",
+      headers: {},
+      command: "",
+      args: [],
+      env: {},
+    };
+
+    const report = buildConfigDoctorReport(state);
+
+    expect(report.ok).toBe(false);
+    expect(report.issues.map((issue) => issue.id)).toContain("mcp.sse-unsupported.amap-maps");
+  });
+
   describe("detectUnknownFields (config drift)", () => {
     it("returns no drift when every field is known", () => {
       const drift = detectUnknownFields({
         config: {
           default_model: "kimi_gateway/kimi-k2.5",
+          profile_label: "Default",
           theme: "dark",
           models: { "kimi_gateway/kimi-k2.5": { provider: "kimi_gateway", model: "kimi-k2.5", max_context_size: 1024, capabilities: [] } },
           providers: { kimi_gateway: { type: "kimi", base_url: "https://api.example.test", api_key: "sk-x" } },
@@ -244,6 +276,7 @@ describe("configSafety", () => {
       expect(keys).toContain("future_feature_flag");
       expect(keys).toContain("another_new_top_key");
       expect(keys).not.toContain("default_model");
+      expect(keys).not.toContain("profile_label");
       expect(drift.every((entry) => entry.file === "config")).toBe(true);
       expect(drift.every((entry) => entry.path === "(root)")).toBe(true);
     });
@@ -266,21 +299,6 @@ describe("configSafety", () => {
       expect(modelDrift?.path).toBe("models.kimi_gateway/k2");
     });
 
-    it("detects unknown profile fields under the profiles map", () => {
-      const drift = detectUnknownFields({
-        profiles: {
-          active_profile: "default",
-          profiles: {
-            default: { name: "default", label: "Default", default_model: "m", experimental_voice: true },
-          },
-        },
-      });
-
-      const entry = drift.find((item) => item.key === "experimental_voice");
-      expect(entry?.file).toBe("profiles");
-      expect(entry?.path).toBe("profiles.default");
-    });
-
     it("treats free-form record fields and MCP server bodies as open (no false positives)", () => {
       const drift = detectUnknownFields({
         config: {
@@ -300,18 +318,18 @@ describe("configSafety", () => {
     it("aggregates drift across multiple files", () => {
       const drift = detectUnknownFields({
         config: { surprise_key: 1 },
-        profiles: { active_profile: "default", profiles: {}, stray_profiles_key: true },
+        mcp: { stray_mcp_key: true },
       });
 
       const files = new Set(drift.map((entry) => entry.file));
       expect(files.has("config")).toBe(true);
-      expect(files.has("profiles")).toBe(true);
+      expect(files.has("mcp")).toBe(true);
     });
 
     it("ignores null, undefined, and non-object raw documents", () => {
       const drift = detectUnknownFields({
         config: null,
-        profiles: undefined,
+        panel: undefined,
         mcp: "not-an-object" as unknown,
       });
 

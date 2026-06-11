@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Activity, Bug, Copy, Download, ExternalLink, FileInput, FolderOpen, History, LoaderCircle, LogIn, Plus, Power, RefreshCw, RotateCcw, Star, Terminal, Trash2, Upload, X } from "lucide-react";
+import { Activity, Braces, Bug, Copy, Download, ExternalLink, FileInput, FolderOpen, History, LoaderCircle, LogIn, Plus, Power, RefreshCw, RotateCcw, Star, Terminal, Trash2, Upload, X } from "lucide-react";
 import { applyProfile, cloneProfile, deleteModel, deleteProfile, deleteProvider, exportConfig, getImportPreview, importConfig, toggleFavorite, validateImportData, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
+import { buildMcpConfigDocument } from "@shared/mcpStore";
 import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
 import { getCascadePreview } from "@shared/configRelations";
 import {
@@ -19,7 +20,6 @@ import type {
   BackupFrequency,
   BackupStrategy,
   CloseBehavior,
-  ConfigTarget,
   DisplayOpenMode,
   ExportBundle,
   ImportConflictStrategy,
@@ -53,7 +53,7 @@ import type { AppContext } from "./appContext";
 import {
   ProviderForm, ModelForm, ProfileForm, McpServerForm,
   SecretField, PathField, createCopyName, createLocalizedCopyName, createDefaultMcpServer,
-  formatMessage, formatSkillPathLabel, renderSkillPathLabel, DoctorDriftList,
+  formatMessage, formatSkillPathLabel, renderSkillPathLabel, DoctorDriftList, McpJsonViewerDialog,
 } from "../tabComponents";
 
 type TabPanelsProps = Pick<
@@ -120,7 +120,6 @@ type TabPanelsProps = Pick<
   | "runAfterUnsavedHandled"
   | "onSave"
   | "persistState"
-  | "persistConfigTarget"
   | "confirmDeleteResource"
   | "refreshSkills"
   | "openDocumentViewer"
@@ -139,7 +138,6 @@ type TabPanelsProps = Pick<
 };
 
 type SettingsSubTab = "general" | "config-target" | "shortcuts" | "backup" | "doctor" | "insights" | "history";
-const POST_CONFIG_TARGET_SWITCH_TAB_KEY = "kimi-switch:post-config-target-switch-tab";
 
 type KimiOAuthLoginState = {
   status: "idle" | "running" | "success" | "failed" | "account-required";
@@ -265,7 +263,6 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     updateImmediateState,
     runAfterUnsavedHandled,
     onSave,
-    persistConfigTarget,
     persistState,
     confirmDeleteResource,
     refreshSkills,
@@ -295,8 +292,15 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     message: "",
     messageKey: "kimiOauthReady",
   });
-  const currentConfigTarget = state.panelSettings.config_target ?? "kimi-code";
-  const currentConfigTargetLabel = currentConfigTarget === "kimi-code" ? "Kimi Code" : "Kimi CLI";
+  const currentConfigTarget = "kimi-code" as const;
+  const currentConfigTargetLabel = "Kimi Code";
+  const targetDetection = state.kimiTargetDetection;
+  const targetDetectionStatusLabel = targetDetection?.status === "detected"
+    ? t(locale, "configTargetDetected")
+    : t(locale, "configTargetNotDetected");
+  const targetDetectionStatusClass = targetDetection?.status === "detected"
+    ? "is-ok"
+    : "is-danger";
   const shortcutGroups = [
     {
       scope: "global" as const,
@@ -317,6 +321,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
 
   const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>("config-target");
   const [importDialog, setImportDialog] = useState<{ open: boolean; preview: ImportPreview | null; data: ExportBundle | null; strategy: ImportConflictStrategy }>({ open: false, preview: null, data: null, strategy: "skip" });
+  const [isMcpJsonViewerOpen, setIsMcpJsonViewerOpen] = useState(false);
   const [providerHealthResults, setProviderHealthResults] = useState<ProviderHealthResult[] | null>(null);
   const [isProviderHealthChecking, setIsProviderHealthChecking] = useState(false);
   const [providerHealthBannerOpen, setProviderHealthBannerOpen] = useState(false);
@@ -889,9 +894,6 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       draft.activeProfile = normalizedName;
                     }
                     draft.profiles = nextProfiles;
-                    if (draft.configTarget === "kimi-cli") {
-                      draft.mainConfig.profile_label = normalizedProfile.label;
-                    }
                     setSelectedProfile(normalizedName);
                   }, { persist: false })
                 }
@@ -975,6 +977,15 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             }
             headerActions={
               <>
+                <button
+                  className="action-button compact icon-only"
+                  type="button"
+                  aria-label={t(locale, "mcpViewFullJson")}
+                  title={t(locale, "mcpViewFullJson")}
+                  onClick={() => setIsMcpJsonViewerOpen(true)}
+                >
+                  <Braces size={15} />
+                </button>
                 <button
                   className="action-button compact icon-only"
                   type="button"
@@ -1121,6 +1132,13 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               ) : (
                 <EmptyState locale={locale} />
               )}
+              {isMcpJsonViewerOpen ? (
+                <McpJsonViewerDialog
+                  locale={locale}
+                  value={buildMcpConfigDocument(state.mcpConfig)}
+                  onClose={() => setIsMcpJsonViewerOpen(false)}
+                />
+              ) : null}
             </div>
           </SplitLayout>
         ) : null}
@@ -1270,42 +1288,41 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                   ) : null}
                 </div>
                 <SettingsGroup title={t(locale, "settingsGroupConfigTarget")}>
-                  <SelectField
-                    locale={locale}
-                    label={t(locale, "configTargetLabel")}
-                    value={currentConfigTarget}
-                    options={[
-                      { value: "kimi-code", label: "Kimi Code" },
-                      { value: "kimi-cli", label: "Kimi CLI" },
-                    ]}
-                    onChange={async (value) => {
-                      const newTarget = value as ConfigTarget;
-                      try {
-                        const version = await getApi()?.getCliVersion?.({ target: newTarget });
-                        if (version && !version.installed) {
-                          const packageName = version.packageName ?? (newTarget === "kimi-code" ? "Kimi Code" : "Kimi CLI");
-                          const command = version.installCommand ?? version.updateCommand ?? "";
-                          setNotice("");
-                          setError(formatMessage(t(locale, "configTargetInstallRequired"), {
-                            name: packageName,
-                            command,
-                          }));
-                          return;
-                        }
-                        await persistConfigTarget(newTarget);
-                        try {
-                          window.sessionStorage.setItem(POST_CONFIG_TARGET_SWITCH_TAB_KEY, "overview");
-                        } catch {
-                          // 忽略 sessionStorage 不可用的极端情况，reload 后仍能正常进入应用。
-                        }
-                        window.location.reload();
-                      } catch (err) {
-                        console.error("Failed to reload after target change:", err);
-                      }
-                    }}
-                  />
-                  <div className="field-description" style={{ color: "var(--color-warning)", fontWeight: 500 }}>
-                    ⚠️ {t(locale, "configTargetWarning")}
+                  <div className="config-target-detection">
+                    <div className="config-target-detection-main">
+                      <div>
+                        <span>{t(locale, "configTargetLabel")}</span>
+                        <strong>{currentConfigTargetLabel}</strong>
+                      </div>
+                      <span className={`config-target-status ${targetDetectionStatusClass}`}>
+                        {targetDetectionStatusLabel}
+                      </span>
+                    </div>
+                    <div className="config-target-detection-grid">
+                      <div>
+                        <span>{t(locale, "configTargetVersion")}</span>
+                        <code>{targetDetection?.version || t(locale, "overviewCliNotFound")}</code>
+                      </div>
+                      <div>
+                        <span>{t(locale, "configTargetExecutable")}</span>
+                        <code>{targetDetection?.executablePath || "-"}</code>
+                      </div>
+                      <div className="config-target-resolved-path">
+                        <span>{t(locale, "configTargetResolvedPath")}</span>
+                        <code>{targetDetection?.resolvedPath || "-"}</code>
+                      </div>
+                    </div>
+                    <p className="config-target-detection-note">
+                      {t(locale, "configTargetAutoDescription")}
+                    </p>
+                    {targetDetection?.installed === false ? (
+                      <p className="config-target-install-warning">
+                        {formatMessage(t(locale, "configTargetInstallRequired"), {
+                          name: currentConfigTargetLabel,
+                          command: "brew install kimi-code",
+                        })}
+                      </p>
+                    ) : null}
                   </div>
                 </SettingsGroup>
                 <SettingsGroup title={t(locale, "settingsGroupPaths")}>
@@ -1315,14 +1332,6 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                     value={state.configPath}
                     readOnly
                     onView={() => openDocumentViewer("config")}
-                    onChange={() => {}}
-                  />
-                  <PathField
-                    locale={locale}
-                    label={t(locale, "profilesPath")}
-                    value={state.profilesPath}
-                    readOnly
-                    onView={() => openDocumentViewer("profiles")}
                     onChange={() => {}}
                   />
                   <PathField

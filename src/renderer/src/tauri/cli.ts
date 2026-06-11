@@ -4,9 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import { compareReleaseVersions, normalizeReleaseVersion } from "@shared/versionUtils";
-import type { AppState, ConfigTarget, ModelConfig, ProfileConnectivityTestResult, ProviderConfig } from "@shared/types";
+import type { AppState, ConfigTarget, McpServerConfig, ModelConfig, ProfileConnectivityTestResult, ProviderConfig } from "@shared/types";
 
-const KIMI_CLI_PYPI_URL = "https://pypi.org/pypi/kimi-cli/json";
 const KIMI_CODE_HOMEBREW_URL = "https://formulae.brew.sh/api/formula/kimi-code.json";
 const KIMI_CODE_GITHUB_LATEST_URL = "https://api.github.com/repos/MoonshotAI/kimi-code/releases/latest";
 const KIMI_CODE_INSTALL_SCRIPT_SH = "https://code.kimi.com/kimi-code/install.sh";
@@ -37,6 +36,25 @@ function extractSemver(value: string | undefined): string {
   return match ? match[1] : normalizeReleaseVersion(value ?? "");
 }
 
+export function classifyKimiTargetFromSignals(signals: {
+  executablePath?: string;
+  resolvedPath?: string;
+  versionOutput?: string;
+  candidates?: string[];
+}): { target: ConfigTarget; status: KimiTargetDetectionStatus; reason: string } {
+  const joinedPaths = [
+    signals.executablePath,
+    signals.resolvedPath,
+    ...(signals.candidates ?? []),
+  ].filter(Boolean).join("\n").toLowerCase();
+  const output = (signals.versionOutput ?? "").toLowerCase();
+
+  if (joinedPaths.includes("kimi-code") || joinedPaths.includes("/homebrew/") || /kimi[-\s]?code|@moonshot-ai\/kimi-code/.test(output)) {
+    return { target: "kimi-code", status: "detected", reason: "matched-kimi-code-signal" };
+  }
+  return { target: "kimi-code", status: "not-installed", reason: "kimi-code-not-found" };
+}
+
 export interface CliVersionResult {
   version: string;
   installed: boolean;
@@ -46,6 +64,19 @@ export interface CliVersionResult {
   packageName?: string;
   installCommand?: string;
   updateCommand?: string;
+}
+
+export type KimiTargetDetectionStatus = "detected" | "not-installed";
+
+export interface KimiTargetDetectionResult {
+  target: ConfigTarget;
+  installed: boolean;
+  status: KimiTargetDetectionStatus;
+  version: string;
+  executablePath: string;
+  resolvedPath: string;
+  candidates: string[];
+  reason: string;
 }
 
 export interface KimiOAuthLoginEvent {
@@ -59,10 +90,10 @@ export interface KimiOAuthLoginEvent {
   message?: string;
 }
 
-// GUI 期望的 kimi-cli 版本范围：低于 MIN 判定为过旧（功能可能不兼容）。
+// GUI 期望的 Kimi Code 版本范围：低于 MIN 判定为过旧（功能可能不兼容）。
 // EXPECTED 是当前 GUI 主要对照测试过的版本，仅作展示参考。
 export const MIN_CLI_VERSION = "1.0.0";
-export const EXPECTED_CLI_VERSION = "1.4.0";
+export const EXPECTED_CLI_VERSION = "0.14.0";
 
 export type CliCompatStatus = "compatible" | "outdated" | "unknown";
 
@@ -89,35 +120,106 @@ function currentPlatform(): "windows" | "macos" | "linux" | "unknown" {
 }
 
 function versionResultBase(target: ConfigTarget): Pick<CliVersionResult, "target" | "packageName" | "installCommand" | "updateCommand"> {
-  if (target === "kimi-code") {
-    const isWindows = currentPlatform() === "windows";
-    const installCommand = isWindows
-      ? `irm ${KIMI_CODE_INSTALL_SCRIPT_URL} | iex`
-      : "brew install kimi-code";
-    return {
-      target,
-      packageName: "Kimi Code",
-      installCommand,
-      updateCommand: isWindows ? installCommand : "brew upgrade kimi-code",
-    };
-  }
+  const isWindows = currentPlatform() === "windows";
+  const installCommand = isWindows
+    ? `irm ${KIMI_CODE_INSTALL_SCRIPT_URL} | iex`
+    : "brew install kimi-code";
   return {
     target,
-    packageName: "Kimi CLI",
-    installCommand: "uv tool install kimi-cli --force",
-    updateCommand: "uv tool upgrade kimi-cli --no-cache",
+    packageName: "Kimi Code",
+    installCommand,
+    updateCommand: isWindows ? installCommand : "brew upgrade kimi-code",
   };
 }
 
-async function detectKimiCommandVersion(target: ConfigTarget): Promise<CliVersionResult> {
-  const base = versionResultBase(target);
+async function detectActiveKimiTargetOnWindows(): Promise<KimiTargetDetectionResult> {
+  const script = [
+    "$ErrorActionPreference = 'SilentlyContinue'",
+    "$commands = @(Get-Command kimi -All)",
+    "if (-not $commands -or $commands.Count -eq 0) { exit 127 }",
+    "$paths = @($commands | ForEach-Object { $_.Source })",
+    "$primary = $paths[0]",
+    "$version = (& $primary --version) 2>&1 | Out-String",
+    "[Console]::Out.Write(($paths -join \"`n\") + \"`n---KIMI_VERSION---`n\" + $version)",
+  ].join("; ");
   try {
-    const r = await exec("kimi", ["--version"], 3000);
-    if (r.code !== 0) throw new Error(r.stderr);
-    return { ...base, version: extractSemver(r.stdout) || r.stdout.trim(), installed: true };
+    const r = await exec("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script], 5000);
+    if (r.code !== 0) throw new Error(r.stderr || r.stdout);
+    const [pathsText, versionOutput = ""] = r.stdout.split("\n---KIMI_VERSION---\n");
+    const candidates = pathsText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const executablePath = candidates[0] ?? "";
+    const classified = classifyKimiTargetFromSignals({ executablePath, resolvedPath: executablePath, versionOutput, candidates });
+    return {
+      target: "kimi-code",
+      installed: classified.status === "detected",
+      status: classified.status,
+      version: extractSemver(versionOutput),
+      executablePath,
+      resolvedPath: executablePath,
+      candidates,
+      reason: classified.reason,
+    };
   } catch {
-    return { ...base, version: "", installed: false };
+    return {
+      target: "kimi-code",
+      installed: false,
+      status: "not-installed",
+      version: "",
+      executablePath: "",
+      resolvedPath: "",
+      candidates: [],
+      reason: "kimi-command-not-found",
+    };
   }
+}
+
+async function detectActiveKimiTargetOnPosix(): Promise<KimiTargetDetectionResult> {
+  const script = [
+    "set -u",
+    "p=\"$(command -v kimi 2>/dev/null || true)\"",
+    "[ -n \"$p\" ] || exit 127",
+    "resolved=\"$p\"",
+    "if command -v python3 >/dev/null 2>&1; then resolved=\"$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' \"$p\" 2>/dev/null || printf '%s' \"$p\")\"; fi",
+    "candidates=\"$(command -v -a kimi 2>/dev/null || which -a kimi 2>/dev/null || printf '%s\\n' \"$p\")\"",
+    "version=\"$($p --version 2>&1 || true)\"",
+    "printf '%s\\n---KIMI_RESOLVED---\\n%s\\n---KIMI_CANDIDATES---\\n%s\\n---KIMI_VERSION---\\n%s\\n' \"$p\" \"$resolved\" \"$candidates\" \"$version\"",
+  ].join("; ");
+  try {
+    const r = await exec("sh", ["-lc", script], 5000);
+    if (r.code !== 0) throw new Error(r.stderr || r.stdout);
+    const [executablePath = "", rest = ""] = r.stdout.split("\n---KIMI_RESOLVED---\n");
+    const [resolvedPath = "", restAfterResolved = ""] = rest.split("\n---KIMI_CANDIDATES---\n");
+    const [candidatesText = "", versionOutput = ""] = restAfterResolved.split("\n---KIMI_VERSION---\n");
+    const candidates = candidatesText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    const classified = classifyKimiTargetFromSignals({ executablePath, resolvedPath, versionOutput, candidates });
+    return {
+      target: "kimi-code",
+      installed: classified.status === "detected",
+      status: classified.status,
+      version: extractSemver(versionOutput),
+      executablePath: executablePath.trim(),
+      resolvedPath: resolvedPath.trim(),
+      candidates,
+      reason: classified.reason,
+    };
+  } catch {
+    return {
+      target: "kimi-code",
+      installed: false,
+      status: "not-installed",
+      version: "",
+      executablePath: "",
+      resolvedPath: "",
+      candidates: [],
+      reason: "kimi-command-not-found",
+    };
+  }
+}
+
+export async function detectActiveKimiTarget(): Promise<KimiTargetDetectionResult> {
+  return currentPlatform() === "windows"
+    ? detectActiveKimiTargetOnWindows()
+    : detectActiveKimiTargetOnPosix();
 }
 
 async function detectKimiCodeHomebrewVersion(): Promise<CliVersionResult> {
@@ -203,14 +305,16 @@ async function detectKimiCodeVersion(): Promise<CliVersionResult> {
   }
   const homebrew = await detectKimiCodeHomebrewVersion();
   if (homebrew.installed) return homebrew;
-  return detectKimiCodeScriptVersion();
-}
-
-async function getKimiCliLatestVersion(): Promise<string | null> {
-  const resp = await http("GET", KIMI_CLI_PYPI_URL, { Accept: "application/json", "User-Agent": "kimi-code-switch-gui" });
-  if (!resp.ok) return null;
-  const payload = JSON.parse(resp.body) as { info?: { version?: string } };
-  return extractSemver(payload.info?.version) || null;
+  const scriptInstall = await detectKimiCodeScriptVersion();
+  if (scriptInstall.installed) return scriptInstall;
+  const base = versionResultBase("kimi-code");
+  try {
+    const target = await detectActiveKimiTarget();
+    if (!target.installed) throw new Error("kimi-code command not found");
+    return { ...base, version: target.version, installed: true };
+  } catch {
+    return { ...base, version: "", installed: false };
+  }
 }
 
 async function getKimiCodeLatestVersion(): Promise<string | null> {
@@ -227,9 +331,7 @@ async function getKimiCodeLatestVersion(): Promise<string | null> {
 
 async function attachLatestVersion(result: CliVersionResult): Promise<CliVersionResult> {
   try {
-    const latestVersion = result.target === "kimi-code"
-      ? await getKimiCodeLatestVersion()
-      : await getKimiCliLatestVersion();
+    const latestVersion = await getKimiCodeLatestVersion();
     if (!latestVersion) return result;
     return {
       ...result,
@@ -242,41 +344,31 @@ async function attachLatestVersion(result: CliVersionResult): Promise<CliVersion
 }
 
 export async function getCliVersion(options: { checkLatest?: boolean } = {}): Promise<CliVersionResult> {
-  return getTargetCliVersion("kimi-cli", options);
+  return getTargetCliVersion("kimi-code", options);
 }
 
-export async function getTargetCliVersion(target: ConfigTarget = "kimi-cli", options: { checkLatest?: boolean } = {}): Promise<CliVersionResult> {
-  const result = target === "kimi-code"
-    ? await detectKimiCodeVersion()
-    : await detectKimiCommandVersion(target);
+export async function getTargetCliVersion(target: ConfigTarget = "kimi-code", options: { checkLatest?: boolean } = {}): Promise<CliVersionResult> {
+  void target;
+  const result = await detectKimiCodeVersion();
   if (!options.checkLatest) return result;
   return attachLatestVersion(result);
 }
 
 export async function upgradeTargetCli(
-  target: ConfigTarget = "kimi-cli",
+  target: ConfigTarget = "kimi-code",
   options: { install?: boolean } = {},
 ): Promise<{ ok: true; stdout: string; stderr: string }> {
-  if (target === "kimi-code") {
-    const platform = currentPlatform();
-    const r = platform === "windows"
-      ? await exec("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", `irm ${KIMI_CODE_INSTALL_SCRIPT_URL} | iex`], 120000)
-      : await exec("brew", [options.install ? "install" : "upgrade", "kimi-code"], 120000);
-    if (r.code !== 0) throw new Error(r.stderr || "upgrade failed");
-    return { ok: true, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
-  }
-  if (options.install) {
-    const r = await exec("uv", ["tool", "install", "kimi-cli", "--force"], 120000);
-    if (r.code !== 0) throw new Error(r.stderr || "install failed");
-    return { ok: true, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
-  }
-  return upgradeKimiCli();
+  void target;
+  const platform = currentPlatform();
+  const r = platform === "windows"
+    ? await exec("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", `irm ${KIMI_CODE_INSTALL_SCRIPT_URL} | iex`], 120000)
+    : await exec("brew", [options.install ? "install" : "upgrade", "kimi-code"], 120000);
+  if (r.code !== 0) throw new Error(r.stderr || "upgrade failed");
+  return { ok: true, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
 }
 
 export async function upgradeKimiCli(): Promise<{ ok: true; stdout: string; stderr: string }> {
-  const r = await exec("uv", ["tool", "upgrade", "kimi-cli", "--no-cache"], 120000);
-  if (r.code !== 0) throw new Error(r.stderr || "upgrade failed");
-  return { ok: true, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
+  return upgradeTargetCli("kimi-code");
 }
 
 export async function startKimiOAuthLogin(
@@ -295,10 +387,60 @@ export async function startKimiOAuthLogin(
   }
 }
 
-export async function runKimiMcpCommand(args: string[]): Promise<{ ok: true; stdout: string; stderr: string }> {
-  const r = await exec("kimi", ["mcp", ...args]);
-  if (r.code !== 0) throw new Error(r.stderr || "mcp command failed");
-  return { ok: true, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
+export async function runKimiMcpServerTest(
+  name: string,
+  server: McpServerConfig,
+): Promise<{ ok: true; stdout: string; stderr: string }> {
+  if (server.transport === "stdio") {
+    if (!server.command.trim()) {
+      throw new Error(`MCP server "${name}" uses stdio transport but has no command.`);
+    }
+    const r = currentPlatform() === "windows"
+      ? await exec("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", `Get-Command ${JSON.stringify(server.command)} -ErrorAction Stop | Out-Null`], 5000)
+      : await exec("sh", ["-lc", `command -v ${quoteForShell(server.command)} >/dev/null`], 5000);
+    if (r.code !== 0) {
+      throw new Error(`MCP server "${name}" command is not available: ${server.command}`);
+    }
+    return { ok: true, stdout: `MCP stdio command is available: ${server.command}`, stderr: "" };
+  }
+
+  if (!server.url.trim()) {
+    throw new Error(`MCP server "${name}" URL is required.`);
+  }
+
+  const resp = await http(
+    "POST",
+    server.url.trim(),
+    {
+      ...server.headers,
+      Accept: "application/json, text/event-stream",
+      "Content-Type": "application/json",
+    },
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-03-26",
+        capabilities: {},
+        clientInfo: {
+          name: "kimi-code-switch-gui",
+          version: "1.0.0",
+        },
+      },
+    }),
+  );
+  if (resp.status === 405) {
+    throw new Error(`MCP server "${name}" does not accept Streamable HTTP POST requests. This URL is likely an SSE endpoint; use a real HTTP MCP URL or a stdio bridge.`);
+  }
+  if (!resp.ok) {
+    throw new Error(`MCP server "${name}" HTTP test failed: ${resp.status}${resp.body ? ` - ${resp.body.slice(0, 300)}` : ""}`);
+  }
+  return { ok: true, stdout: resp.body.trim(), stderr: "" };
+}
+
+function quoteForShell(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 // ── 连通性测试（非流式版：通过 Rust http_request 拿完整响应）──

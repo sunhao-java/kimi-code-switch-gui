@@ -16,9 +16,18 @@ interface ProfileCentricViewProps {
   onOpenTerminal: (profileName: string) => void;
 }
 
-function resolveProviderLabel(state: AppState, profile: Profile): string {
-  const modelEntry = state.mainConfig.models[profile.default_model];
-  return modelEntry?.provider ?? "—";
+function resolveProfileModelName(state: AppState, profile: Profile): string {
+  return profile.default_model || state.mainConfig.default_model || "";
+}
+
+function formatProfileMeta(state: AppState, locale: Locale, profileName: string, profile: Profile): string {
+  const modelName = resolveProfileModelName(state, profile);
+  const modelEntry = modelName ? state.mainConfig.models[modelName] : undefined;
+  const parts = [
+    modelName || profileName,
+    modelEntry?.provider ? `${t(locale, "formProvider")}: ${modelEntry.provider}` : "",
+  ].filter((part) => part.trim().length > 0);
+  return parts.join(" · ");
 }
 
 export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element {
@@ -107,7 +116,7 @@ export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element 
           <div className="pcv-active-info">
             {nameWithDirty(activeEntry[0], activeEntry[1].label || activeEntry[0])}
             <span className="pcv-meta">
-              {activeEntry[1].default_model} · {resolveProviderLabel(state, activeEntry[1])}
+              {formatProfileMeta(state, locale, activeEntry[0], activeEntry[1])}
             </span>
           </div>
           <div className="pcv-active-actions">
@@ -140,7 +149,7 @@ export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element 
               <div className="pcv-list-info">
                 {nameWithDirty(name, profile.label || name)}
                 <span className="pcv-meta">
-                  {profile.default_model} · {resolveProviderLabel(state, profile)}
+                  {formatProfileMeta(state, locale, name, profile)}
                 </span>
               </div>
               <div className="pcv-list-actions">

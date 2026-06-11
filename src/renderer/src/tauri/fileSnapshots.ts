@@ -31,7 +31,7 @@ async function sha256Hex(text: string): Promise<string> {
 
 export function resolveManagedPaths(state: AppState): Record<ManagedFileId, string> {
   const s = normalizeStatePaths(state);
-  return { config: s.configPath, profiles: s.profilesPath, panel: s.panelSettingsPath, mcp: s.mcpConfigPath };
+  return { config: s.configPath, panel: s.panelSettingsPath, mcp: s.mcpConfigPath };
 }
 
 export async function fingerprintFile(id: ManagedFileId, path: string): Promise<FileFingerprint> {

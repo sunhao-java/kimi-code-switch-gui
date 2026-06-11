@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS panel_settings (
   -- 路径配置
   config_target TEXT NOT NULL DEFAULT 'kimi-code',
   config_path TEXT NOT NULL,
+  profiles TEXT NOT NULL DEFAULT '{}', -- Record<string, Profile>
+  active_profile TEXT NOT NULL DEFAULT 'default',
   profiles_path TEXT NOT NULL,
   follow_config_profiles INTEGER NOT NULL DEFAULT 1, -- boolean
 

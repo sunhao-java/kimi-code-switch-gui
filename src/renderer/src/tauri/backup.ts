@@ -1,19 +1,20 @@
 // 备份/恢复（前端版，移植自 main/index.ts + backupRestore.ts）。
 // 本地走 fileAccess，WebDAV 走 http_request。临时目录方案简化为直接写目标目录。
 import { invoke } from "@tauri-apps/api/core";
+import parseToml from "@iarna/toml/parse-string.js";
 
 import {
   buildConfigDocument,
+  createLineDiff,
   buildPanelSettingsDocument,
-  buildProfilesDocument,
   loadAppState,
   normalizeStatePaths,
   parsePanelSettingsDocument,
+  parseProfiles,
 } from "@shared/configStore";
 import { buildConfigDoctorReport, buildManagedDocuments, redactDocumentText } from "@shared/configSafety";
 import { buildMcpConfigDocument } from "@shared/mcpStore";
 import { normalizeShortcuts } from "@shared/shortcutStore";
-import { createLineDiff } from "@shared/configStore";
 import type {
   AppState,
   BackupRecord,
@@ -65,7 +66,6 @@ function buildBackupFiles(state: AppState): Array<{ name: string; content: strin
   const s = normalizeStatePaths(state);
   return [
     { name: "config.toml", content: buildConfigDocument(s) },
-    { name: "config.profiles.toml", content: buildProfilesDocument(s) },
     { name: "config.panel.json", content: JSON.stringify(s.panelSettings, null, 2) }, // SQLite 导出为 JSON
     { name: SHORTCUTS_BACKUP_FILENAME, content: JSON.stringify(normalizeShortcuts(s.panelSettings.shortcuts), null, 2) },
     { name: "mcp.json", content: buildMcpConfigDocument(s.mcpConfig) },
@@ -79,7 +79,7 @@ async function buildMetadata(state: AppState, backupName: string, trigger: strin
     createdAt: new Date().toISOString(),
     trigger,
     sourceHost: sanitizeMachineName(await hostname()),
-    paths: { config: s.configPath, profiles: s.profilesPath, panel: s.panelSettingsPath, mcp: s.mcpConfigPath },
+    paths: { config: s.configPath, panel: s.panelSettingsPath, mcp: s.mcpConfigPath },
   }, null, 2);
 }
 
@@ -168,7 +168,7 @@ export async function testBackupWebdav(state: AppState): Promise<{ ok: true; tar
 // ── 读取备份文档 ──
 interface RestoreDocuments {
   configDocument: string;
-  profilesDocument: string;
+  profilesDocument?: string;
   panelSettingsDocument: string;
   mcpDocument: string;
 }
@@ -193,7 +193,7 @@ async function readBackupDocuments(state: AppState, backupName: string): Promise
     let pa = await read("config.panel.json");
     if (!pa) pa = await read("config.panel.toml");
     const [c, p, sh, m] = await Promise.all([read("config.toml"), read("config.profiles.toml"), read(SHORTCUTS_BACKUP_FILENAME), read("mcp.json")]);
-    return { configDocument: c ?? "", profilesDocument: p ?? "", panelSettingsDocument: mergeShortcuts(pa ?? "", sh), mcpDocument: m ?? "" };
+    return { configDocument: c ?? "", profilesDocument: p ?? undefined, panelSettingsDocument: mergeShortcuts(pa ?? "", sh), mcpDocument: m ?? "" };
   }
   const dir = `${s.panelSettings.backup_local_path}/${backupName}`;
   const read = (n: string): Promise<string | null> => tauriFileAccess.readText(`${dir}/${n}`);
@@ -201,12 +201,19 @@ async function readBackupDocuments(state: AppState, backupName: string): Promise
   let pa = await read("config.panel.json");
   if (!pa) pa = await read("config.panel.toml");
   const [c, p, sh, m] = await Promise.all([read("config.toml"), read("config.profiles.toml"), read(SHORTCUTS_BACKUP_FILENAME), read("mcp.json")]);
-  return { configDocument: c ?? "", profilesDocument: p ?? "", panelSettingsDocument: mergeShortcuts(pa ?? "", sh), mcpDocument: m ?? "" };
+  return { configDocument: c ?? "", profilesDocument: p ?? undefined, panelSettingsDocument: mergeShortcuts(pa ?? "", sh), mcpDocument: m ?? "" };
 }
 
 function validate(docs: RestoreDocuments): void {
   if (!docs.configDocument.trim()) throw new Error("Backup is missing config.toml.");
-  if (!docs.profilesDocument.trim()) throw new Error("Backup is missing config.profiles.toml.");
+}
+
+function parseTomlCompat(document: string): Record<string, unknown> {
+  try {
+    return (parseToml(document) as Record<string, unknown>) ?? {};
+  } catch {
+    return {};
+  }
 }
 
 // 用内存 FileAccess 把备份文档喂给 loadAppState，得到 draftState
@@ -229,29 +236,46 @@ async function resolveRestoreTargets(state: AppState, backupName: string): Promi
   const docs = await readBackupDocuments(s, backupName);
   validate(docs);
   const restoredPanel = parsePanelSettingsDocument(docs.panelSettingsDocument);
-  const panelDoc = buildPanelSettingsDocument({ ...restoredPanel, config_path: s.configPath, profiles_path: "", follow_config_profiles: true });
+  const legacyProfilesRaw = docs.profilesDocument?.trim()
+    ? parseTomlCompat(docs.profilesDocument)
+    : {};
+  const legacyProfiles = Object.keys(legacyProfilesRaw).length > 0
+    ? parseProfiles(s.mainConfig, legacyProfilesRaw)
+    : {};
+  const legacyActiveProfile = legacyProfilesRaw.active_profile;
+  const restoredProfiles = restoredPanel.profiles ?? {};
+  const panelProfiles = Object.keys(restoredProfiles).length > 0 ? restoredProfiles : legacyProfiles;
+  const panelDoc = buildPanelSettingsDocument({
+    ...restoredPanel,
+    config_path: s.configPath,
+    profiles: panelProfiles,
+    active_profile: typeof legacyActiveProfile === "string" && !restoredPanel.active_profile
+      ? legacyActiveProfile
+      : restoredPanel.active_profile,
+    profiles_path: "",
+    follow_config_profiles: true,
+  });
   const mem = memoryFileAccess({
     [s.configPath]: docs.configDocument,
-    [s.profilesPath]: docs.profilesDocument,
     [s.panelSettingsPath]: panelDoc,
     [s.mcpConfigPath]: docs.mcpDocument,
   });
   const draftState = await loadAppState(mem, {
-    configPath: s.configPath, profilesPath: s.profilesPath, panelSettingsPath: s.panelSettingsPath, mcpConfigPath: s.mcpConfigPath,
+    configPath: s.configPath, panelSettingsPath: s.panelSettingsPath, mcpConfigPath: s.mcpConfigPath,
   });
   return {
-    paths: { config: s.configPath, profiles: s.profilesPath, panel: s.panelSettingsPath, mcp: s.mcpConfigPath },
-    documents: { config: docs.configDocument, profiles: docs.profilesDocument, panel: panelDoc, mcp: docs.mcpDocument },
+    paths: { config: s.configPath, panel: s.panelSettingsPath, mcp: s.mcpConfigPath },
+    documents: { config: docs.configDocument, panel: panelDoc, mcp: docs.mcpDocument },
     draftState,
   };
 }
 
 async function readCurrentDocuments(paths: Record<ManagedFileId, string>): Promise<Record<ManagedFileId, string>> {
-  const [c, p, pa, m] = await Promise.all([
-    tauriFileAccess.readText(paths.config), tauriFileAccess.readText(paths.profiles),
+  const [c, pa, m] = await Promise.all([
+    tauriFileAccess.readText(paths.config),
     tauriFileAccess.readText(paths.panel), tauriFileAccess.readText(paths.mcp),
   ]);
-  return { config: c ?? "", profiles: p ?? "", panel: pa ?? "", mcp: m ?? "" };
+  return { config: c ?? "", panel: pa ?? "", mcp: m ?? "" };
 }
 
 export async function restoreBackupDryRun(state: AppState, backupName: string): Promise<RestoreDryRunResult | SaveStateConflictResult> {
@@ -311,7 +335,7 @@ export async function restoreBackupSafe(
   }
 
   const restoredState = await loadAppState(tauriFileAccess, {
-    configPath: resolved.paths.config, profilesPath: resolved.paths.profiles,
+    configPath: resolved.paths.config,
     panelSettingsPath: resolved.paths.panel, mcpConfigPath: resolved.paths.mcp,
   });
 

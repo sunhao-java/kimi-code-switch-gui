@@ -38,7 +38,7 @@ function createState(): AppState {
   return {
     configTarget: "kimi-code",
     configPath: "/tmp/config.toml",
-    profilesPath: "/tmp/config.profiles.toml",
+    profilesPath: "",
     panelSettingsPath: "/tmp/config.panel.toml",
     mcpConfigPath: "/tmp/mcp.json",
     mainConfig: {
@@ -439,20 +439,52 @@ url = "https://mcp.context7.com/mcp"
     expect(loaded.display_open_mode).toBe("remember-last");
   });
 
-  it("saves app state into four files", async () => {
+  it("saves app state into Kimi files and SQLite panel state", async () => {
     const state = createState();
     const files = createMemoryFs({});
     await saveAppState(files, state);
     expect(files.store["/tmp/config.toml"]).toContain("default_model");
-    expect(files.store["/tmp/config.profiles.toml"]).toContain("active_profile");
+    expect(files.store["/tmp/config.profiles.toml"]).toBeUndefined();
     expect(files.store["/tmp/config.panel.toml"]).toContain("follow_config_profiles");
+    expect(files.store["/tmp/config.panel.toml"]).toContain("active_profile");
     expect(files.store["/tmp/mcp.json"]).toContain('"mcpServers"');
   });
 
-  it("rejects saving when config and profiles paths match", async () => {
+  it("writes model pricing tables without nested TOML indentation", async () => {
+    const state = createState();
+    state.mainConfig.models["kimi_gateway/kimi-k2.5"].pricing = {
+      input_per_mtok: 1,
+      output_per_mtok: 2,
+      cache_read_per_mtok: 0.25,
+    };
+    const files = createMemoryFs({});
+
+    await saveAppState(files, state);
+
+    const document = files.store["/tmp/config.toml"];
+    expect(document).toContain('[models."kimi_gateway/kimi-k2.5".pricing]');
+    expect(document).not.toContain('  [models."kimi_gateway/kimi-k2.5".pricing]');
+    expect(document).toContain("input_per_mtok = 1");
+    expect(document).not.toContain("  input_per_mtok = 1");
+  });
+
+  it("does not persist redacted provider api keys into config.toml", async () => {
+    const state = createState();
+    const files = createMemoryFs({
+      "/tmp/config.toml": buildConfigDocument(state),
+    });
+    state.mainConfig.providers.kimi_gateway.api_key = "[REDACTED]";
+
+    await saveAppState(files, state);
+
+    expect(files.store["/tmp/config.toml"]).toContain('api_key = "sk-test"');
+    expect(files.store["/tmp/config.toml"]).not.toContain("[REDACTED]");
+  });
+
+  it("ignores legacy profiles path collisions on save", async () => {
     const state = createState();
     state.profilesPath = state.configPath;
-    await expect(saveAppState(createMemoryFs({}), state)).rejects.toThrow(/must be different/);
+    await expect(saveAppState(createMemoryFs({}), state)).resolves.toBeUndefined();
   });
 
   it("falls back to bootstrap profile when profiles file is missing", async () => {
@@ -537,24 +569,22 @@ url = "https://mcp.context7.com/mcp"
 
   it("normalizes empty paths before save", () => {
     const state = createState();
-    state.configTarget = "kimi-cli";
     state.profilesPath = "";
     state.panelSettingsPath = "";
     const normalized = normalizeStatePaths(state);
-    // kimi-cli 模式下 profilesPath 应该等于 configPath（不分离）
-    expect(normalized.profilesPath).toBe("/tmp/config.toml");
+    expect(normalized.profilesPath).toBe("");
     expect(normalized.panelSettingsPath).toBe("~/.kimi-code/.panel/config.panel.toml");
     expect(normalized.mcpConfigPath).toBe("/tmp/mcp.json");
   });
 
-  it("saves with derived profile path when explicit path is blank", async () => {
+  it("saves profiles into panel settings when explicit path is blank", async () => {
     const state = createState();
     state.configTarget = "kimi-code";
     state.profilesPath = "";
     const files = createMemoryFs({});
     await saveAppState(files, state);
-    expect(files.store["/tmp/config.profiles.toml"]).toBeDefined();
-    expect(files.store["/tmp/config.profiles.toml"]).toContain("active_profile");
+    expect(files.store["/tmp/config.profiles.toml"]).toBeUndefined();
+    expect(files.store["/tmp/config.panel.toml"]).toContain("active_profile");
   });
 
   it("rejects unknown model provider on upsert", () => {
@@ -832,10 +862,10 @@ describe("searchConfig", () => {
   });
 });
 
-describe("dual-target configuration", () => {
-  it("loads kimi-cli config without profiles file", async () => {
+describe("kimi-code only configuration", () => {
+  it("ignores historical kimi-cli target requests and loads kimi-code paths", async () => {
     const files = createMemoryFs({
-      "~/.kimi/config.toml": `
+      "~/.kimi-code/config.toml": `
 profile_label = "Work"
 default_model = "test-model"
 default_thinking = true
@@ -850,33 +880,35 @@ max_context_size = 8192
 `,
     });
     const state = await loadAppState(files, { configTarget: "kimi-cli" });
-    expect(state.configTarget).toBe("kimi-cli");
-    expect(state.configPath).toBe("~/.kimi/config.toml");
-    expect(state.profilesPath).toBe("~/.kimi/config.toml");
-    expect(state.mcpConfigPath).toBe("~/.kimi/mcp.json");
+    expect(state.configTarget).toBe("kimi-code");
+    expect(state.configPath).toBe("~/.kimi-code/config.toml");
+    expect(state.profilesPath).toBe("");
+    expect(state.mcpConfigPath).toBe("~/.kimi-code/mcp.json");
     expect(state.activeProfile).toBe("default");
     expect(state.profiles.default.label).toBe("Work");
     expect(state.profiles.default.default_model).toBe("test-model");
     expect(state.mainConfig.providers.test).toBeDefined();
   });
 
-  it("persists kimi-cli profile label in the main config", async () => {
+  it("saves Kimi Code profiles into panel settings", async () => {
     const state = createState();
-    state.configTarget = "kimi-cli";
-    state.configPath = "~/.kimi/config.toml";
-    state.profilesPath = "~/.kimi/config.toml";
+    state.configTarget = "kimi-code";
+    state.configPath = "~/.kimi-code/config.toml";
+    state.profilesPath = "";
     state.profiles.default.label = "Personal";
     const files = createMemoryFs({});
 
     await saveAppState(files, state);
 
-    expect(files.store["~/.kimi/config.toml"]).toContain('profile_label = "Personal"');
+    expect(files.store["~/.kimi-code/config.toml"]).toBeDefined();
+    expect(files.store["~/.kimi-code/config.profiles.toml"]).toBeUndefined();
+    expect(files.store["/tmp/config.panel.toml"]).toContain('label = "Personal"');
   });
 
-  it("uses persisted panel config target to select kimi-cli paths", async () => {
+  it("ignores persisted historical panel config target", async () => {
     const files = createMemoryFs({
       "~/.kimi-code/.panel/config.panel.toml": 'config_target = "kimi-cli"\n',
-      "~/.kimi/config.toml": `
+      "~/.kimi-code/config.toml": `
 default_model = "test-model"
 [providers.test]
 type = "openai"
@@ -891,13 +923,13 @@ max_context_size = 8192
 
     const state = await loadAppState(files);
 
-    expect(state.configTarget).toBe("kimi-cli");
-    expect(state.configPath).toBe("~/.kimi/config.toml");
-    expect(state.profilesPath).toBe("~/.kimi/config.toml");
-    expect(state.panelSettings.config_target).toBe("kimi-cli");
+    expect(state.configTarget).toBe("kimi-code");
+    expect(state.configPath).toBe("~/.kimi-code/config.toml");
+    expect(state.profilesPath).toBe("");
+    expect(state.panelSettings.config_target).toBe("kimi-code");
   });
 
-  it("loads kimi-code config with profiles file", async () => {
+  it("migrates legacy kimi-code profiles file into panel state", async () => {
     const files = createMemoryFs({
       "~/.kimi-code/config.toml": `
 [providers.test]
@@ -920,13 +952,14 @@ default_thinking = false
     const state = await loadAppState(files, { configTarget: "kimi-code" });
     expect(state.configTarget).toBe("kimi-code");
     expect(state.configPath).toBe("~/.kimi-code/config.toml");
-    expect(state.profilesPath).toBe("~/.kimi-code/config.profiles.toml");
+    expect(state.profilesPath).toBe("");
     expect(state.mcpConfigPath).toBe("~/.kimi-code/mcp.json");
     expect(state.activeProfile).toBe("work");
     expect(state.profiles.work.default_thinking).toBe(false);
+    expect(state.panelSettings.profiles.work.default_thinking).toBe(false);
   });
 
-  it("switches known default paths when config target changes", () => {
+  it("keeps Kimi Code defaults even when historical target is present", () => {
     const state = createState();
     state.configTarget = "kimi-cli";
     state.configPath = "~/.kimi-code/config.toml";
@@ -935,11 +968,11 @@ default_thinking = false
 
     const normalized = normalizeStatePaths(state);
 
-    expect(normalized.configPath).toBe("~/.kimi/config.toml");
-    expect(normalized.profilesPath).toBe("~/.kimi/config.toml");
-    expect(normalized.mcpConfigPath).toBe("~/.kimi/mcp.json");
-    expect(normalized.panelSettings.config_path).toBe("~/.kimi/config.toml");
-    expect(normalized.panelSettings.profiles_path).toBe("~/.kimi/config.toml");
+    expect(normalized.configPath).toBe("~/.kimi-code/config.toml");
+    expect(normalized.profilesPath).toBe("");
+    expect(normalized.mcpConfigPath).toBe("~/.kimi-code/mcp.json");
+    expect(normalized.panelSettings.config_path).toBe("~/.kimi-code/config.toml");
+    expect(normalized.panelSettings.profiles_path).toBe("");
   });
 
   it("moves legacy kimi-code defaults into the kimi-code directory", () => {
@@ -952,7 +985,7 @@ default_thinking = false
     const normalized = normalizeStatePaths(state);
 
     expect(normalized.configPath).toBe("~/.kimi-code/config.toml");
-    expect(normalized.profilesPath).toBe("~/.kimi-code/config.profiles.toml");
+    expect(normalized.profilesPath).toBe("");
     expect(normalized.mcpConfigPath).toBe("~/.kimi-code/mcp.json");
   });
 
@@ -966,22 +999,11 @@ default_thinking = false
     const normalized = normalizeStatePaths(state);
 
     expect(normalized.configPath).toBe("/custom/kimi-code/config.toml");
-    expect(normalized.profilesPath).toBe("/custom/kimi-code/config.toml");
+    expect(normalized.profilesPath).toBe("");
     expect(normalized.mcpConfigPath).toBe("/custom/kimi-code/mcp.json");
   });
 
-  it("saves kimi-cli config without creating profiles file", async () => {
-    const state = createState();
-    state.configTarget = "kimi-cli";
-    state.configPath = "~/.kimi/config.toml";
-    state.profilesPath = "~/.kimi/config.toml";
-    const files = createMemoryFs({});
-    await saveAppState(files, state);
-    expect(files.store["~/.kimi/config.toml"]).toBeDefined();
-    expect(files.store["~/.kimi/config.profiles.toml"]).toBeUndefined();
-  });
-
-  it("saves kimi-code config with separate profiles file", async () => {
+  it("does not create a kimi-code profiles file when saving", async () => {
     const state = createState();
     state.configTarget = "kimi-code";
     state.configPath = "~/.kimi-code/config.toml";
@@ -989,14 +1011,14 @@ default_thinking = false
     const files = createMemoryFs({});
     await saveAppState(files, state);
     expect(files.store["~/.kimi-code/config.toml"]).toBeDefined();
-    expect(files.store["~/.kimi-code/config.profiles.toml"]).toBeDefined();
+    expect(files.store["~/.kimi-code/config.profiles.toml"]).toBeUndefined();
+    expect(files.store["/tmp/config.panel.toml"]).toContain("active_profile");
   });
 
   it("persists configTarget in panelSettings", () => {
     const settings = createDefaultPanelSettings("/tmp/config.toml", "/tmp/panel.toml");
-    settings.config_target = "kimi-cli";
 
     const doc = buildPanelSettingsDocument(settings);
-    expect(doc).toContain('config_target = "kimi-cli"');
+    expect(doc).toContain('config_target = "kimi-code"');
   });
 });

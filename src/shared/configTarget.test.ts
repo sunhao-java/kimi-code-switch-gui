@@ -3,18 +3,6 @@ import { ConfigResolver, ConfigTarget, parseConfigTarget } from "./configTarget"
 
 describe("ConfigTarget", () => {
   describe("ConfigResolver", () => {
-    it("resolves kimi-cli paths correctly", () => {
-      const resolver = new ConfigResolver(ConfigTarget.KimiCli);
-      expect(resolver.getConfigDir()).toBe(".kimi");
-      expect(resolver.getConfigPath("config.toml")).toBe(".kimi/config.toml");
-      expect(resolver.supportsProfiles()).toBe(false);
-      expect(resolver.supportsPanel()).toBe(false);
-      expect(resolver.supportsTui()).toBe(false);
-      expect(resolver.getMcpConfigFile()).toBe("mcp.json");
-      expect(resolver.getHomeEnvVar()).toBe("KIMI_HOME");
-      expect(resolver.getDisplayName()).toBe("Kimi CLI");
-    });
-
     it("resolves kimi-code paths correctly", () => {
       const resolver = new ConfigResolver(ConfigTarget.KimiCode);
       expect(resolver.getConfigDir()).toBe(".kimi-code");
@@ -29,17 +17,13 @@ describe("ConfigTarget", () => {
   });
 
   describe("parseConfigTarget", () => {
-    it("parses kimi-cli correctly", () => {
-      expect(parseConfigTarget("kimi-cli")).toBe(ConfigTarget.KimiCli);
-      expect(parseConfigTarget(ConfigTarget.KimiCli)).toBe(ConfigTarget.KimiCli);
-    });
-
     it("parses kimi-code correctly", () => {
       expect(parseConfigTarget("kimi-code")).toBe(ConfigTarget.KimiCode);
       expect(parseConfigTarget(ConfigTarget.KimiCode)).toBe(ConfigTarget.KimiCode);
     });
 
-    it("defaults to kimi-code for unknown values", () => {
+    it("always resolves historical and unknown values to kimi-code", () => {
+      expect(parseConfigTarget("kimi-cli")).toBe(ConfigTarget.KimiCode);
       expect(parseConfigTarget("unknown")).toBe(ConfigTarget.KimiCode);
       expect(parseConfigTarget(null)).toBe(ConfigTarget.KimiCode);
       expect(parseConfigTarget(undefined)).toBe(ConfigTarget.KimiCode);

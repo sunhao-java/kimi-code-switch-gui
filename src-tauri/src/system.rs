@@ -15,29 +15,23 @@ static KIMI_OAUTH_LOGIN_RUNNING: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum KimiOAuthTarget {
-    KimiCli,
     KimiCode,
 }
 
 impl KimiOAuthTarget {
     fn from_config_target(target: &str) -> Self {
-        if target == "kimi-cli" {
-            Self::KimiCli
-        } else {
-            Self::KimiCode
-        }
+        let _ = target;
+        Self::KimiCode
     }
 
     fn as_config_target(self) -> &'static str {
         match self {
-            Self::KimiCli => "kimi-cli",
             Self::KimiCode => "kimi-code",
         }
     }
 
     fn label(self) -> &'static str {
         match self {
-            Self::KimiCli => "Kimi CLI",
             Self::KimiCode => "Kimi Code",
         }
     }
@@ -63,32 +57,6 @@ fn executable_path_if_exists(path: PathBuf) -> Option<PathBuf> {
         Some(path)
     } else {
         None
-    }
-}
-
-fn find_kimi_cli_login_command() -> OAuthLoginCommand {
-    if let Some(home) = dirs::home_dir() {
-        for candidate in [
-            home.join(".local/share/uv/tools/kimi-cli/bin/kimi"),
-            home.join(".local/bin/kimi"),
-        ] {
-            if let Some(path) = executable_path_if_exists(candidate) {
-                return OAuthLoginCommand {
-                    program: path.to_string_lossy().to_string(),
-                    args: vec!["login".to_string()],
-                };
-            }
-        }
-    }
-    OAuthLoginCommand {
-        program: "uv".to_string(),
-        args: vec![
-            "tool".to_string(),
-            "run".to_string(),
-            "kimi-cli".to_string(),
-            "kimi".to_string(),
-            "login".to_string(),
-        ],
     }
 }
 
@@ -148,7 +116,6 @@ fn find_kimi_code_login_command() -> OAuthLoginCommand {
 
 fn find_oauth_login_command(target: KimiOAuthTarget) -> OAuthLoginCommand {
     match target {
-        KimiOAuthTarget::KimiCli => find_kimi_cli_login_command(),
         KimiOAuthTarget::KimiCode => find_kimi_code_login_command(),
     }
 }
@@ -410,7 +377,7 @@ fn summarize_oauth_login_failure(result: &ExecResult) -> String {
         .unwrap_or_else(|| format!("Kimi OAuth login failed with exit code {}.", result.code))
 }
 
-/// 执行外部命令，拿 stdout/stderr/退出码。覆盖 kimi/uv/open/osascript 等调用。
+/// 执行外部命令，拿 stdout/stderr/退出码。覆盖 kimi/open/osascript 等调用。
 /// timeout_ms <= 0 表示不超时（依赖系统）。
 #[tauri::command]
 pub async fn exec_command(
@@ -733,10 +700,10 @@ mod tests {
     }
 
     #[test]
-    fn config_target_parses_kimi_cli_explicitly() {
+    fn config_target_always_uses_kimi_code() {
         assert!(matches!(
             KimiOAuthTarget::from_config_target("kimi-cli"),
-            KimiOAuthTarget::KimiCli
+            KimiOAuthTarget::KimiCode
         ));
         assert!(matches!(
             KimiOAuthTarget::from_config_target("kimi-code"),
@@ -746,21 +713,6 @@ mod tests {
             KimiOAuthTarget::from_config_target("unknown"),
             KimiOAuthTarget::KimiCode
         ));
-    }
-
-    #[test]
-    fn kimi_cli_login_command_uses_uv_tool_or_uv_fallback() {
-        let command = find_oauth_login_command(KimiOAuthTarget::KimiCli);
-
-        if command.program.ends_with("/kimi") {
-            assert_eq!(command.args, vec!["login"]);
-            assert!(
-                command.program.contains("kimi-cli") || command.program.ends_with(".local/bin/kimi")
-            );
-        } else {
-            assert_eq!(command.program, "uv");
-            assert_eq!(command.args, vec!["tool", "run", "kimi-cli", "kimi", "login"]);
-        }
     }
 
     #[test]
@@ -780,25 +732,25 @@ mod tests {
     #[test]
     fn parse_device_login_line_extracts_authorization_url() {
         let event = parse_device_login_line(
-            KimiOAuthTarget::KimiCli,
+            KimiOAuthTarget::KimiCode,
             "Opening browser for Kimi device login: https://auth.example/device?code=abc",
         );
 
         assert_eq!(event.kind, "device-code");
-        assert_eq!(event.target, "kimi-cli");
+        assert_eq!(event.target, "kimi-code");
         assert_eq!(event.url.as_deref(), Some("https://auth.example/device?code=abc"));
         assert_eq!(event.line.as_deref(), Some("Opening browser for Kimi device login: https://auth.example/device?code=abc"));
     }
 
     #[test]
-    fn parse_device_login_line_extracts_kimi_cli_verification_url_and_user_code() {
+    fn parse_device_login_line_extracts_verification_url_and_user_code() {
         let event = parse_device_login_line(
-            KimiOAuthTarget::KimiCli,
+            KimiOAuthTarget::KimiCode,
             "Verification URL: https://www.kimi.com/code/authorize_device?user_code=RSSI-UYYI",
         );
 
         assert_eq!(event.kind, "device-code");
-        assert_eq!(event.target, "kimi-cli");
+        assert_eq!(event.target, "kimi-code");
         assert_eq!(
             event.url.as_deref(),
             Some("https://www.kimi.com/code/authorize_device?user_code=RSSI-UYYI")
@@ -820,7 +772,7 @@ mod tests {
 
     #[test]
     fn parse_device_login_line_extracts_standalone_user_code() {
-        let event = parse_device_login_line(KimiOAuthTarget::KimiCli, "User Code: RSSI-UYYI");
+        let event = parse_device_login_line(KimiOAuthTarget::KimiCode, "User Code: RSSI-UYYI");
 
         assert_eq!(event.kind, "user-code");
         assert_eq!(event.user_code.as_deref(), Some("RSSI-UYYI"));
@@ -843,8 +795,8 @@ mod tests {
     }
 
     #[test]
-    fn parse_device_login_line_marks_kimi_cli_success() {
-        let event = parse_device_login_line(KimiOAuthTarget::KimiCli, "Logged in successfully.");
+    fn parse_device_login_line_marks_plain_success() {
+        let event = parse_device_login_line(KimiOAuthTarget::KimiCode, "Logged in successfully.");
 
         assert_eq!(event.kind, "success");
         assert_eq!(event.message.as_deref(), Some("Logged in successfully."));
@@ -853,12 +805,12 @@ mod tests {
     #[test]
     fn parse_device_login_line_marks_models_payment_required() {
         let event = parse_device_login_line(
-            KimiOAuthTarget::KimiCli,
+            KimiOAuthTarget::KimiCode,
             "Failed to get models: 402, message='Payment Required', url='https://api.kimi.com/coding/v1/models'",
         );
 
         assert_eq!(event.kind, "account-required");
-        assert_eq!(event.target, "kimi-cli");
+        assert_eq!(event.target, "kimi-code");
         assert_eq!(
             event.message.as_deref(),
             Some("Kimi OAuth authorization completed, but the Kimi models endpoint returned 402 Payment Required. Check account billing, plan, or quota, then retry.")

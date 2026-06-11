@@ -5,7 +5,7 @@ import type { AppState } from "@shared/types";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 import { invoke } from "@tauri-apps/api/core";
-import { evaluateCliCompatibility, getCliVersion, getTargetCliVersion, MIN_CLI_VERSION, runKimiConnectivityTest, runKimiMcpCommand, runProvidersHealthCheck, upgradeKimiCli, upgradeTargetCli } from "./cli";
+import { classifyKimiTargetFromSignals, evaluateCliCompatibility, getCliVersion, getTargetCliVersion, MIN_CLI_VERSION, runKimiConnectivityTest, runKimiMcpServerTest, runProvidersHealthCheck, upgradeKimiCli, upgradeTargetCli } from "./cli";
 
 const mockedInvoke = vi.mocked(invoke);
 
@@ -34,28 +34,67 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("getCliVersion", () => {
-  it("extracts the semver from kimi --version stdout", async () => {
-    mockedInvoke.mockResolvedValue(exec(0, "kimi-cli 1.4.2\n") as unknown as never);
-    const result = await getCliVersion();
-    expect(result).toMatchObject({ version: "1.4.2", installed: true, target: "kimi-cli", packageName: "Kimi CLI" });
-    expect(mockedInvoke).toHaveBeenCalledWith("exec_command", { program: "kimi", args: ["--version"], timeoutMs: 3000 });
+describe("classifyKimiTargetFromSignals", () => {
+  it("detects Kimi Code from executable paths", () => {
+    expect(classifyKimiTargetFromSignals({
+      executablePath: "/opt/homebrew/bin/kimi",
+      resolvedPath: "/opt/homebrew/Cellar/kimi-code/1.2.0/bin/kimi",
+      versionOutput: "kimi, version 1.2.0",
+    })).toMatchObject({ target: "kimi-code", status: "detected" });
   });
 
-  it("reports not installed when the command fails", async () => {
-    mockedInvoke.mockResolvedValue(exec(127, "", "command not found") as unknown as never);
-    await expect(getCliVersion()).resolves.toMatchObject({
-      version: "",
-      installed: false,
-      target: "kimi-cli",
-      installCommand: "uv tool install kimi-cli --force",
+  it("does not accept historical uv kimi-cli paths as Kimi Code", () => {
+    expect(classifyKimiTargetFromSignals({
+      executablePath: "/Users/me/.local/bin/kimi",
+      resolvedPath: "/Users/me/.local/share/uv/tools/kimi-cli/bin/kimi",
+      versionOutput: "kimi, version 1.47.0",
+    })).toMatchObject({ target: "kimi-code", status: "not-installed" });
+  });
+
+  it("does not accept the plain historical kimi-cli version format without Kimi Code signals", () => {
+    expect(classifyKimiTargetFromSignals({
+      executablePath: "/usr/local/bin/kimi",
+      versionOutput: "kimi, version 1.47.0",
+    })).toMatchObject({ target: "kimi-code", status: "not-installed" });
+  });
+
+  it("marks unknown signals as not installed", () => {
+    expect(classifyKimiTargetFromSignals({
+      executablePath: "/opt/custom/bin/kimi",
+      versionOutput: "custom output",
+    })).toMatchObject({ target: "kimi-code", status: "not-installed" });
+  });
+});
+
+describe("getCliVersion", () => {
+  it("extracts the semver from Homebrew kimi-code output", async () => {
+    mockedInvoke.mockResolvedValue(exec(0, "kimi-code 1.4.2\n") as unknown as never);
+    const result = await getCliVersion();
+    expect(result).toMatchObject({ version: "1.4.2", installed: true, target: "kimi-code", packageName: "Kimi Code" });
+    expect(mockedInvoke).toHaveBeenCalledWith("exec_command", {
+      program: "brew",
+      args: ["list", "--versions", "kimi-code"],
+      timeoutMs: 3000,
     });
   });
 
-  it("checks PyPI for the latest version and flags an available update", async () => {
+  it("reports not installed when the command fails", async () => {
     mockedInvoke
-      .mockResolvedValueOnce(exec(0, "1.0.0") as unknown as never) // kimi --version
-      .mockResolvedValueOnce(http(200, JSON.stringify({ info: { version: "2.0.0" } })) as unknown as never); // PyPI
+      .mockResolvedValueOnce(exec(127, "", "command not found") as unknown as never)
+      .mockResolvedValueOnce(exec(1, "", "") as unknown as never)
+      .mockResolvedValueOnce(exec(127, "", "command not found") as unknown as never);
+    await expect(getCliVersion()).resolves.toMatchObject({
+      version: "",
+      installed: false,
+      target: "kimi-code",
+      installCommand: "brew install kimi-code",
+    });
+  });
+
+  it("checks Homebrew for the latest version and flags an available update", async () => {
+    mockedInvoke
+      .mockResolvedValueOnce(exec(0, "kimi-code 1.0.0") as unknown as never)
+      .mockResolvedValueOnce(http(200, JSON.stringify({ versions: { stable: "2.0.0" } })) as unknown as never);
     const result = await getCliVersion({ checkLatest: true });
     expect(result.latestVersion).toBe("2.0.0");
     expect(result.hasUpdate).toBe(true);
@@ -63,15 +102,15 @@ describe("getCliVersion", () => {
 
   it("does not flag an update when already current", async () => {
     mockedInvoke
-      .mockResolvedValueOnce(exec(0, "2.0.0") as unknown as never)
-      .mockResolvedValueOnce(http(200, JSON.stringify({ info: { version: "2.0.0" } })) as unknown as never);
+      .mockResolvedValueOnce(exec(0, "kimi-code 2.0.0") as unknown as never)
+      .mockResolvedValueOnce(http(200, JSON.stringify({ versions: { stable: "2.0.0" } })) as unknown as never);
     const result = await getCliVersion({ checkLatest: true });
     expect(result.hasUpdate).toBe(false);
   });
 
-  it("tolerates a failing PyPI request and returns the local result", async () => {
+  it("tolerates a failing latest-version request and returns the local result", async () => {
     mockedInvoke
-      .mockResolvedValueOnce(exec(0, "1.0.0") as unknown as never)
+      .mockResolvedValueOnce(exec(0, "kimi-code 1.0.0") as unknown as never)
       .mockResolvedValueOnce(http(500) as unknown as never);
     const result = await getCliVersion({ checkLatest: true });
     expect(result).toMatchObject({ version: "1.0.0", installed: true });
@@ -106,6 +145,7 @@ describe("getCliVersion", () => {
     mockedInvoke
       .mockResolvedValueOnce(exec(1, "", "Error: No such keg: /opt/homebrew/Cellar/kimi-code") as unknown as never)
       .mockResolvedValueOnce(exec(1, "", "") as unknown as never)
+      .mockResolvedValueOnce(exec(0, "/usr/local/bin/kimi\n---KIMI_RESOLVED---\n/usr/local/bin/kimi\n---KIMI_CANDIDATES---\n/usr/local/bin/kimi\n---KIMI_VERSION---\nkimi, version 1.47.0\n") as unknown as never)
       .mockResolvedValueOnce(http(200, JSON.stringify({ versions: { stable: "1.3.0" } })) as unknown as never);
     const result = await getTargetCliVersion("kimi-code", { checkLatest: true });
     expect(result).toMatchObject({
@@ -214,13 +254,13 @@ describe("getCliVersion", () => {
   });
 });
 
-describe("upgradeKimiCli / runKimiMcpCommand", () => {
-  it("upgrades via uv tool upgrade and trims output", async () => {
+describe("upgradeKimiCli / runKimiMcpServerTest", () => {
+  it("upgrades via Homebrew and trims output", async () => {
     mockedInvoke.mockResolvedValue(exec(0, " done \n", " warn \n") as unknown as never);
     await expect(upgradeKimiCli()).resolves.toEqual({ ok: true, stdout: "done", stderr: "warn" });
     expect(mockedInvoke).toHaveBeenCalledWith("exec_command", {
-      program: "uv",
-      args: ["tool", "upgrade", "kimi-cli", "--no-cache"],
+      program: "brew",
+      args: ["upgrade", "kimi-code"],
       timeoutMs: 120000,
     });
   });
@@ -250,16 +290,6 @@ describe("upgradeKimiCli / runKimiMcpCommand", () => {
     });
   });
 
-  it("installs kimi-cli via uv when requested", async () => {
-    mockedInvoke.mockResolvedValue(exec(0, "installed", "") as unknown as never);
-    await expect(upgradeTargetCli("kimi-cli", { install: true })).resolves.toEqual({ ok: true, stdout: "installed", stderr: "" });
-    expect(mockedInvoke).toHaveBeenCalledWith("exec_command", {
-      program: "uv",
-      args: ["tool", "install", "kimi-cli", "--force"],
-      timeoutMs: 120000,
-    });
-  });
-
   it("upgrades kimi-code via the official PowerShell installer on Windows", async () => {
     vi.stubGlobal("navigator", { platform: "Win32", userAgent: "Windows" });
     mockedInvoke.mockResolvedValue(exec(0, "updated", "") as unknown as never);
@@ -271,13 +301,58 @@ describe("upgradeKimiCli / runKimiMcpCommand", () => {
     });
   });
 
-  it("forwards mcp subcommand args to kimi mcp", async () => {
-    mockedInvoke.mockResolvedValue(exec(0, "ok", "") as unknown as never);
-    await runKimiMcpCommand(["list"]);
+  it("checks stdio MCP command availability without calling kimi mcp", async () => {
+    mockedInvoke.mockResolvedValue(exec(0, "", "") as unknown as never);
+    await expect(runKimiMcpServerTest("local", {
+      enabled: true,
+      transport: "stdio",
+      url: "",
+      headers: {},
+      command: "npx",
+      args: ["server"],
+      env: {},
+    })).resolves.toMatchObject({ ok: true });
     expect(mockedInvoke).toHaveBeenCalledWith("exec_command", expect.objectContaining({
-      program: "kimi",
-      args: ["mcp", "list"],
+      program: "sh",
+      args: ["-lc", "command -v 'npx' >/dev/null"],
     }));
+    expect(mockedInvoke).not.toHaveBeenCalledWith("exec_command", expect.objectContaining({
+      args: expect.arrayContaining(["mcp"]),
+    }));
+  });
+
+  it("tests Streamable HTTP MCP endpoints with initialize POST", async () => {
+    mockedInvoke.mockResolvedValue(http(200, JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} })) as unknown as never);
+    await expect(runKimiMcpServerTest("remote", {
+      enabled: true,
+      transport: "streamable-http",
+      url: "https://example.test/mcp",
+      headers: { Authorization: "Bearer token" },
+      command: "",
+      args: [],
+      env: {},
+    })).resolves.toMatchObject({ ok: true });
+    expect(mockedInvoke).toHaveBeenCalledWith("http_request", expect.objectContaining({
+      method: "POST",
+      url: "https://example.test/mcp",
+      headers: expect.objectContaining({
+        Authorization: "Bearer token",
+        "Content-Type": "application/json",
+      }),
+    }));
+  });
+
+  it("reports SSE-only endpoints as incompatible with Kimi Code HTTP transport", async () => {
+    mockedInvoke.mockResolvedValue(http(405, "Method Not Allowed") as unknown as never);
+    await expect(runKimiMcpServerTest("amap-maps", {
+      enabled: true,
+      transport: "sse",
+      url: "https://mcp.api-inference.modelscope.net/example/sse",
+      headers: {},
+      command: "",
+      args: [],
+      env: {},
+    })).rejects.toThrow(/likely an SSE endpoint/);
   });
 });
 
