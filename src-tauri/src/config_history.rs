@@ -4,13 +4,14 @@
 //! 存储：SQLite 元数据（~/.kimi-code/.panel/app.db 的 config_history 表）
 //!       + 文件系统快照内容（~/.kimi-code/.panel/history/{id}.toml.gz）
 
+use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use flate2::read::GzDecoder;
 use sha2::{Digest, Sha256};
 use std::fs;
-use std::io::Write;
 use std::io::Read;
+use std::io::Write;
+use std::path::PathBuf;
 
 /// 配置历史表 schema。
 ///
@@ -37,27 +38,98 @@ CREATE INDEX IF NOT EXISTS idx_history_file
   ON config_history(file_id, snapshot_at DESC);
 "#;
 
+fn history_dir() -> Result<PathBuf, String> {
+    Ok(dirs::home_dir()
+        .ok_or("cannot resolve home dir")?
+        .join(".kimi-code/.panel/history"))
+}
+
+fn legacy_history_dir() -> Result<PathBuf, String> {
+    Ok(dirs::home_dir()
+        .ok_or("cannot resolve home dir")?
+        .join(".kimi/.panel/history"))
+}
+
+fn ensure_history_dir() -> Result<PathBuf, String> {
+    let target = history_dir()?;
+    std::fs::create_dir_all(&target).map_err(|e| format!("create history dir: {e}"))?;
+
+    if let Ok(legacy) = legacy_history_dir() {
+        if legacy.exists() && legacy != target {
+            if let Ok(entries) = std::fs::read_dir(&legacy) {
+                for entry in entries.flatten() {
+                    let source = entry.path();
+                    if !source.is_file() {
+                        continue;
+                    }
+                    let Some(file_name) = source.file_name() else {
+                        continue;
+                    };
+                    let destination = target.join(file_name);
+                    if !destination.exists() {
+                        let _ = std::fs::rename(&source, &destination)
+                            .or_else(|_| std::fs::copy(&source, &destination).map(|_| ()));
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(target)
+}
+
+fn migrate_history_snapshot_paths(
+    conn: &rusqlite::Connection,
+    legacy: &PathBuf,
+    target: &PathBuf,
+) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare("SELECT id, snapshot_path FROM config_history")
+        .map_err(|e| format!("query history snapshot paths: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| format!("map history snapshot paths: {e}"))?;
+
+    for row in rows {
+        let (id, snapshot_path) =
+            row.map_err(|e| format!("read history snapshot path row: {e}"))?;
+        let current = PathBuf::from(&snapshot_path);
+        if !current.starts_with(legacy) {
+            continue;
+        }
+        let Some(file_name) = current.file_name() else {
+            continue;
+        };
+        let next = target.join(file_name);
+        conn.execute(
+            "UPDATE config_history SET snapshot_path = ?1 WHERE id = ?2",
+            rusqlite::params![next.to_string_lossy().to_string(), id],
+        )
+        .map_err(|e| format!("update history snapshot path: {e}"))?;
+    }
+
+    Ok(())
+}
+
 /// 初始化配置历史表。
 ///
 /// 调用时机：应用启动时，在 usage_open 之后执行。
 /// 注意：复用 usage.rs 的 SQLite 连接，不单独创建数据库文件。
 #[tauri::command]
-pub fn init_config_history(
-    state: tauri::State<crate::usage::UsageState>,
-) -> Result<(), String> {
+pub fn init_config_history(state: tauri::State<crate::usage::UsageState>) -> Result<(), String> {
     let guard = state.conn.lock().unwrap();
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     conn.execute_batch(SCHEMA_SQL)
         .map_err(|e| format!("init config_history schema: {e}"))?;
 
-    // 确保 history 目录存在
-    let history_dir = dirs::home_dir()
-        .ok_or("cannot resolve home dir")?
-        .join(".kimi/.panel/history");
-
-    std::fs::create_dir_all(&history_dir)
-        .map_err(|e| format!("create history dir: {e}"))?;
+    // 确保 history 目录存在，并把旧目录中的快照路径迁移到 Kimi Code 标准目录。
+    let target_history_dir = ensure_history_dir()?;
+    if let Ok(legacy) = legacy_history_dir() {
+        migrate_history_snapshot_paths(conn, &legacy, &target_history_dir)?;
+    }
 
     Ok(())
 }
@@ -150,12 +222,7 @@ pub fn capture_snapshot(
     };
 
     // 保存到文件系统
-    let history_dir = dirs::home_dir()
-        .ok_or("cannot resolve home dir")?
-        .join(".kimi/.panel/history");
-
-    std::fs::create_dir_all(&history_dir)
-        .map_err(|e| format!("create history dir: {e}"))?;
+    let history_dir = ensure_history_dir()?;
 
     let timestamp_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -236,7 +303,8 @@ pub fn list_snapshots(
              FROM config_history
              WHERE file_id = ?1
              ORDER BY snapshot_at DESC
-             LIMIT ?2".to_string(),
+             LIMIT ?2"
+                .to_string(),
             vec![Box::new(fid), Box::new(limit)],
         )
     } else {
@@ -244,7 +312,8 @@ pub fn list_snapshots(
             "SELECT id, snapshot_at, file_id, sha256, size_bytes, snapshot_path, description
              FROM config_history
              ORDER BY snapshot_at DESC
-             LIMIT ?1".to_string(),
+             LIMIT ?1"
+                .to_string(),
             vec![Box::new(limit)],
         )
     };
@@ -298,8 +367,7 @@ pub fn get_snapshot_content(
         .map_err(|e| format!("snapshot not found: {e}"))?;
 
     // 读取 gzip 文件
-    let compressed = fs::read(&snapshot_path)
-        .map_err(|e| format!("read snapshot file: {e}"))?;
+    let compressed = fs::read(&snapshot_path).map_err(|e| format!("read snapshot file: {e}"))?;
 
     // 解压缩
     let mut decoder = GzDecoder::new(&compressed[..]);
@@ -338,8 +406,7 @@ pub fn restore_snapshot(
         .map_err(|e| format!("snapshot not found: {e}"))?;
 
     // 2. 读取快照内容
-    let compressed = fs::read(&snapshot_path)
-        .map_err(|e| format!("read snapshot file: {e}"))?;
+    let compressed = fs::read(&snapshot_path).map_err(|e| format!("read snapshot file: {e}"))?;
 
     let mut decoder = GzDecoder::new(&compressed[..]);
     let mut snapshot_content = String::new();
@@ -365,7 +432,10 @@ pub fn restore_snapshot(
     let config_file_path = match file_id.as_str() {
         "config" => "~/.kimi-code/config.toml",
         "mcp" => "~/.kimi-code/mcp.json",
-        "profiles" => return Err("profiles snapshots are legacy-only; Profile data is stored in SQLite panel settings".to_string()),
+        "profiles" => return Err(
+            "profiles snapshots are legacy-only; Profile data is stored in SQLite panel settings"
+                .to_string(),
+        ),
         _ => return Err(format!("unknown file_id: {file_id}")),
     };
 
@@ -389,9 +459,7 @@ pub fn restore_snapshot(
             if !exists {
                 // 压缩并保存
                 if let Ok(compressed) = gzip_compress(&current_content) {
-                    let history_dir = dirs::home_dir()
-                        .ok_or("cannot resolve home dir")?
-                        .join(".kimi/.panel/history");
+                    let history_dir = ensure_history_dir()?;
 
                     let timestamp_ms = std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -403,7 +471,8 @@ pub fn restore_snapshot(
 
                     if fs::write(&rollback_point_path, &compressed).is_ok() {
                         let snapshot_at = chrono::Utc::now().to_rfc3339();
-                        let rollback_point_path_str = rollback_point_path.to_string_lossy().to_string();
+                        let rollback_point_path_str =
+                            rollback_point_path.to_string_lossy().to_string();
 
                         let _ = conn.execute(
                             "INSERT INTO config_history (snapshot_at, file_id, sha256, size_bytes, snapshot_path, description)
@@ -424,8 +493,7 @@ pub fn restore_snapshot(
     }
 
     // 5. 覆盖配置文件
-    fs::write(&target_path, snapshot_content)
-        .map_err(|e| format!("write config file: {e}"))?;
+    fs::write(&target_path, snapshot_content).map_err(|e| format!("write config file: {e}"))?;
 
     log::info!("Restored snapshot #{snapshot_id} to {file_id}");
 
@@ -438,9 +506,7 @@ pub fn restore_snapshot(
 ///
 /// 调用时机：每次保存配置后（saveAppState 后）
 #[tauri::command]
-pub fn cleanup_old_snapshots(
-    state: tauri::State<crate::usage::UsageState>,
-) -> Result<i64, String> {
+pub fn cleanup_old_snapshots(state: tauri::State<crate::usage::UsageState>) -> Result<i64, String> {
     let guard = state.conn.lock().unwrap();
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
@@ -475,9 +541,7 @@ pub fn cleanup_old_snapshots(
         )
         .map_err(|e| format!("delete: {e}"))?;
 
-    log::info!(
-        "Cleaned up {deleted_rows} old snapshots ({deleted_files} files deleted)"
-    );
+    log::info!("Cleaned up {deleted_rows} old snapshots ({deleted_files} files deleted)");
 
     Ok(deleted_rows as i64)
 }
@@ -493,12 +557,18 @@ mod tests {
         conn.execute_batch(SCHEMA_SQL).unwrap();
 
         // 验证表存在
-        let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='config_history'").unwrap();
+        let mut stmt = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='config_history'")
+            .unwrap();
         let exists = stmt.exists([]).unwrap();
         assert!(exists, "config_history table should exist");
 
         // 验证索引存在
-        let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_history_time'").unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_history_time'",
+            )
+            .unwrap();
         let exists = stmt.exists([]).unwrap();
         assert!(exists, "idx_history_time index should exist");
     }
@@ -512,17 +582,33 @@ mod tests {
         conn.execute(
             "INSERT INTO config_history (snapshot_at, file_id, sha256, size_bytes, snapshot_path)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            ["2026-06-08T00:00:00Z", "config", "abc123", "1024", "/path/1.gz"],
-        ).unwrap();
+            [
+                "2026-06-08T00:00:00Z",
+                "config",
+                "abc123",
+                "1024",
+                "/path/1.gz",
+            ],
+        )
+        .unwrap();
 
         // 尝试插入相同 file_id + sha256 应失败
         let result = conn.execute(
             "INSERT INTO config_history (snapshot_at, file_id, sha256, size_bytes, snapshot_path)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            ["2026-06-08T01:00:00Z", "config", "abc123", "2048", "/path/2.gz"],
+            [
+                "2026-06-08T01:00:00Z",
+                "config",
+                "abc123",
+                "2048",
+                "/path/2.gz",
+            ],
         );
 
-        assert!(result.is_err(), "duplicate file_id+sha256 should be rejected");
+        assert!(
+            result.is_err(),
+            "duplicate file_id+sha256 should be rejected"
+        );
     }
 
     #[test]
@@ -564,23 +650,46 @@ mod tests {
         conn.execute(
             "INSERT INTO config_history (snapshot_at, file_id, sha256, size_bytes, snapshot_path)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            ["2026-06-08T10:00:00Z", "config", "hash1", "1024", "/path/1.gz"],
-        ).unwrap();
+            [
+                "2026-06-08T10:00:00Z",
+                "config",
+                "hash1",
+                "1024",
+                "/path/1.gz",
+            ],
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO config_history (snapshot_at, file_id, sha256, size_bytes, snapshot_path)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            ["2026-06-08T11:00:00Z", "profiles", "hash2", "2048", "/path/2.gz"],
-        ).unwrap();
+            [
+                "2026-06-08T11:00:00Z",
+                "profiles",
+                "hash2",
+                "2048",
+                "/path/2.gz",
+            ],
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO config_history (snapshot_at, file_id, sha256, size_bytes, snapshot_path)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            ["2026-06-08T12:00:00Z", "config", "hash3", "3072", "/path/3.gz"],
-        ).unwrap();
+            [
+                "2026-06-08T12:00:00Z",
+                "config",
+                "hash3",
+                "3072",
+                "/path/3.gz",
+            ],
+        )
+        .unwrap();
 
         // 查询所有快照（应按时间倒序）
-        let mut stmt = conn.prepare(
-            "SELECT id, snapshot_at, file_id FROM config_history ORDER BY snapshot_at DESC"
-        ).unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, snapshot_at, file_id FROM config_history ORDER BY snapshot_at DESC",
+            )
+            .unwrap();
         let rows: Vec<(i64, String, String)> = stmt
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
             .unwrap()
@@ -592,9 +701,9 @@ mod tests {
         assert_eq!(rows[2].1, "2026-06-08T10:00:00Z"); // 最老的在后
 
         // 查询指定文件类型
-        let mut stmt = conn.prepare(
-            "SELECT COUNT(*) FROM config_history WHERE file_id = 'config'"
-        ).unwrap();
+        let mut stmt = conn
+            .prepare("SELECT COUNT(*) FROM config_history WHERE file_id = 'config'")
+            .unwrap();
         let count: i64 = stmt.query_row([], |row| row.get(0)).unwrap();
         assert_eq!(count, 2);
     }

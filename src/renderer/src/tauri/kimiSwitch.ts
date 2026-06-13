@@ -19,18 +19,18 @@ import {
   cloneState,
   applyProfile,
 } from "@shared/configStore";
-import { buildConfigDoctorReport, buildRedactedPreviewBundle } from "@shared/configSafety";
+import { buildConfigDoctorReport, buildManagedDocuments, buildRedactedPreviewBundle } from "@shared/configSafety";
 import { scanSkills } from "@shared/skillsStore";
 import { compareReleaseVersions } from "@shared/versionUtils";
 import { computeEventCost, resolveModelPricing } from "@shared/pricing";
-import type { AppState, ManagedFileId, ModelConfig, PanelSettings, PreviewBundle, OpenKimiTerminalRequest, FileSnapshotBundle } from "@shared/types";
+import type { AppState, ManagedFileId, ModelConfig, PanelSettings, PreviewBundle, OpenKimiTerminalRequest, FileSnapshotBundle, SaveStateConflictResult, SaveStateResult } from "@shared/types";
 
 import { tauriFileAccess, pathExists } from "./fileAccess";
 import * as usageDb from "./usageDb";
 import { UsageLogWatcher } from "./usageLogWatcher";
 import * as cli from "./cli";
 import { openKimiInTerminal, openSessionTerminal } from "./terminal";
-import { captureSnapshotForState, readManagedDocuments } from "./fileSnapshots";
+import { captureSnapshotForState, detectExternalChangeConflict, readManagedDocuments } from "./fileSnapshots";
 import { initConfigHistory, captureSnapshot, cleanupOldSnapshots } from "./configHistory";
 import { getPanelSettings, initPanelSettingsStore, savePanelSettings } from "./panelSettingsStore";
 import * as backup from "./backup";
@@ -239,22 +239,25 @@ export const kimiSwitchTauri = {
     currentAppState = state;
 
     const currentSettings = await getPanelSettings();
-    if (
-        currentSettings &&
-      (
+    if (currentSettings) {
+      const needsPanelSync =
         currentSettings.config_target !== state.panelSettings.config_target ||
-        currentSettings.config_path !== state.panelSettings.config_path
-      )
-    ) {
-      void savePanelSettings({
-        ...currentSettings,
-        config_target: state.panelSettings.config_target,
-        config_path: state.panelSettings.config_path,
-        profiles: state.profiles,
-        active_profile: state.activeProfile,
-        profiles_path: "",
-        follow_config_profiles: true,
-      }).catch((err) => console.warn("Failed to sync detected config target:", err));
+        currentSettings.config_path !== state.panelSettings.config_path ||
+        currentSettings.active_profile !== state.activeProfile ||
+        JSON.stringify(currentSettings.profiles ?? {}) !== JSON.stringify(state.profiles ?? {}) ||
+        JSON.stringify(currentSettings.mcp_servers ?? {}) !== JSON.stringify(state.mcpConfig.mcpServers ?? {});
+      if (needsPanelSync) {
+        void savePanelSettings({
+          ...currentSettings,
+          config_target: state.panelSettings.config_target,
+          config_path: state.panelSettings.config_path,
+          profiles: state.profiles,
+          active_profile: state.activeProfile,
+          mcp_servers: state.mcpConfig.mcpServers,
+          profiles_path: "",
+          follow_config_profiles: true,
+        }).catch((err) => console.warn("Failed to sync detected config target:", err));
+      }
     }
 
     if (state.panelSettings.insights_status === "enabled") {
@@ -266,7 +269,7 @@ export const kimiSwitchTauri = {
     await syncWindowToggleShortcut();
     return state;
   },
-  saveState: async (state: AppState): Promise<{ ok: true }> => {
+  saveState: async (state: AppState): Promise<SaveStateResult> => {
     // 保存前捕获快照（Kimi 标准配置 + GUI SQLite 导出）
     const normalized = normalizeStatePaths(state);
     await Promise.all([
@@ -283,11 +286,39 @@ export const kimiSwitchTauri = {
     // 保存后清理旧快照（30 天前）
     void cleanupOldSnapshots();
 
-    return { ok: true };
+    return {
+      ok: true,
+      snapshot: await captureSnapshotForState(normalized),
+      doctor: buildConfigDoctorReport(normalized),
+    };
   },
-  saveStateSafe: async (state: AppState): Promise<{ ok: true }> => {
-    // 保存前捕获快照（Kimi 标准配置 + GUI SQLite 导出）
+  saveStateSafe: async (
+    state: AppState,
+    options?: { expectedSnapshot?: FileSnapshotBundle; allowOverwrite?: boolean },
+  ): Promise<SaveStateResult | SaveStateConflictResult> => {
     const normalized = normalizeStatePaths(state);
+    if (options?.allowOverwrite !== true) {
+      const conflict = await detectExternalChangeConflict({
+        expectedSnapshot: options?.expectedSnapshot,
+        targetPaths: {
+          config: normalized.configPath,
+          panel: normalized.panelSettingsPath,
+          mcp: normalized.mcpConfigPath,
+        },
+        draftDocuments: buildManagedDocuments(normalized),
+      });
+      if (conflict.conflict) {
+        return {
+          ok: false,
+          reason: "external-change",
+          snapshot: conflict.snapshot,
+          doctor: buildConfigDoctorReport(normalized),
+          conflict: conflict.conflict,
+        };
+      }
+    }
+
+    // 保存前捕获快照（Kimi 标准配置 + GUI SQLite 导出）
     await Promise.all([
       captureSnapshot("config", normalized.configPath),
       captureSnapshot("panel", normalized.panelSettingsPath),
@@ -302,7 +333,11 @@ export const kimiSwitchTauri = {
     // 保存后清理旧快照（30 天前）
     void cleanupOldSnapshots();
 
-    return { ok: true };
+    return {
+      ok: true,
+      snapshot: await captureSnapshotForState(normalized),
+      doctor: buildConfigDoctorReport(normalized),
+    };
   },
   saveConfigTargetPreference: async (): Promise<{ ok: true }> => {
     const currentSettings = (await getPanelSettings())

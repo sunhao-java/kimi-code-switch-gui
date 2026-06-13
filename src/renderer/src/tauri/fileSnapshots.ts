@@ -2,7 +2,7 @@
 // sha256 用 Web Crypto；stat 用 Rust file_stat；读取用 fileAccess。
 import { invoke } from "@tauri-apps/api/core";
 
-import { createLineDiff, normalizeStatePaths } from "@shared/configStore";
+import { buildPanelSettingsDocument, createLineDiff, normalizeStatePaths } from "@shared/configStore";
 import { redactDocumentText } from "@shared/configSafety";
 import type {
   AppState,
@@ -14,6 +14,7 @@ import type {
 } from "@shared/types";
 
 import { tauriFileAccess } from "./fileAccess";
+import { getPanelSettings } from "./panelSettingsStore";
 
 interface FileStat {
   size: number;
@@ -34,12 +35,28 @@ export function resolveManagedPaths(state: AppState): Record<ManagedFileId, stri
   return { config: s.configPath, panel: s.panelSettingsPath, mcp: s.mcpConfigPath };
 }
 
+async function readManagedDocument(id: ManagedFileId, path: string): Promise<string | null> {
+  if (id === "panel") {
+    const settings = await getPanelSettings();
+    return settings ? buildPanelSettingsDocument(settings) : null;
+  }
+  return tauriFileAccess.readText(path);
+}
+
 export async function fingerprintFile(id: ManagedFileId, path: string): Promise<FileFingerprint> {
+  if (id === "panel") {
+    const content = await readManagedDocument(id, path);
+    if (content === null) {
+      return { id, path, exists: false, size: 0, mtimeMs: 0, sha256: "" };
+    }
+    return { id, path, exists: true, size: content.length, mtimeMs: 0, sha256: await sha256Hex(content) };
+  }
+
   const stat = await invoke<FileStat | null>("file_stat", { path });
   if (!stat) {
     return { id, path, exists: false, size: 0, mtimeMs: 0, sha256: "" };
   }
-  const content = (await tauriFileAccess.readText(path)) ?? "";
+  const content = (await readManagedDocument(id, path)) ?? "";
   return { id, path, exists: true, size: stat.size, mtimeMs: stat.mtime_ms, sha256: await sha256Hex(content) };
 }
 
@@ -59,7 +76,7 @@ export async function captureSnapshotForState(state: AppState): Promise<FileSnap
 
 export async function readManagedDocuments(paths: Record<ManagedFileId, string>): Promise<Partial<Record<ManagedFileId, string>>> {
   const entries = await Promise.all(
-    (Object.entries(paths) as Array<[ManagedFileId, string]>).map(async ([id, path]) => [id, await tauriFileAccess.readText(path)] as const),
+    (Object.entries(paths) as Array<[ManagedFileId, string]>).map(async ([id, path]) => [id, await readManagedDocument(id, path)] as const),
   );
   return Object.fromEntries(entries) as Partial<Record<ManagedFileId, string>>;
 }
@@ -86,7 +103,7 @@ export async function detectExternalChangeConflict(options: {
     if (!expected || expected.path !== actual.path) continue;
     const reason = detectChangeReason(expected, actual);
     if (!reason) continue;
-    const diskDocument = actual.exists ? (await tauriFileAccess.readText(actual.path)) ?? "" : "";
+    const diskDocument = actual.exists ? (await readManagedDocument(id, actual.path)) ?? "" : "";
     const draftDocument = options.draftDocuments[id] ?? "";
     if (diskDocument === draftDocument) continue;
     const redactedDisk = redactDocumentText(diskDocument).text;

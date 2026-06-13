@@ -92,7 +92,6 @@ function createSnapshot(label: string): FileSnapshotBundle {
     capturedAt: label,
     files: {
       config: { id: "config", path: "/tmp/config.toml", exists: true, size: 1, mtimeMs: 1, sha256: `${label}-config` },
-      profiles: { id: "profiles", path: "/tmp/config.profiles.toml", exists: true, size: 1, mtimeMs: 1, sha256: `${label}-profiles` },
       panel: { id: "panel", path: "/tmp/config.panel.toml", exists: true, size: 1, mtimeMs: 1, sha256: `${label}-panel` },
       mcp: { id: "mcp", path: "/tmp/mcp.json", exists: true, size: 1, mtimeMs: 1, sha256: `${label}-mcp` },
     },

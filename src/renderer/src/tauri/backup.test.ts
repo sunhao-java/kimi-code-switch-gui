@@ -16,7 +16,7 @@ vi.mock("@shared/configStore", () => ({
 }));
 vi.mock("@shared/configSafety", () => ({
   buildConfigDoctorReport: () => ({ ok: true, generatedAt: "", issues: [], errorCount: 0, warningCount: 0, infoCount: 0 }),
-  buildManagedDocuments: () => ({ config: "", profiles: "", panel: "", mcp: "" }),
+  buildManagedDocuments: () => ({ config: "", panel: "", mcp: "" }),
   redactDocumentText: (t: string) => ({ text: t }),
 }));
 vi.mock("@shared/mcpStore", () => ({ buildMcpConfigDocument: () => "mcp-doc" }));
@@ -35,6 +35,9 @@ vi.mock("./fileSnapshots", () => ({
   captureSnapshotForState: vi.fn(async () => ({ capturedAt: "now", files: {} })),
   detectExternalChangeConflict: vi.fn(async () => ({ conflict: null, snapshot: { capturedAt: "now", files: {} } })),
 }));
+vi.mock("./panelSettingsStore", () => ({
+  importPanelSettings: vi.fn(async () => true),
+}));
 vi.mock("./webdav", () => ({
   buildWebDavUrl: vi.fn((_s: unknown, extra: string[] = []) => `https://dav/${extra.join("/")}`),
   deleteWebDavPath: vi.fn(async () => undefined),
@@ -49,6 +52,7 @@ vi.mock("./webdav", () => ({
 import { invoke } from "@tauri-apps/api/core";
 import { tauriFileAccess } from "./fileAccess";
 import { captureSnapshotForState, detectExternalChangeConflict } from "./fileSnapshots";
+import { importPanelSettings } from "./panelSettingsStore";
 import * as webdavMod from "./webdav";
 import {
   createBackupSnapshot,
@@ -62,6 +66,7 @@ const mockedInvoke = vi.mocked(invoke);
 const fa = vi.mocked(tauriFileAccess);
 const webdav = vi.mocked(webdavMod);
 const mockedDetectConflict = vi.mocked(detectExternalChangeConflict);
+const mockedImportPanelSettings = vi.mocked(importPanelSettings);
 void captureSnapshotForState;
 
 function state(destination: "local" | "webdav"): AppState {
@@ -185,7 +190,8 @@ describe("restoreBackupSafe — rollback point", () => {
     expect(result.rollbackBackupName).toMatch(/^backup-/);
     // restored documents are written back to the managed paths (3 ids)
     const restoredWrites = fa.writeText.mock.calls.filter(([p]) => String(p).startsWith("/cfg/"));
-    expect(restoredWrites.length).toBeGreaterThanOrEqual(3);
+    expect(restoredWrites).toHaveLength(2);
+    expect(mockedImportPanelSettings).toHaveBeenCalledWith(expect.any(String));
   });
 
   it("returns an external-change conflict result without writing when a conflict is detected", async () => {

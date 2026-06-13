@@ -28,6 +28,7 @@ import type {
 
 import { tauriFileAccess } from "./fileAccess";
 import { captureSnapshotForState, detectExternalChangeConflict } from "./fileSnapshots";
+import { importPanelSettings } from "./panelSettingsStore";
 import {
   buildWebDavUrl,
   deleteWebDavPath,
@@ -331,6 +332,13 @@ export async function restoreBackupSafe(
   const rollback = await createBackupSnapshot(state, "pre-restore");
 
   for (const id of Object.keys(resolved.paths) as ManagedFileId[]) {
+    if (id === "panel") {
+      const imported = await importPanelSettings(resolved.documents[id]);
+      if (!imported) {
+        throw new Error("Failed to restore panel settings to SQLite.");
+      }
+      continue;
+    }
     await tauriFileAccess.writeText(resolved.paths[id], resolved.documents[id]);
   }
 
