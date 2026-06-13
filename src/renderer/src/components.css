@@ -164,15 +164,18 @@ textarea:focus-visible {
 }
 
 .brand {
-  display: flex;
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr) 34px;
   gap: 14px;
   align-items: center;
   min-width: 0;
-  transition: gap 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    gap 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    grid-template-columns 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .shell.sidebar-collapsed .brand {
-  flex-direction: column;
+  grid-template-columns: 1fr;
   gap: 10px;
   justify-content: center;
 }
@@ -223,7 +226,7 @@ textarea:focus-visible {
   overflow: hidden;
   white-space: nowrap;
   opacity: 1;
-  max-width: 180px;
+  max-width: 100%;
   max-height: 60px;
   transition:
     opacity 200ms ease,
@@ -233,23 +236,32 @@ textarea:focus-visible {
 
 .brand h1 {
   margin: 0;
-  font-size: 1.05rem;
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 0.98rem;
+  line-height: 1.18;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  white-space: normal;
+  word-break: normal;
 }
 
 .brand p {
   margin: 4px 0 0;
+  overflow: hidden;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-collapse-button {
-  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 34px;
   height: 34px;
-  margin-left: auto;
   border: 1px solid rgba(124, 179, 255, 0.18);
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.04);
@@ -5962,6 +5974,24 @@ textarea:focus-visible {
   line-height: 1.55;
 }
 
+.oauth-login-copy code,
+.config-target-detection-note code {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 1px 6px;
+  border: 1px solid rgba(var(--primary-rgb), 0.22);
+  border-radius: 7px;
+  background: rgba(var(--primary-rgb), 0.08);
+  color: var(--text);
+  font-family: "SFMono-Regular", "Cascadia Code", Consolas, monospace;
+  font-size: 0.78em;
+  font-weight: 700;
+  line-height: 1.35;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+
 .oauth-login-actions {
   display: flex;
   flex-wrap: wrap;
@@ -6022,8 +6052,8 @@ textarea:focus-visible {
 
 .config-target-detection {
   display: grid;
-  gap: 12px;
-  padding: 14px;
+  gap: 14px;
+  padding: 16px;
   border: 1px solid rgba(var(--primary-rgb), 0.2);
   border-radius: 16px;
   background:
@@ -6085,18 +6115,29 @@ textarea:focus-visible {
 
 .config-target-detection-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px 12px;
 }
 
 .config-target-detection-grid div {
   display: grid;
-  gap: 5px;
+  align-content: center;
+  gap: 7px;
   min-width: 0;
-  padding: 10px 12px;
+  min-height: 66px;
+  padding: 11px 13px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: rgba(7, 13, 24, 0.24);
+}
+
+.config-target-detection-grid .config-target-metric {
+  grid-column: span 2;
+}
+
+.config-target-detection-grid .config-target-path {
+  grid-column: 1 / -1;
+  min-height: 58px;
 }
 
 .config-target-detection-grid .config-target-resolved-path {
@@ -6111,6 +6152,11 @@ textarea:focus-visible {
   font-size: 0.78rem;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.config-target-detection-grid .config-target-metric code {
+  font-size: 0.86rem;
+  font-weight: 800;
 }
 
 .config-target-detection-note,
@@ -6142,6 +6188,11 @@ textarea:focus-visible {
 
   .config-target-detection-grid {
     grid-template-columns: 1fr;
+  }
+
+  .config-target-detection-grid .config-target-metric,
+  .config-target-detection-grid .config-target-path {
+    grid-column: 1 / -1;
   }
 }
 

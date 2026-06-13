@@ -11,10 +11,20 @@ use serde_json::json;
 /// mcp_servers 表 schema
 pub const SCHEMA_SQL: &str = include_str!("mcp_servers_schema.sql");
 
+/// 安全地获取数据库连接，处理 poisoned lock。
+fn lock_conn<'a>(
+    state: &'a tauri::State<crate::usage::UsageState>,
+) -> Result<std::sync::MutexGuard<'a, Option<rusqlite::Connection>>, String> {
+    state
+        .conn
+        .lock()
+        .map_err(|_| "database lock poisoned".to_string())
+}
+
 /// 初始化 mcp_servers 表
 #[tauri::command]
 pub fn init_mcp_servers_store(state: tauri::State<crate::usage::UsageState>) -> Result<(), String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     conn.execute_batch(SCHEMA_SQL)
@@ -27,7 +37,7 @@ pub fn init_mcp_servers_store(state: tauri::State<crate::usage::UsageState>) -> 
 /// 列出所有 MCP 服务器（包括禁用的）
 #[tauri::command]
 pub fn list_mcp_servers(state: tauri::State<crate::usage::UsageState>) -> Result<String, String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     let mut stmt = conn
@@ -68,7 +78,7 @@ pub fn get_mcp_server(
     server_name: String,
     state: tauri::State<crate::usage::UsageState>,
 ) -> Result<Option<String>, String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     let server_json: Option<String> = conn
@@ -106,7 +116,7 @@ pub fn save_mcp_server(
     server_json: String,
     state: tauri::State<crate::usage::UsageState>,
 ) -> Result<(), String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     let server: serde_json::Value =
@@ -161,7 +171,7 @@ pub fn enable_mcp_server(
     server_name: String,
     state: tauri::State<crate::usage::UsageState>,
 ) -> Result<(), String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     let now = chrono::Utc::now().to_rfc3339();
@@ -187,7 +197,7 @@ pub fn disable_mcp_server(
     server_name: String,
     state: tauri::State<crate::usage::UsageState>,
 ) -> Result<(), String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     let now = chrono::Utc::now().to_rfc3339();
@@ -213,7 +223,7 @@ pub fn delete_mcp_server(
     server_name: String,
     state: tauri::State<crate::usage::UsageState>,
 ) -> Result<(), String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     let rows = conn
@@ -236,7 +246,7 @@ pub fn delete_mcp_server(
 pub fn get_enabled_mcp_servers(
     state: tauri::State<crate::usage::UsageState>,
 ) -> Result<String, String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     let mut stmt = conn
@@ -324,6 +334,7 @@ mod tests {
     use super::*;
     use rusqlite::Connection;
     use std::sync::Mutex;
+    use std::sync::MutexGuard;
 
     fn make_test_state() -> crate::usage::UsageState {
         let conn = Connection::open_in_memory().unwrap();
@@ -333,9 +344,18 @@ mod tests {
         }
     }
 
+    fn lock_test_conn<'a>(
+        state: &'a crate::usage::UsageState,
+    ) -> Result<MutexGuard<'a, Option<Connection>>, String> {
+        state
+            .conn
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())
+    }
+
     // 测试专用辅助函数
     fn save_test(server_json: &str, state: &crate::usage::UsageState) -> Result<(), String> {
-        let guard = state.conn.lock().unwrap();
+        let guard = lock_test_conn(state)?;
         let conn = guard.as_ref().ok_or("usage db not open")?;
 
         let server: serde_json::Value =
@@ -387,7 +407,7 @@ mod tests {
         server_name: &str,
         state: &crate::usage::UsageState,
     ) -> Result<Option<String>, String> {
-        let guard = state.conn.lock().unwrap();
+        let guard = lock_test_conn(state)?;
         let conn = guard.as_ref().ok_or("usage db not open")?;
 
         let server_json: Option<String> = conn
@@ -420,7 +440,7 @@ mod tests {
     }
 
     fn enable_test(server_name: &str, state: &crate::usage::UsageState) -> Result<(), String> {
-        let guard = state.conn.lock().unwrap();
+        let guard = lock_test_conn(state)?;
         let conn = guard.as_ref().ok_or("usage db not open")?;
 
         let now = chrono::Utc::now().to_rfc3339();
@@ -438,7 +458,7 @@ mod tests {
     }
 
     fn disable_test(server_name: &str, state: &crate::usage::UsageState) -> Result<(), String> {
-        let guard = state.conn.lock().unwrap();
+        let guard = lock_test_conn(state)?;
         let conn = guard.as_ref().ok_or("usage db not open")?;
 
         let now = chrono::Utc::now().to_rfc3339();
@@ -456,7 +476,7 @@ mod tests {
     }
 
     fn delete_test(server_name: &str, state: &crate::usage::UsageState) -> Result<(), String> {
-        let guard = state.conn.lock().unwrap();
+        let guard = lock_test_conn(state)?;
         let conn = guard.as_ref().ok_or("usage db not open")?;
 
         let rows = conn
@@ -473,7 +493,7 @@ mod tests {
     }
 
     fn get_enabled_test(state: &crate::usage::UsageState) -> Result<String, String> {
-        let guard = state.conn.lock().unwrap();
+        let guard = lock_test_conn(state)?;
         let conn = guard.as_ref().ok_or("usage db not open")?;
 
         let mut stmt = conn

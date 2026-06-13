@@ -35,6 +35,46 @@ afterEach(() => {
 });
 
 describe("classifyKimiTargetFromSignals", () => {
+  it("detects Kimi Code from Homebrew paths (Apple Silicon)", () => {
+    expect(classifyKimiTargetFromSignals({
+      executablePath: "/opt/homebrew/bin/kimi",
+      resolvedPath: "/opt/homebrew/Cellar/kimi-code/0.14.2/bin/kimi",
+      versionOutput: "0.14.2",
+    })).toMatchObject({ target: "kimi-code", status: "detected", reason: "homebrew-path-detected" });
+  });
+
+  it("detects Kimi Code official script installs from the default bin path", () => {
+    expect(classifyKimiTargetFromSignals({
+      executablePath: "/Users/me/.kimi-code/bin/kimi",
+      resolvedPath: "/Users/me/.kimi-code/bin/kimi",
+      versionOutput: "kimi, version 1.2.0",
+    })).toMatchObject({ target: "kimi-code", status: "detected", installSource: "official-script" });
+  });
+
+  it("detects Kimi Code npm package installs from node_modules paths", () => {
+    expect(classifyKimiTargetFromSignals({
+      executablePath: "/Users/me/.npm-global/bin/kimi",
+      resolvedPath: "/Users/me/.npm-global/lib/node_modules/@moonshot-ai/kimi-code/bin/kimi",
+      versionOutput: "0.14.2",
+    })).toMatchObject({ target: "kimi-code", status: "detected", installSource: "npm" });
+  });
+
+  it("detects Kimi Code from Homebrew paths (Intel Mac)", () => {
+    expect(classifyKimiTargetFromSignals({
+      executablePath: "/usr/local/bin/kimi",
+      resolvedPath: "/usr/local/Homebrew/bin/kimi",
+      versionOutput: "0.14.2",
+    })).toMatchObject({ target: "kimi-code", status: "detected", reason: "homebrew-path-detected" });
+  });
+
+  it("detects Kimi Code from Linuxbrew paths", () => {
+    expect(classifyKimiTargetFromSignals({
+      executablePath: "/home/linuxbrew/.linuxbrew/bin/kimi",
+      resolvedPath: "/home/linuxbrew/.linuxbrew/Cellar/kimi-code/0.14.2/bin/kimi",
+      versionOutput: "0.14.2",
+    })).toMatchObject({ target: "kimi-code", status: "detected", reason: "homebrew-path-detected" });
+  });
+
   it("detects Kimi Code from executable paths", () => {
     expect(classifyKimiTargetFromSignals({
       executablePath: "/opt/homebrew/bin/kimi",
@@ -70,7 +110,7 @@ describe("getCliVersion", () => {
   it("extracts the semver from Homebrew kimi-code output", async () => {
     mockedInvoke.mockResolvedValue(exec(0, "kimi-code 1.4.2\n") as unknown as never);
     const result = await getCliVersion();
-    expect(result).toMatchObject({ version: "1.4.2", installed: true, target: "kimi-code", packageName: "Kimi Code" });
+    expect(result).toMatchObject({ version: "1.4.2", installed: true, target: "kimi-code", packageName: "Kimi Code", installSource: "homebrew" });
     expect(mockedInvoke).toHaveBeenCalledWith("exec_command", {
       program: "brew",
       args: ["list", "--versions", "kimi-code"],
@@ -88,6 +128,7 @@ describe("getCliVersion", () => {
       installed: false,
       target: "kimi-code",
       installCommand: "brew install kimi-code",
+      installSource: "unknown",
     });
   });
 
@@ -172,6 +213,7 @@ describe("getCliVersion", () => {
       version: "1.2.0",
       installCommand: "curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash",
       updateCommand: "curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash",
+      installSource: "official-script",
     });
     expect(mockedInvoke).toHaveBeenCalledWith("exec_command", {
       program: "sh",

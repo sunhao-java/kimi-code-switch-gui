@@ -314,7 +314,7 @@ export function App(): JSX.Element {
             <img className="brand-logo brand-logo-dark" src={logoDark} alt="Kimi Code Switch" />
           </div>
           <div className="brand-copy" data-tauri-drag-region>
-            <h1>{title}</h1>
+            <h1 title={title}>{title}</h1>
             <p>{t(locale, "appSubtitle")}</p>
           </div>
           <button

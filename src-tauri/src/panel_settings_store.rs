@@ -8,12 +8,22 @@ use rusqlite::OptionalExtension;
 /// panel_settings 表 schema（结构化存储）。
 pub const SCHEMA_SQL: &str = include_str!("panel_settings_schema.sql");
 
+/// 安全地获取数据库连接，处理 poisoned lock。
+fn lock_conn<'a>(
+    state: &'a tauri::State<crate::usage::UsageState>,
+) -> Result<std::sync::MutexGuard<'a, Option<rusqlite::Connection>>, String> {
+    state
+        .conn
+        .lock()
+        .map_err(|_| "database lock poisoned".to_string())
+}
+
 /// 初始化 panel_settings 表。
 #[tauri::command]
 pub fn init_panel_settings_store(
     state: tauri::State<crate::usage::UsageState>,
 ) -> Result<(), String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     // 检查表是否存在以及结构是否匹配
@@ -82,7 +92,7 @@ pub fn init_panel_settings_store(
 pub fn get_panel_settings(
     state: tauri::State<crate::usage::UsageState>,
 ) -> Result<Option<String>, String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     // 查询所有列，组装为 JSON
@@ -166,7 +176,7 @@ pub fn save_panel_settings(
     settings_json: String,
     state: tauri::State<crate::usage::UsageState>,
 ) -> Result<(), String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     let settings: serde_json::Value =
@@ -337,6 +347,13 @@ pub fn import_panel_settings(
 }
 
 /// 从旧 TOML 文件迁移到 SQLite（首次启动）。
+/// 从旧版 TOML 文件迁移到数据库。
+///
+/// 迁移逻辑：
+/// 1. 如果数据库中已有设置，只重命名 TOML 文件为 .migrated（不覆盖数据库）
+/// 2. 如果数据库为空，解析 TOML 并保存到数据库，然后重命名 TOML
+///
+/// 这样可以避免前端先保存后迁移时，TOML 被遗留的问题。
 #[tauri::command]
 pub fn migrate_panel_settings_from_toml(
     toml_path: String,
@@ -352,29 +369,32 @@ pub fn migrate_panel_settings_from_toml(
     }
 
     // 检查数据库中是否已有设置
-    if get_panel_settings(state.clone())?.is_some() {
-        log::info!("Panel settings already exist in database, skipping TOML migration");
-        return Ok(());
+    let db_has_settings = get_panel_settings(state.clone())?.is_some();
+
+    if !db_has_settings {
+        // 数据库为空，执行完整迁移
+        let toml_content = fs::read_to_string(&resolved_path).map_err(|e| format!("read toml: {e}"))?;
+
+        // 解析 TOML 为 JSON
+        let toml_value: toml::Value =
+            toml::from_str(&toml_content).map_err(|e| format!("parse toml: {e}"))?;
+
+        let settings_json =
+            serde_json::to_string(&toml_value).map_err(|e| format!("convert toml to json: {e}"))?;
+
+        // 保存到数据库
+        save_panel_settings(settings_json, state)?;
+
+        log::info!("Migrated panel settings from {} to database", toml_path);
+    } else {
+        log::info!("Panel settings already exist in database, only renaming TOML file");
     }
 
-    // 读取 TOML
-    let toml_content = fs::read_to_string(&resolved_path).map_err(|e| format!("read toml: {e}"))?;
-
-    // 解析 TOML 为 JSON（使用 toml crate）
-    let toml_value: toml::Value =
-        toml::from_str(&toml_content).map_err(|e| format!("parse toml: {e}"))?;
-
-    let settings_json =
-        serde_json::to_string(&toml_value).map_err(|e| format!("convert toml to json: {e}"))?;
-
-    // 保存到数据库
-    save_panel_settings(settings_json, state)?;
-
-    // 重命名 TOML 文件
+    // 重命名 TOML 文件（无论数据库是否已有设置）
     let migrated_path = resolved_path.with_extension("toml.migrated");
     fs::rename(&resolved_path, &migrated_path).map_err(|e| format!("rename toml: {e}"))?;
 
-    log::info!("Migrated panel settings from {} to database", toml_path);
+    log::info!("Renamed {} to .migrated", toml_path);
     Ok(())
 }
 
@@ -383,6 +403,7 @@ mod tests {
     use super::*;
     use rusqlite::Connection;
     use std::sync::Mutex;
+    use std::sync::MutexGuard;
 
     fn make_test_state() -> crate::usage::UsageState {
         let conn = Connection::open_in_memory().unwrap();
@@ -392,9 +413,18 @@ mod tests {
         }
     }
 
+    fn lock_test_conn<'a>(
+        state: &'a crate::usage::UsageState,
+    ) -> Result<MutexGuard<'a, Option<Connection>>, String> {
+        state
+            .conn
+            .lock()
+            .map_err(|_| "database lock poisoned".to_string())
+    }
+
     // 测试专用：直接操作 state
     fn save_test(settings_json: &str, state: &crate::usage::UsageState) -> Result<(), String> {
-        let guard = state.conn.lock().unwrap();
+        let guard = lock_test_conn(state)?;
         let conn = guard.as_ref().ok_or("usage db not open")?;
 
         let settings: serde_json::Value =
@@ -544,7 +574,7 @@ mod tests {
     }
 
     fn get_test(state: &crate::usage::UsageState) -> Result<Option<String>, String> {
-        let guard = state.conn.lock().unwrap();
+        let guard = lock_test_conn(state)?;
         let conn = guard.as_ref().ok_or("usage db not open")?;
 
         let row_json: Option<String> = conn

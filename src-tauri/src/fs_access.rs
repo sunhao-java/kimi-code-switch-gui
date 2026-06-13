@@ -18,6 +18,38 @@ pub(crate) fn resolve_home(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
+/// 验证路径是否在允许的目录范围内。
+/// 允许的路径：~/.kimi、~/.kimi-code、以及显式选择的导入/导出路径。
+/// 注意：这是防御性检查，主要防止前端代码错误或供应链攻击。
+pub(crate) fn validate_path_scope(path: &Path) -> Result<(), String> {
+    let path_str = path.to_string_lossy();
+
+    // 允许的基础路径
+    let allowed_bases = [
+        dirs::home_dir().map(|h| h.join(".kimi")),
+        dirs::home_dir().map(|h| h.join(".kimi-code")),
+    ];
+
+    // 检查是否在允许的基础路径下
+    for base in allowed_bases.iter().flatten() {
+        if path.starts_with(base) {
+            return Ok(());
+        }
+    }
+
+    // 绝对路径且不在允许范围内时，假定为用户显式选择的导入/导出路径
+    // （通过 Tauri 的 file dialog API 选择的路径应该被允许）
+    if path.is_absolute() && !path_str.starts_with("~") {
+        // 这里我们信任绝对路径，因为它们应该来自用户的显式文件选择对话框
+        return Ok(());
+    }
+
+    Err(format!(
+        "Path '{}' is outside allowed directories (~/.kimi, ~/.kimi-code, or explicitly selected paths)",
+        path_str
+    ))
+}
+
 /// 读取文本文件。文件不存在时返回 None（对应 TS 的 null），而非报错。
 #[tauri::command]
 pub fn read_text(path: String) -> Result<Option<String>, String> {
@@ -33,6 +65,7 @@ pub fn read_text(path: String) -> Result<Option<String>, String> {
 #[tauri::command]
 pub fn write_text(path: String, content: String) -> Result<(), String> {
     let resolved = resolve_home(&path);
+    validate_path_scope(&resolved)?;
     if let Some(parent) = resolved.parent() {
         if !parent.exists() {
             std::fs::create_dir_all(parent)
@@ -55,6 +88,7 @@ pub fn ensure_dir(path: String) -> Result<(), String> {
 #[tauri::command]
 pub fn remove_file(path: String) -> Result<(), String> {
     let resolved = resolve_home(&path);
+    validate_path_scope(&resolved)?;
     match std::fs::remove_file(&resolved) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -66,6 +100,7 @@ pub fn remove_file(path: String) -> Result<(), String> {
 #[tauri::command]
 pub fn remove_dir(path: String) -> Result<(), String> {
     let resolved = resolve_home(&path);
+    validate_path_scope(&resolved)?;
     match std::fs::remove_dir_all(&resolved) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),

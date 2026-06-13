@@ -103,6 +103,16 @@ pub fn usage_open(
     Ok(())
 }
 
+/// 安全地获取数据库连接，处理 poisoned lock。
+fn lock_conn<'a>(
+    state: &'a tauri::State<UsageState>,
+) -> Result<std::sync::MutexGuard<'a, Option<rusqlite::Connection>>, String> {
+    state
+        .conn
+        .lock()
+        .map_err(|_| "database lock poisoned".to_string())
+}
+
 /// 执行查询，返回行数组（每行是 列名→值 的对象）。
 #[tauri::command]
 pub fn usage_query(
@@ -110,7 +120,7 @@ pub fn usage_query(
     params: Option<HashMap<String, Json>>,
     state: tauri::State<UsageState>,
 ) -> Result<Vec<Map<String, Json>>, String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("db not open")?;
     let params = params.unwrap_or_default();
 
@@ -140,7 +150,7 @@ pub fn usage_exec(
     params: Option<HashMap<String, Json>>,
     state: tauri::State<UsageState>,
 ) -> Result<usize, String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("db not open")?;
     let params = params.unwrap_or_default();
 
@@ -158,7 +168,7 @@ pub fn usage_exec_batch(
     rows: Vec<HashMap<String, Json>>,
     state: tauri::State<UsageState>,
 ) -> Result<usize, String> {
-    let mut guard = state.conn.lock().unwrap();
+    let mut guard = lock_conn(&state)?;
     let conn = guard.as_mut().ok_or("db not open")?;
     let tx = conn.transaction().map_err(|e| format!("tx: {e}"))?;
     let mut inserted = 0usize;
@@ -176,7 +186,7 @@ pub fn usage_exec_batch(
 /// 执行多条语句（无返回）。用于 purgeAll 等。
 #[tauri::command]
 pub fn usage_exec_script(sql: String, state: tauri::State<UsageState>) -> Result<(), String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("db not open")?;
     conn.execute_batch(&sql)
         .map_err(|e| format!("exec script: {e}"))
@@ -184,7 +194,7 @@ pub fn usage_exec_script(sql: String, state: tauri::State<UsageState>) -> Result
 
 #[tauri::command]
 pub fn usage_close(state: tauri::State<UsageState>) -> Result<(), String> {
-    *state.conn.lock().unwrap() = None;
+    *lock_conn(&state)? = None;
     Ok(())
 }
 
@@ -332,7 +342,7 @@ pub fn migrate_legacy_database(state: tauri::State<UsageState>) -> Result<String
         return Ok("No legacy database found, migration skipped".to_string());
     }
 
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     // ATTACH 旧数据库

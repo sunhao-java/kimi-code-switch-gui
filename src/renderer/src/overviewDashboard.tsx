@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Boxes, Check, Download, FileText, Globe, Layers3, LoaderCircle, RefreshCw, Zap } from "lucide-react";
 
-import type { AppState, Locale } from "@shared/types";
+import type { AppState, KimiCodeInstallSource, Locale } from "@shared/types";
 
 import { ABOUT_INFO } from "./aboutPage";
 import { APPEARANCE_THEME_OPTIONS, labelForLocale } from "./appOptions";
@@ -23,6 +23,7 @@ type CliVersionState = {
   latestVersion?: string;
   hasUpdate?: boolean;
   installCommand?: string;
+  installSource?: KimiCodeInstallSource;
 };
 
 export function SummaryCard(props: {
@@ -125,6 +126,21 @@ export function OverviewDashboard(props: {
   const versionLabel = t(locale, "overviewKimiCodeVersion");
   const checkVersionLabel = t(locale, "overviewKimiCodeCheck");
   const updateVersionLabel = cliVersion.installed ? t(locale, "overviewKimiCodeUpdate") : t(locale, "overviewKimiCodeInstall");
+  const installSourceLabel = (source?: KimiCodeInstallSource): string => {
+    switch (source) {
+      case "homebrew":
+        return t(locale, "configTargetInstallSourceHomebrew");
+      case "official-script":
+        return t(locale, "configTargetInstallSourceOfficialScript");
+      case "npm":
+        return t(locale, "configTargetInstallSourceNpm");
+      case "pnpm":
+        return t(locale, "configTargetInstallSourcePnpm");
+      case "unknown":
+      case undefined:
+        return cliVersion.installed ? t(locale, "configTargetInstallSourceUnknown") : t(locale, "overviewCliNotFound");
+    }
+  };
 
   const boolLabel = (v: boolean): string => t(locale, v ? "overviewOn" : "overviewOff");
   const resolveProfileModelName = (profile: AppState["profiles"][string]): string =>
@@ -167,6 +183,7 @@ export function OverviewDashboard(props: {
           <div className="overview-hero-col">
             <div className="overview-hero-col-title">{t(locale, "overviewAppVersion")}</div>
             <div className="overview-hero-kv"><span className="overview-hero-kv-label">{versionLabel}</span><span className={cliVersion.installed ? "overview-hero-kv-value overview-cli-version-value" : "overview-hero-kv-value overview-cli-version-value text-warn"}><span>{cliVersionText}</span><button className="overview-cli-check-button" type="button" title={checkVersionLabel} aria-label={checkVersionLabel} disabled={isCliVersionChecking || isCliUpdating} onClick={() => void checkCliVersion(true)}>{isCliVersionChecking ? <LoaderCircle size={13} className="button-spinner" /> : <RefreshCw size={13} />}</button>{cliVersion.hasUpdate || !cliVersion.installed ? <button className="overview-cli-check-button" type="button" title={cliVersion.installed ? updateVersionLabel : `${updateVersionLabel}: ${cliVersion.installCommand ?? ""}`} aria-label={updateVersionLabel} disabled={isCliUpdating || isCliVersionChecking} onClick={() => void upgradeCli()}>{isCliUpdating ? <LoaderCircle size={13} className="button-spinner" /> : <Download size={13} />}</button> : null}</span></div>
+            <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewKimiCodeInstallSource")}</span><span className="overview-hero-kv-value">{installSourceLabel(cliVersion.installSource)}</span></div>
             <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewDefaultModel")}</span><span className="overview-hero-kv-value">{activeProfileModelName || "-"}</span></div>
             <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewTheme")}</span><span className="overview-hero-kv-value">{themeLabel(state.panelSettings.appearance_theme)}</span></div>
           </div>

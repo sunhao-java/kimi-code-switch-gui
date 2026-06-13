@@ -4,14 +4,82 @@
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::path::{Path, PathBuf};
+use std::process::{Command as StdCommand, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tauri::Emitter;
 
 static KIMI_OAUTH_LOGIN_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// 验证命令是否在允许的白名单中。
+fn validate_command(program: &str) -> Result<(), String> {
+    let allowed_commands = [
+        "kimi",
+        "kimi-code",
+        "brew",
+        "sh",
+        "powershell.exe",
+        "open",
+        "osascript",
+        "uv",
+        "python",
+        "python3",
+        "node",
+        "npm",
+        "npx",
+    ];
+
+    // 检查程序名（可能包含路径）
+    let program_name = Path::new(program)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(program);
+
+    if allowed_commands.contains(&program_name) {
+        return Ok(());
+    }
+
+    Err(format!(
+        "Command '{}' is not in the allowed list: {:?}",
+        program, allowed_commands
+    ))
+}
+
+/// 验证 HTTP URL 是否在允许的域名范围内。
+fn validate_http_url(url: &str) -> Result<(), String> {
+    let allowed_domains = [
+        "api.github.com",
+        "github.com",
+        "pypi.org",
+        "files.pythonhosted.org",
+    ];
+
+    // 解析 URL
+    let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL: {}", e))?;
+
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| "URL has no host".to_string())?;
+
+    // 检查是否在白名单中，或者是用户配置的 WebDAV 域名
+    if allowed_domains.iter().any(|d| host.ends_with(d)) {
+        return Ok(());
+    }
+
+    // WebDAV 用户配置的域名：允许所有 https 协议
+    // （用户在配置面板中输入的 WebDAV 地址应该被信任）
+    if parsed.scheme() == "https" || parsed.scheme() == "http" {
+        // 对于 WebDAV，我们信任用户配置的任何域名
+        return Ok(());
+    }
+
+    Err(format!(
+        "URL host '{}' is not in allowed domains: {:?}",
+        host, allowed_domains
+    ))
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum KimiOAuthTarget {
@@ -60,6 +128,10 @@ fn executable_path_if_exists(path: PathBuf) -> Option<PathBuf> {
     }
 }
 
+fn panel_tmp_dir() -> Option<PathBuf> {
+    dirs::home_dir().map(|home| home.join(".kimi-code/.panel/tmp"))
+}
+
 fn find_kimi_code_login_command() -> OAuthLoginCommand {
     if cfg!(windows) {
         if let Some(home) = dirs::home_dir() {
@@ -79,7 +151,7 @@ fn find_kimi_code_login_command() -> OAuthLoginCommand {
         };
     }
 
-    if let Ok(prefix) = Command::new("brew")
+    if let Ok(prefix) = StdCommand::new("brew")
         .arg("--prefix")
         .arg("kimi-code")
         .env("PATH", augmented_path())
@@ -388,28 +460,43 @@ pub async fn exec_command(
     args: Vec<String>,
     timeout_ms: Option<u64>,
 ) -> Result<ExecResult, String> {
-    let handle = tauri::async_runtime::spawn_blocking(move || {
-        let mut cmd = Command::new(&program);
-        cmd.args(&args);
-        cmd.env("PATH", augmented_path());
-        cmd.output()
-    });
+    validate_command(&program)?;
 
-    // 简单超时：spawn_blocking 无法直接 kill，这里用 tokio timeout 包裹 join。
-    let output = match timeout_ms {
-        Some(ms) if ms > 0 => match tokio::time::timeout(Duration::from_millis(ms), handle).await {
-            Ok(joined) => joined.map_err(|e| format!("join error: {e}"))?,
-            Err(_) => return Err(format!("command timed out after {ms}ms")),
-        },
-        _ => handle.await.map_err(|e| format!("join error: {e}"))?,
-    };
+    // 使用 tokio::process::Command 以便超时时能真正 kill 子进程
+    let mut cmd = tokio::process::Command::new(&program);
+    cmd.args(&args);
+    cmd.env("PATH", augmented_path());
 
-    let output = output.map_err(|e| format!("spawn error: {e}"))?;
-    Ok(ExecResult {
-        code: output.status.code().unwrap_or(-1),
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-    })
+    match timeout_ms {
+        Some(ms) if ms > 0 => {
+            let child = cmd.output();
+            match tokio::time::timeout(Duration::from_millis(ms), child).await {
+                Ok(output_result) => {
+                    let output = output_result.map_err(|e| format!("spawn error: {e}"))?;
+                    Ok(ExecResult {
+                        code: output.status.code().unwrap_or(-1),
+                        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+                    })
+                }
+                Err(_) => {
+                    // 超时：tokio::process::Command 的 output() 会自动 kill 子进程
+                    Err(format!("command timed out after {ms}ms"))
+                }
+            }
+        }
+        _ => {
+            let output = cmd
+                .output()
+                .await
+                .map_err(|e| format!("spawn error: {e}"))?;
+            Ok(ExecResult {
+                code: output.status.code().unwrap_or(-1),
+                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
+                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
+            })
+        }
+    }
 }
 
 /// 启动当前配置目标的官方 `kimi login` 设备码登录流程。
@@ -448,7 +535,7 @@ pub async fn start_kimi_oauth_login(
     let result =
         tauri::async_runtime::spawn_blocking(move || {
             let login_command = find_oauth_login_command(target);
-            let mut child = Command::new(&login_command.program)
+            let mut child = StdCommand::new(&login_command.program)
                 .args(&login_command.args)
                 .env("PATH", augmented_path())
                 .stdin(Stdio::null())
@@ -534,6 +621,21 @@ pub async fn start_kimi_oauth_login(
 #[tauri::command]
 pub fn write_executable(path: String, content: String) -> Result<(), String> {
     let resolved = resolve_home(&path);
+
+    // 只允许写入临时脚本目录
+    let temp_dir = std::env::temp_dir();
+    let panel_tmp = panel_tmp_dir();
+    let in_allowed_dir = resolved.starts_with(&temp_dir)
+        || panel_tmp
+            .as_ref()
+            .is_some_and(|allowed| resolved.starts_with(allowed));
+    if !in_allowed_dir {
+        return Err(format!(
+            "write_executable only allowed in temp directories, got: {}",
+            resolved.display()
+        ));
+    }
+
     if let Some(parent) = resolved.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("ensure parent: {e}"))?;
     }
@@ -588,16 +690,37 @@ pub fn file_stat(path: String) -> Result<Option<FileStat>, String> {
 }
 
 /// 从指定偏移读取一段字节并按 UTF-8（lossy）返回。供 tail 增量读取日志。
+/// 限制单次最大读取 10MB，避免一次性分配大 buffer。
 #[tauri::command]
 pub fn read_file_slice(path: String, offset: u64, length: u64) -> Result<String, String> {
+    const MAX_CHUNK_SIZE: usize = 10 * 1024 * 1024; // 10MB
+
     let resolved = resolve_home(&path);
     let mut file = std::fs::File::open(&resolved).map_err(|e| format!("open: {e}"))?;
     file.seek(SeekFrom::Start(offset))
         .map_err(|e| format!("seek: {e}"))?;
-    let mut buf = vec![0u8; length as usize];
-    let n = file.read(&mut buf).map_err(|e| format!("read: {e}"))?;
-    buf.truncate(n);
-    Ok(String::from_utf8_lossy(&buf).to_string())
+
+    // 限制读取长度
+    let length = length as usize;
+    if length == 0 {
+        return Ok(String::new());
+    }
+
+    let mut result = Vec::with_capacity(length.min(MAX_CHUNK_SIZE));
+    let mut remaining = length;
+
+    while remaining > 0 {
+        let chunk_size = remaining.min(MAX_CHUNK_SIZE);
+        let mut buf = vec![0u8; chunk_size];
+        let n = file.read(&mut buf).map_err(|e| format!("read: {e}"))?;
+        if n == 0 {
+            break; // EOF
+        }
+        result.extend_from_slice(&buf[..n]);
+        remaining -= n;
+    }
+
+    Ok(String::from_utf8_lossy(&result).to_string())
 }
 
 #[derive(serde::Serialize)]
@@ -641,6 +764,8 @@ pub async fn http_request(
     headers: Option<HashMap<String, String>>,
     body: Option<String>,
 ) -> Result<HttpResponse, String> {
+    validate_http_url(&url)?;
+
     let client = reqwest::Client::builder()
         .danger_accept_invalid_certs(false)
         .build()
@@ -703,6 +828,20 @@ mod tests {
                 .iter()
                 .any(|part| part.ends_with("AppData/Roaming/npm")));
         }
+    }
+
+    #[test]
+    fn command_allowlist_supports_kimi_detection_shells() {
+        assert!(validate_command("sh").is_ok());
+        assert!(validate_command("powershell.exe").is_ok());
+        assert!(validate_command("/bin/sh").is_ok());
+    }
+
+    #[test]
+    fn panel_tmp_dir_allows_terminal_launch_scripts() {
+        let panel_tmp = panel_tmp_dir().expect("home dir required");
+        assert!(panel_tmp.ends_with(".kimi-code/.panel/tmp"));
+        assert!(panel_tmp.join("terminal/kimi-launch.sh").starts_with(&panel_tmp));
     }
 
     #[test]

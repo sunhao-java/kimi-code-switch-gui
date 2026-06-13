@@ -2135,6 +2135,7 @@ dependencies = [
  "tauri-plugin-process",
  "tokio",
  "toml 0.8.2",
+ "url",
 ]
 
 [[package]]
@@ -4431,6 +4432,7 @@ dependencies = [
  "libc",
  "mio 1.2.1",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "windows-sys 0.61.2",
 ]

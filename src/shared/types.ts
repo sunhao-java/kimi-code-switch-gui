@@ -3,6 +3,7 @@ export type LocalizedText = Partial<Record<Locale, string>> & Record<"en-US", st
 export type AppearanceMode = "auto" | "dark" | "light";
 export type ConfigTarget = "kimi-code";
 export type KimiTargetDetectionStatus = "detected" | "not-installed";
+export type KimiCodeInstallSource = "homebrew" | "official-script" | "npm" | "pnpm" | "unknown";
 export type AppearanceTheme = "aurora" | "ocean" | "violet" | "sunset" | "forest" | "sakura" | "mint" | "cosmos" | "amber";
 export type UiFontSize = "mini" | "compact" | "small" | "standard" | "large" | "extra-large";
 export type DisplayOpenMode = "random" | "remember-last" | "active-display";
@@ -175,6 +176,7 @@ export interface AppState {
     resolvedPath: string;
     candidates: string[];
     reason: string;
+    installSource: KimiCodeInstallSource;
   };
   configPath: string;
   profilesPath: string;

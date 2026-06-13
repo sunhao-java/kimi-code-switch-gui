@@ -627,7 +627,6 @@ export const kimiSwitchTauri = {
 };
 
 export function installKimiSwitchTauri(): void {
-  // @ts-expect-error 运行时注入，与 Electron preload 的 KimiSwitchApi 对齐
   window.kimiSwitch = kimiSwitchTauri;
 
   // 监听窗口关闭事件：根据 close_behavior 决定是隐藏到托盘还是退出

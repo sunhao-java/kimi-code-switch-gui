@@ -24,6 +24,7 @@ import type {
   ExportBundle,
   ImportConflictStrategy,
   ImportPreview,
+  KimiCodeInstallSource,
   Locale,
   ShortcutAction,
   ShortcutBinding,
@@ -301,6 +302,35 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   const targetDetectionStatusClass = targetDetection?.status === "detected"
     ? "is-ok"
     : "is-danger";
+  const installSourceLabel = (source?: KimiCodeInstallSource): string => {
+    switch (source) {
+      case "homebrew":
+        return t(locale, "configTargetInstallSourceHomebrew");
+      case "official-script":
+        return t(locale, "configTargetInstallSourceOfficialScript");
+      case "npm":
+        return t(locale, "configTargetInstallSourceNpm");
+      case "pnpm":
+        return t(locale, "configTargetInstallSourcePnpm");
+      case "unknown":
+      case undefined:
+        return targetDetection?.installed ? t(locale, "configTargetInstallSourceUnknown") : t(locale, "overviewCliNotFound");
+    }
+  };
+  const renderInlineCodeMessage = (template: string, values: Record<string, string | number> = {}): JSX.Element => {
+    const message = formatMessage(template, values);
+    const parts = message.split(/(`[^`]+`)/g).filter(Boolean);
+    return (
+      <>
+        {parts.map((part, index) => {
+          if (part.startsWith("`") && part.endsWith("`")) {
+            return <code key={`${part}-${index}`}>{part.slice(1, -1)}</code>;
+          }
+          return <span key={`${part}-${index}`}>{part}</span>;
+        })}
+      </>
+    );
+  };
   const shortcutGroups = [
     {
       scope: "global" as const,
@@ -1246,7 +1276,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                 <div className={`oauth-login-panel oauth-login-${kimiCodeOAuthLogin.status}`}>
                   <div className="oauth-login-copy">
                     <strong>{formatMessage(t(locale, "kimiOauthTitle"), { target: currentConfigTargetLabel })}</strong>
-                    <span>{formatMessage(t(locale, "kimiOauthDescription"), { target: currentConfigTargetLabel })}</span>
+                    <span>{renderInlineCodeMessage(t(locale, "kimiOauthDescription"), { target: currentConfigTargetLabel })}</span>
                   </div>
                   <div className="oauth-login-actions">
                     <button
@@ -1299,21 +1329,25 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       </span>
                     </div>
                     <div className="config-target-detection-grid">
-                      <div>
+                      <div className="config-target-metric">
                         <span>{t(locale, "configTargetVersion")}</span>
                         <code>{targetDetection?.version || t(locale, "overviewCliNotFound")}</code>
                       </div>
-                      <div>
+                      <div className="config-target-metric">
+                        <span>{t(locale, "configTargetInstallSource")}</span>
+                        <code>{installSourceLabel(targetDetection?.installSource)}</code>
+                      </div>
+                      <div className="config-target-path">
                         <span>{t(locale, "configTargetExecutable")}</span>
                         <code>{targetDetection?.executablePath || "-"}</code>
                       </div>
-                      <div className="config-target-resolved-path">
+                      <div className="config-target-path config-target-resolved-path">
                         <span>{t(locale, "configTargetResolvedPath")}</span>
                         <code>{targetDetection?.resolvedPath || "-"}</code>
                       </div>
                     </div>
                     <p className="config-target-detection-note">
-                      {t(locale, "configTargetAutoDescription")}
+                      {renderInlineCodeMessage(t(locale, "configTargetAutoDescription"))}
                     </p>
                     {targetDetection?.installed === false ? (
                       <p className="config-target-install-warning">

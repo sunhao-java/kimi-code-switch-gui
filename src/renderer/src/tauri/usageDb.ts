@@ -228,7 +228,54 @@ const INSERT_SQL = `
 `;
 
 function eventToParams(e: UsageEvent): Params {
-  return { ...e, ingested_at_utc: Date.now() } as unknown as Params;
+  return {
+    request_id: e.request_id,
+    ts: e.ts,
+    ts_end: e.ts_end,
+    profile: e.profile,
+    provider: e.provider,
+    model: e.model,
+    prompt_tokens: e.prompt_tokens,
+    completion_tokens: e.completion_tokens,
+    cache_read_tokens: e.cache_read_tokens,
+    cache_creation_tokens: e.cache_creation_tokens,
+    reasoning_tokens: e.reasoning_tokens,
+    latency_ms: e.latency_ms,
+    proxy_overhead_ms: e.proxy_overhead_ms,
+    error_code: e.error_code,
+    error_message: e.error_message,
+    http_status: e.http_status,
+    session_hint: e.session_hint,
+    cost_estimate: e.cost_estimate,
+    pricing_version: e.pricing_version,
+    metadata_json: e.metadata_json,
+    ingested_at_utc: Date.now(),
+  };
+}
+
+function rowToUsageEvent(row: Record<string, unknown>): UsageEvent {
+  return {
+    request_id: String(row.request_id ?? ''),
+    ts: num(row.ts),
+    ts_end: num(row.ts_end),
+    profile: String(row.profile ?? ''),
+    provider: String(row.provider ?? ''),
+    model: String(row.model ?? ''),
+    prompt_tokens: num(row.prompt_tokens),
+    completion_tokens: num(row.completion_tokens),
+    cache_read_tokens: num(row.cache_read_tokens),
+    cache_creation_tokens: num(row.cache_creation_tokens),
+    reasoning_tokens: num(row.reasoning_tokens),
+    latency_ms: num(row.latency_ms),
+    proxy_overhead_ms: num(row.proxy_overhead_ms),
+    error_code: row.error_code != null ? String(row.error_code) : null,
+    error_message: row.error_message != null ? String(row.error_message) : null,
+    http_status: row.http_status != null ? num(row.http_status) : null,
+    session_hint: row.session_hint != null ? String(row.session_hint) : null,
+    cost_estimate: row.cost_estimate != null ? num(row.cost_estimate) : null,
+    pricing_version: row.pricing_version != null ? String(row.pricing_version) : null,
+    metadata_json: row.metadata_json != null ? String(row.metadata_json) : null,
+  };
 }
 
 export async function insertEvent(event: UsageEvent): Promise<boolean> {
@@ -421,7 +468,7 @@ export async function queryEvents(filter: EventFilter, cursor: string | null, pa
     params,
   );
   const hasMore = rows.length > size;
-  const page = (hasMore ? rows.slice(0, size) : rows) as unknown as UsageEvent[];
+  const page = (hasMore ? rows.slice(0, size) : rows).map(rowToUsageEvent);
   const last = page[page.length - 1];
   const nextCursor = hasMore && last ? encodeCursor(last.ts, last.request_id) : null;
   return { rows: page, nextCursor };

@@ -13,6 +13,16 @@ use std::io::Read;
 use std::io::Write;
 use std::path::PathBuf;
 
+/// 安全地获取数据库连接，处理 poisoned lock。
+fn lock_conn<'a>(
+    state: &'a tauri::State<crate::usage::UsageState>,
+) -> Result<std::sync::MutexGuard<'a, Option<rusqlite::Connection>>, String> {
+    state
+        .conn
+        .lock()
+        .map_err(|_| "database lock poisoned".to_string())
+}
+
 /// 配置历史表 schema。
 ///
 /// 设计要点：
@@ -119,7 +129,7 @@ fn migrate_history_snapshot_paths(
 /// 注意：复用 usage.rs 的 SQLite 连接，不单独创建数据库文件。
 #[tauri::command]
 pub fn init_config_history(state: tauri::State<crate::usage::UsageState>) -> Result<(), String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     conn.execute_batch(SCHEMA_SQL)
@@ -196,7 +206,7 @@ pub fn capture_snapshot(
     let sha256 = compute_sha256(&content);
 
     // 检查是否已存在（去重）
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     let exists: bool = conn
@@ -292,7 +302,7 @@ pub fn list_snapshots(
     limit: Option<i64>,
     state: tauri::State<crate::usage::UsageState>,
 ) -> Result<Vec<SnapshotRecord>, String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     let limit = limit.unwrap_or(100);
@@ -354,7 +364,7 @@ pub fn get_snapshot_content(
     snapshot_id: i64,
     state: tauri::State<crate::usage::UsageState>,
 ) -> Result<String, String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     // 查询快照路径
@@ -393,7 +403,7 @@ pub fn restore_snapshot(
     snapshot_id: i64,
     state: tauri::State<crate::usage::UsageState>,
 ) -> Result<(), String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     // 1. 查询快照信息
@@ -443,52 +453,63 @@ pub fn restore_snapshot(
 
     // 4. 创建"回滚点"快照（当前配置）
     if target_path.exists() {
-        if let Ok(current_content) = fs::read_to_string(&target_path) {
-            let sha256 = compute_sha256(&current_content);
-            let size_bytes = current_content.len() as i64;
+        let current_content = fs::read_to_string(&target_path)
+            .map_err(|e| format!("read current config for rollback point: {e}"))?;
 
-            // 检查是否已存在（去重）
-            let exists: bool = conn
-                .query_row(
-                    "SELECT 1 FROM config_history WHERE file_id = ?1 AND sha256 = ?2",
-                    [&file_id, &sha256],
-                    |_| Ok(true),
-                )
-                .unwrap_or(false);
+        let sha256 = compute_sha256(&current_content);
+        let size_bytes = current_content.len() as i64;
 
-            if !exists {
-                // 压缩并保存
-                if let Ok(compressed) = gzip_compress(&current_content) {
-                    let history_dir = ensure_history_dir()?;
+        // 检查是否已存在（去重）
+        let exists: bool = conn
+            .query_row(
+                "SELECT 1 FROM config_history WHERE file_id = ?1 AND sha256 = ?2",
+                [&file_id, &sha256],
+                |_| Ok(true),
+            )
+            .unwrap_or(false);
 
-                    let timestamp_ms = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis();
+        if !exists {
+            // 压缩并保存
+            let compressed = gzip_compress(&current_content)
+                .map_err(|e| format!("compress rollback point: {e}"))?;
 
-                    let rollback_point_filename = format!("{}-{}.toml.gz", timestamp_ms, file_id);
-                    let rollback_point_path = history_dir.join(&rollback_point_filename);
+            let history_dir = ensure_history_dir()?;
 
-                    if fs::write(&rollback_point_path, &compressed).is_ok() {
-                        let snapshot_at = chrono::Utc::now().to_rfc3339();
-                        let rollback_point_path_str =
-                            rollback_point_path.to_string_lossy().to_string();
+            let timestamp_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis();
 
-                        let _ = conn.execute(
-                            "INSERT INTO config_history (snapshot_at, file_id, sha256, size_bytes, snapshot_path, description)
-                             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                            rusqlite::params![
-                                snapshot_at,
-                                file_id,
-                                sha256,
-                                size_bytes,
-                                rollback_point_path_str,
-                                format!("Rollback point before restoring snapshot #{}", snapshot_id)
-                            ],
-                        );
-                    }
-                }
-            }
+            let rollback_point_filename = format!("{}-{}.toml.gz", timestamp_ms, file_id);
+            let rollback_point_path = history_dir.join(&rollback_point_filename);
+
+            // 写入文件失败应该阻止回滚
+            fs::write(&rollback_point_path, &compressed)
+                .map_err(|e| format!("write rollback point file: {e}"))?;
+
+            let snapshot_at = chrono::Utc::now().to_rfc3339();
+            let rollback_point_path_str = rollback_point_path.to_string_lossy().to_string();
+
+            // 插入记录失败也应该阻止回滚
+            conn.execute(
+                "INSERT INTO config_history (snapshot_at, file_id, sha256, size_bytes, snapshot_path, description)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                rusqlite::params![
+                    snapshot_at,
+                    file_id,
+                    sha256,
+                    size_bytes,
+                    rollback_point_path_str,
+                    format!("Rollback point before restoring snapshot #{}", snapshot_id)
+                ],
+            )
+            .map_err(|e| format!("insert rollback point record: {e}"))?;
+
+            log::info!(
+                "Created rollback point for {} before restoring snapshot #{}",
+                file_id,
+                snapshot_id
+            );
         }
     }
 
@@ -507,7 +528,7 @@ pub fn restore_snapshot(
 /// 调用时机：每次保存配置后（saveAppState 后）
 #[tauri::command]
 pub fn cleanup_old_snapshots(state: tauri::State<crate::usage::UsageState>) -> Result<i64, String> {
-    let guard = state.conn.lock().unwrap();
+    let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     // 计算 30 天前的时间戳

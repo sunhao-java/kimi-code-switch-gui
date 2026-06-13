@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
 import { compareReleaseVersions, normalizeReleaseVersion } from "@shared/versionUtils";
-import type { AppState, ConfigTarget, McpServerConfig, ModelConfig, ProfileConnectivityTestResult, ProviderConfig } from "@shared/types";
+import type { AppState, ConfigTarget, KimiCodeInstallSource, McpServerConfig, ModelConfig, ProfileConnectivityTestResult, ProviderConfig } from "@shared/types";
 
 const KIMI_CODE_HOMEBREW_URL = "https://formulae.brew.sh/api/formula/kimi-code.json";
 const KIMI_CODE_GITHUB_LATEST_URL = "https://api.github.com/repos/MoonshotAI/kimi-code/releases/latest";
@@ -41,7 +41,7 @@ export function classifyKimiTargetFromSignals(signals: {
   resolvedPath?: string;
   versionOutput?: string;
   candidates?: string[];
-}): { target: ConfigTarget; status: KimiTargetDetectionStatus; reason: string } {
+}): { target: ConfigTarget; status: KimiTargetDetectionStatus; reason: string; installSource: KimiCodeInstallSource } {
   const joinedPaths = [
     signals.executablePath,
     signals.resolvedPath,
@@ -49,10 +49,26 @@ export function classifyKimiTargetFromSignals(signals: {
   ].filter(Boolean).join("\n").toLowerCase();
   const output = (signals.versionOutput ?? "").toLowerCase();
 
-  if (joinedPaths.includes("kimi-code") || joinedPaths.includes("/homebrew/") || /kimi[-\s]?code|@moonshot-ai\/kimi-code/.test(output)) {
-    return { target: "kimi-code", status: "detected", reason: "matched-kimi-code-signal" };
+  // Homebrew 路径判定优先：/opt/homebrew/ 或 /usr/local/Homebrew/ 或 Linuxbrew
+  if (/\/(opt\/homebrew|usr\/local\/homebrew|home\/linuxbrew)/i.test(joinedPaths)) {
+    return { target: "kimi-code", status: "detected", reason: "homebrew-path-detected", installSource: "homebrew" };
   }
-  return { target: "kimi-code", status: "not-installed", reason: "kimi-code-not-found" };
+
+  if (joinedPaths.includes(".kimi-code/bin")) {
+    return { target: "kimi-code", status: "detected", reason: "official-script-path-detected", installSource: "official-script" };
+  }
+
+  if (joinedPaths.includes("@moonshot-ai/kimi-code") || joinedPaths.includes("/node_modules/") || joinedPaths.includes("\\node_modules\\")) {
+    const installSource: KimiCodeInstallSource = joinedPaths.includes("pnpm") ? "pnpm" : "npm";
+    return { target: "kimi-code", status: "detected", reason: "node-package-path-detected", installSource };
+  }
+
+  // 路径或输出中包含 kimi-code 特征
+  if (joinedPaths.includes("kimi-code") || /kimi[-\s]?code|@moonshot-ai\/kimi-code/.test(output)) {
+    return { target: "kimi-code", status: "detected", reason: "matched-kimi-code-signal", installSource: "unknown" };
+  }
+
+  return { target: "kimi-code", status: "not-installed", reason: "kimi-code-not-found", installSource: "unknown" };
 }
 
 export interface CliVersionResult {
@@ -64,6 +80,7 @@ export interface CliVersionResult {
   packageName?: string;
   installCommand?: string;
   updateCommand?: string;
+  installSource?: KimiCodeInstallSource;
 }
 
 export type KimiTargetDetectionStatus = "detected" | "not-installed";
@@ -77,6 +94,7 @@ export interface KimiTargetDetectionResult {
   resolvedPath: string;
   candidates: string[];
   reason: string;
+  installSource: KimiCodeInstallSource;
 }
 
 export interface KimiOAuthLoginEvent {
@@ -132,6 +150,10 @@ function versionResultBase(target: ConfigTarget): Pick<CliVersionResult, "target
   };
 }
 
+function withInstallSource(result: CliVersionResult, installSource: KimiCodeInstallSource): CliVersionResult {
+  return { ...result, installSource };
+}
+
 async function detectActiveKimiTargetOnWindows(): Promise<KimiTargetDetectionResult> {
   const script = [
     "$ErrorActionPreference = 'SilentlyContinue'",
@@ -158,6 +180,7 @@ async function detectActiveKimiTargetOnWindows(): Promise<KimiTargetDetectionRes
       resolvedPath: executablePath,
       candidates,
       reason: classified.reason,
+      installSource: classified.installSource,
     };
   } catch {
     return {
@@ -169,6 +192,7 @@ async function detectActiveKimiTargetOnWindows(): Promise<KimiTargetDetectionRes
       resolvedPath: "",
       candidates: [],
       reason: "kimi-command-not-found",
+      installSource: "unknown",
     };
   }
 }
@@ -201,6 +225,7 @@ async function detectActiveKimiTargetOnPosix(): Promise<KimiTargetDetectionResul
       resolvedPath: resolvedPath.trim(),
       candidates,
       reason: classified.reason,
+      installSource: classified.installSource,
     };
   } catch {
     return {
@@ -212,6 +237,7 @@ async function detectActiveKimiTargetOnPosix(): Promise<KimiTargetDetectionResul
       resolvedPath: "",
       candidates: [],
       reason: "kimi-command-not-found",
+      installSource: "unknown",
     };
   }
 }
@@ -229,9 +255,9 @@ async function detectKimiCodeHomebrewVersion(): Promise<CliVersionResult> {
     if (r.code !== 0) throw new Error(r.stderr);
     const version = extractSemver(r.stdout);
     if (!version) throw new Error("kimi-code Homebrew version not found");
-    return { ...base, version, installed: true };
+    return withInstallSource({ ...base, version, installed: true }, "homebrew");
   } catch {
-    return { ...base, version: "", installed: false };
+    return withInstallSource({ ...base, version: "", installed: false }, "unknown");
   }
 }
 
@@ -248,9 +274,9 @@ async function detectKimiCodeScriptVersion(): Promise<CliVersionResult> {
     if (r.code !== 0) throw new Error(r.stderr);
     const version = extractSemver(`${r.stdout}\n${r.stderr}`);
     if (!version) throw new Error("kimi-code script install version not found");
-    return { ...base, version, installed: true };
+    return withInstallSource({ ...base, version, installed: true }, "official-script");
   } catch {
-    return { ...versionResultBase("kimi-code"), version: "", installed: false };
+    return withInstallSource({ ...versionResultBase("kimi-code"), version: "", installed: false }, "unknown");
   }
 }
 
@@ -281,7 +307,7 @@ async function detectKimiCodeWindowsVersion(): Promise<CliVersionResult> {
     const r = await exec("npm", ["list", "-g", "@moonshot-ai/kimi-code", "--depth=0", "--json"], 5000);
     const version = parseNpmPackageVersion(r.stdout, "@moonshot-ai/kimi-code");
     if (r.code === 0 && version) {
-      return { ...base, version, installed: true };
+      return withInstallSource({ ...base, version, installed: true }, "npm");
     }
   } catch {
     // Ignore npm lookup failures; official script installs do not require Node.js.
@@ -293,9 +319,9 @@ async function detectKimiCodeWindowsVersion(): Promise<CliVersionResult> {
     if (r.code !== 0 || !/kimi[-\s]?code|@moonshot-ai\/kimi-code/i.test(output)) {
       throw new Error("kimi command is not identifiable as Kimi Code");
     }
-    return { ...base, version: extractSemver(output) || output.trim(), installed: true };
+    return withInstallSource({ ...base, version: extractSemver(output) || output.trim(), installed: true }, "unknown");
   } catch {
-    return { ...base, version: "", installed: false };
+    return withInstallSource({ ...base, version: "", installed: false }, "unknown");
   }
 }
 
@@ -311,9 +337,9 @@ async function detectKimiCodeVersion(): Promise<CliVersionResult> {
   try {
     const target = await detectActiveKimiTarget();
     if (!target.installed) throw new Error("kimi-code command not found");
-    return { ...base, version: target.version, installed: true };
+    return withInstallSource({ ...base, version: target.version, installed: true }, target.installSource);
   } catch {
-    return { ...base, version: "", installed: false };
+    return withInstallSource({ ...base, version: "", installed: false }, "unknown");
   }
 }
 
