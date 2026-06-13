@@ -123,6 +123,10 @@ fn toggle_main_window<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), Strin
         Ok(())
     })();
 
-    state.inner.lock().expect("shortcut runtime lock poisoned").toggling = false;
+    state
+        .inner
+        .lock()
+        .expect("shortcut runtime lock poisoned")
+        .toggling = false;
     result
 }

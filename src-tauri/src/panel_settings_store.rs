@@ -169,14 +169,20 @@ pub fn save_panel_settings(
     let guard = state.conn.lock().unwrap();
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
-    let settings: serde_json::Value = serde_json::from_str(&settings_json)
-        .map_err(|e| format!("parse settings json: {e}"))?;
+    let settings: serde_json::Value =
+        serde_json::from_str(&settings_json).map_err(|e| format!("parse settings json: {e}"))?;
 
     let now = chrono::Utc::now().to_rfc3339();
 
     // 辅助函数：安全提取
     let get_str = |key: &str| settings[key].as_str().unwrap_or("").to_string();
-    let get_bool = |key: &str| if settings[key].as_bool().unwrap_or(false) { 1i64 } else { 0i64 };
+    let get_bool = |key: &str| {
+        if settings[key].as_bool().unwrap_or(false) {
+            1i64
+        } else {
+            0i64
+        }
+    };
     let get_i64 = |key: &str| settings[key].as_i64().unwrap_or(0);
     let get_opt_i64 = |key: &str| settings[key].as_i64();
     let get_opt_str = |key: &str| settings[key].as_str().map(|s| s.to_string());
@@ -318,8 +324,7 @@ pub fn save_panel_settings(
 pub fn export_panel_settings(
     state: tauri::State<crate::usage::UsageState>,
 ) -> Result<String, String> {
-    get_panel_settings(state)?
-        .ok_or_else(|| "panel settings not found".to_string())
+    get_panel_settings(state)?.ok_or_else(|| "panel settings not found".to_string())
 }
 
 /// 导入面板设置（覆盖现有设置）。
@@ -353,23 +358,21 @@ pub fn migrate_panel_settings_from_toml(
     }
 
     // 读取 TOML
-    let toml_content = fs::read_to_string(&resolved_path)
-        .map_err(|e| format!("read toml: {e}"))?;
+    let toml_content = fs::read_to_string(&resolved_path).map_err(|e| format!("read toml: {e}"))?;
 
     // 解析 TOML 为 JSON（使用 toml crate）
-    let toml_value: toml::Value = toml::from_str(&toml_content)
-        .map_err(|e| format!("parse toml: {e}"))?;
+    let toml_value: toml::Value =
+        toml::from_str(&toml_content).map_err(|e| format!("parse toml: {e}"))?;
 
-    let settings_json = serde_json::to_string(&toml_value)
-        .map_err(|e| format!("convert toml to json: {e}"))?;
+    let settings_json =
+        serde_json::to_string(&toml_value).map_err(|e| format!("convert toml to json: {e}"))?;
 
     // 保存到数据库
     save_panel_settings(settings_json, state)?;
 
     // 重命名 TOML 文件
     let migrated_path = resolved_path.with_extension("toml.migrated");
-    fs::rename(&resolved_path, &migrated_path)
-        .map_err(|e| format!("rename toml: {e}"))?;
+    fs::rename(&resolved_path, &migrated_path).map_err(|e| format!("rename toml: {e}"))?;
 
     log::info!("Migrated panel settings from {} to database", toml_path);
     Ok(())
@@ -394,13 +397,19 @@ mod tests {
         let guard = state.conn.lock().unwrap();
         let conn = guard.as_ref().ok_or("usage db not open")?;
 
-        let settings: serde_json::Value = serde_json::from_str(settings_json)
-            .map_err(|e| format!("parse settings json: {e}"))?;
+        let settings: serde_json::Value =
+            serde_json::from_str(settings_json).map_err(|e| format!("parse settings json: {e}"))?;
 
         let now = chrono::Utc::now().to_rfc3339();
 
         let get_str = |key: &str| settings[key].as_str().unwrap_or("").to_string();
-        let get_bool = |key: &str| if settings[key].as_bool().unwrap_or(false) { 1i64 } else { 0i64 };
+        let get_bool = |key: &str| {
+            if settings[key].as_bool().unwrap_or(false) {
+                1i64
+            } else {
+                0i64
+            }
+        };
         let get_i64 = |key: &str| settings[key].as_i64().unwrap_or(0);
         let get_opt_i64 = |key: &str| settings[key].as_i64();
         let get_opt_str = |key: &str| settings[key].as_str().map(|s| s.to_string());
@@ -657,9 +666,7 @@ mod tests {
         save_test(&test_settings.to_string(), &state).unwrap();
 
         // 读取
-        let loaded = get_test(&state)
-            .unwrap()
-            .expect("settings should exist");
+        let loaded = get_test(&state).unwrap().expect("settings should exist");
 
         let loaded_json: serde_json::Value = serde_json::from_str(&loaded).unwrap();
         assert_eq!(loaded_json["config_target"], "kimi-cli");

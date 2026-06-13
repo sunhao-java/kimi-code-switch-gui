@@ -178,7 +178,8 @@ pub fn usage_exec_batch(
 pub fn usage_exec_script(sql: String, state: tauri::State<UsageState>) -> Result<(), String> {
     let guard = state.conn.lock().unwrap();
     let conn = guard.as_ref().ok_or("db not open")?;
-    conn.execute_batch(&sql).map_err(|e| format!("exec script: {e}"))
+    conn.execute_batch(&sql)
+        .map_err(|e| format!("exec script: {e}"))
 }
 
 #[tauri::command]
@@ -223,12 +224,18 @@ mod tests {
     #[test]
     fn resolve_home_expands_tilde_prefix() {
         let home = dirs::home_dir().expect("home dir required");
-        assert_eq!(resolve_home("~/.kimi/usage.db"), home.join(".kimi/usage.db"));
+        assert_eq!(
+            resolve_home("~/.kimi/usage.db"),
+            home.join(".kimi/usage.db")
+        );
     }
 
     #[test]
     fn resolve_home_keeps_plain_path() {
-        assert_eq!(resolve_home("/tmp/usage.db"), PathBuf::from("/tmp/usage.db"));
+        assert_eq!(
+            resolve_home("/tmp/usage.db"),
+            PathBuf::from("/tmp/usage.db")
+        );
     }
 
     fn make_table_conn() -> Connection {
@@ -317,9 +324,7 @@ mod tests {
 /// 将 ~/.kimi/.panel/usage/index.db 的所有表和数据复制到当前连接的数据库。
 /// 迁移完成后，重命名旧数据库为 index.db.migrated。
 #[tauri::command]
-pub fn migrate_legacy_database(
-    state: tauri::State<UsageState>,
-) -> Result<String, String> {
+pub fn migrate_legacy_database(state: tauri::State<UsageState>) -> Result<String, String> {
     let old_db_path = resolve_home("~/.kimi/.panel/usage/index.db");
 
     // 检查旧数据库是否存在
@@ -372,7 +377,10 @@ pub fn migrate_legacy_database(
         // 复制表结构
         let create_sql: String = conn
             .query_row(
-                &format!("SELECT sql FROM legacy.sqlite_master WHERE type='table' AND name = '{}'", table),
+                &format!(
+                    "SELECT sql FROM legacy.sqlite_master WHERE type='table' AND name = '{}'",
+                    table
+                ),
                 [],
                 |row| row.get(0),
             )
@@ -400,10 +408,12 @@ pub fn migrate_legacy_database(
 
     // 重命名旧数据库
     let migrated_path = old_db_path.with_extension("db.migrated");
-    std::fs::rename(&old_db_path, &migrated_path)
-        .map_err(|e| format!("rename legacy db: {e}"))?;
+    std::fs::rename(&old_db_path, &migrated_path).map_err(|e| format!("rename legacy db: {e}"))?;
 
-    log::info!("Legacy database migrated and renamed to {:?}", migrated_path);
+    log::info!(
+        "Legacy database migrated and renamed to {:?}",
+        migrated_path
+    );
 
     Ok(format!(
         "Migrated {} tables: {}. Old database renamed to index.db.migrated",

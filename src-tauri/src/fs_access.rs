@@ -80,7 +80,10 @@ pub fn move_file(from: String, to: String) -> Result<(), String> {
     let to_resolved = resolve_home(&to);
 
     if !from_resolved.exists() {
-        return Err(format!("Source file does not exist: {}", from_resolved.display()));
+        return Err(format!(
+            "Source file does not exist: {}",
+            from_resolved.display()
+        ));
     }
 
     // 确保目标目录存在
@@ -90,8 +93,14 @@ pub fn move_file(from: String, to: String) -> Result<(), String> {
     }
 
     // 移动文件
-    std::fs::rename(&from_resolved, &to_resolved)
-        .map_err(|e| format!("move {} to {}: {}", from_resolved.display(), to_resolved.display(), e))
+    std::fs::rename(&from_resolved, &to_resolved).map_err(|e| {
+        format!(
+            "move {} to {}: {}",
+            from_resolved.display(),
+            to_resolved.display(),
+            e
+        )
+    })
 }
 
 /// 主机名（备份元信息用）。
@@ -214,10 +223,7 @@ mod tests {
     #[test]
     fn resolve_home_does_not_expand_tilde_in_middle() {
         // 只识别开头的 ~/ 与单独的 ~，路径中间的 ~ 不展开。
-        assert_eq!(
-            resolve_home("/var/~cache"),
-            PathBuf::from("/var/~cache")
-        );
+        assert_eq!(resolve_home("/var/~cache"), PathBuf::from("/var/~cache"));
     }
 
     #[test]

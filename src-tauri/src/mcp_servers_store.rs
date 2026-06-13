@@ -13,9 +13,7 @@ pub const SCHEMA_SQL: &str = include_str!("mcp_servers_schema.sql");
 
 /// 初始化 mcp_servers 表
 #[tauri::command]
-pub fn init_mcp_servers_store(
-    state: tauri::State<crate::usage::UsageState>,
-) -> Result<(), String> {
+pub fn init_mcp_servers_store(state: tauri::State<crate::usage::UsageState>) -> Result<(), String> {
     let guard = state.conn.lock().unwrap();
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
@@ -28,9 +26,7 @@ pub fn init_mcp_servers_store(
 
 /// 列出所有 MCP 服务器（包括禁用的）
 #[tauri::command]
-pub fn list_mcp_servers(
-    state: tauri::State<crate::usage::UsageState>,
-) -> Result<String, String> {
+pub fn list_mcp_servers(state: tauri::State<crate::usage::UsageState>) -> Result<String, String> {
     let guard = state.conn.lock().unwrap();
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
@@ -113,13 +109,19 @@ pub fn save_mcp_server(
     let guard = state.conn.lock().unwrap();
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
-    let server: serde_json::Value = serde_json::from_str(&server_json)
-        .map_err(|e| format!("parse server json: {e}"))?;
+    let server: serde_json::Value =
+        serde_json::from_str(&server_json).map_err(|e| format!("parse server json: {e}"))?;
 
     let now = chrono::Utc::now().to_rfc3339();
 
-    let server_name = server["server_name"].as_str().ok_or("missing server_name")?;
-    let enabled = if server["enabled"].as_bool().unwrap_or(true) { 1i64 } else { 0i64 };
+    let server_name = server["server_name"]
+        .as_str()
+        .ok_or("missing server_name")?;
+    let enabled = if server["enabled"].as_bool().unwrap_or(true) {
+        1i64
+    } else {
+        0i64
+    };
     let transport = server["transport"].as_str().unwrap_or("stdio");
     let url = server["url"].as_str().unwrap_or("");
     let command = server["command"].as_str().unwrap_or("");
@@ -164,11 +166,12 @@ pub fn enable_mcp_server(
 
     let now = chrono::Utc::now().to_rfc3339();
 
-    let rows = conn.execute(
-        "UPDATE mcp_servers SET enabled = 1, updated_at = ?1 WHERE server_name = ?2",
-        rusqlite::params![now, server_name],
-    )
-    .map_err(|e| format!("enable mcp_server: {e}"))?;
+    let rows = conn
+        .execute(
+            "UPDATE mcp_servers SET enabled = 1, updated_at = ?1 WHERE server_name = ?2",
+            rusqlite::params![now, server_name],
+        )
+        .map_err(|e| format!("enable mcp_server: {e}"))?;
 
     if rows == 0 {
         return Err(format!("server {} not found", server_name));
@@ -189,11 +192,12 @@ pub fn disable_mcp_server(
 
     let now = chrono::Utc::now().to_rfc3339();
 
-    let rows = conn.execute(
-        "UPDATE mcp_servers SET enabled = 0, updated_at = ?1 WHERE server_name = ?2",
-        rusqlite::params![now, server_name],
-    )
-    .map_err(|e| format!("disable mcp_server: {e}"))?;
+    let rows = conn
+        .execute(
+            "UPDATE mcp_servers SET enabled = 0, updated_at = ?1 WHERE server_name = ?2",
+            rusqlite::params![now, server_name],
+        )
+        .map_err(|e| format!("disable mcp_server: {e}"))?;
 
     if rows == 0 {
         return Err(format!("server {} not found", server_name));
@@ -212,11 +216,12 @@ pub fn delete_mcp_server(
     let guard = state.conn.lock().unwrap();
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
-    let rows = conn.execute(
-        "DELETE FROM mcp_servers WHERE server_name = ?1",
-        [&server_name],
-    )
-    .map_err(|e| format!("delete mcp_server: {e}"))?;
+    let rows = conn
+        .execute(
+            "DELETE FROM mcp_servers WHERE server_name = ?1",
+            [&server_name],
+        )
+        .map_err(|e| format!("delete mcp_server: {e}"))?;
 
     if rows == 0 {
         return Err(format!("server {} not found", server_name));
@@ -278,11 +283,11 @@ pub fn migrate_mcp_from_json(
     }
 
     // 读取 JSON
-    let json_content = fs::read_to_string(&resolved_path)
-        .map_err(|e| format!("read mcp json: {e}"))?;
+    let json_content =
+        fs::read_to_string(&resolved_path).map_err(|e| format!("read mcp json: {e}"))?;
 
-    let mcp_config: serde_json::Value = serde_json::from_str(&json_content)
-        .map_err(|e| format!("parse mcp json: {e}"))?;
+    let mcp_config: serde_json::Value =
+        serde_json::from_str(&json_content).map_err(|e| format!("parse mcp json: {e}"))?;
 
     // 提取 mcpServers 对象
     let servers = mcp_config["mcpServers"]
@@ -308,8 +313,7 @@ pub fn migrate_mcp_from_json(
 
     // 重命名 JSON 文件
     let migrated_path = resolved_path.with_extension("json.migrated");
-    fs::rename(&resolved_path, &migrated_path)
-        .map_err(|e| format!("rename mcp json: {e}"))?;
+    fs::rename(&resolved_path, &migrated_path).map_err(|e| format!("rename mcp json: {e}"))?;
 
     log::info!("Migrated MCP servers from {} to database", json_path);
     Ok(())
@@ -334,13 +338,19 @@ mod tests {
         let guard = state.conn.lock().unwrap();
         let conn = guard.as_ref().ok_or("usage db not open")?;
 
-        let server: serde_json::Value = serde_json::from_str(server_json)
-            .map_err(|e| format!("parse server json: {e}"))?;
+        let server: serde_json::Value =
+            serde_json::from_str(server_json).map_err(|e| format!("parse server json: {e}"))?;
 
         let now = chrono::Utc::now().to_rfc3339();
 
-        let server_name = server["server_name"].as_str().ok_or("missing server_name")?;
-        let enabled = if server["enabled"].as_bool().unwrap_or(true) { 1i64 } else { 0i64 };
+        let server_name = server["server_name"]
+            .as_str()
+            .ok_or("missing server_name")?;
+        let enabled = if server["enabled"].as_bool().unwrap_or(true) {
+            1i64
+        } else {
+            0i64
+        };
         let transport = server["transport"].as_str().unwrap_or("stdio");
         let url = server["url"].as_str().unwrap_or("");
         let command = server["command"].as_str().unwrap_or("");
@@ -373,7 +383,10 @@ mod tests {
         Ok(())
     }
 
-    fn get_test(server_name: &str, state: &crate::usage::UsageState) -> Result<Option<String>, String> {
+    fn get_test(
+        server_name: &str,
+        state: &crate::usage::UsageState,
+    ) -> Result<Option<String>, String> {
         let guard = state.conn.lock().unwrap();
         let conn = guard.as_ref().ok_or("usage db not open")?;
 
@@ -411,11 +424,12 @@ mod tests {
         let conn = guard.as_ref().ok_or("usage db not open")?;
 
         let now = chrono::Utc::now().to_rfc3339();
-        let rows = conn.execute(
-            "UPDATE mcp_servers SET enabled = 1, updated_at = ?1 WHERE server_name = ?2",
-            rusqlite::params![now, server_name],
-        )
-        .map_err(|e| format!("enable mcp_server: {e}"))?;
+        let rows = conn
+            .execute(
+                "UPDATE mcp_servers SET enabled = 1, updated_at = ?1 WHERE server_name = ?2",
+                rusqlite::params![now, server_name],
+            )
+            .map_err(|e| format!("enable mcp_server: {e}"))?;
 
         if rows == 0 {
             return Err(format!("server {} not found", server_name));
@@ -428,11 +442,12 @@ mod tests {
         let conn = guard.as_ref().ok_or("usage db not open")?;
 
         let now = chrono::Utc::now().to_rfc3339();
-        let rows = conn.execute(
-            "UPDATE mcp_servers SET enabled = 0, updated_at = ?1 WHERE server_name = ?2",
-            rusqlite::params![now, server_name],
-        )
-        .map_err(|e| format!("disable mcp_server: {e}"))?;
+        let rows = conn
+            .execute(
+                "UPDATE mcp_servers SET enabled = 0, updated_at = ?1 WHERE server_name = ?2",
+                rusqlite::params![now, server_name],
+            )
+            .map_err(|e| format!("disable mcp_server: {e}"))?;
 
         if rows == 0 {
             return Err(format!("server {} not found", server_name));
@@ -444,11 +459,12 @@ mod tests {
         let guard = state.conn.lock().unwrap();
         let conn = guard.as_ref().ok_or("usage db not open")?;
 
-        let rows = conn.execute(
-            "DELETE FROM mcp_servers WHERE server_name = ?1",
-            [server_name],
-        )
-        .map_err(|e| format!("delete mcp_server: {e}"))?;
+        let rows = conn
+            .execute(
+                "DELETE FROM mcp_servers WHERE server_name = ?1",
+                [server_name],
+            )
+            .map_err(|e| format!("delete mcp_server: {e}"))?;
 
         if rows == 0 {
             return Err(format!("server {} not found", server_name));

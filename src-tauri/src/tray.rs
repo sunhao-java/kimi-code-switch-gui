@@ -48,7 +48,11 @@ fn build_menu_items<R: tauri::Runtime>(
                     continue;
                 }
                 let child_label = child.label.clone().unwrap_or_default();
-                let display = if child.checked { format!("✓ {child_label}") } else { child_label };
+                let display = if child.checked {
+                    format!("✓ {child_label}")
+                } else {
+                    child_label
+                };
                 let id = child.id.clone().unwrap_or_default();
                 let item = MenuItemBuilder::with_id(id, display).build(app)?;
                 sub = sub.item(&item);
@@ -88,7 +92,8 @@ pub fn set_tray(
     // 如果已有托盘实例，只更新菜单
     if let Some(tray) = guard.as_ref() {
         log::trace!("updating existing tray");
-        let menu_obj = build_menu_items(&app, &menu, MenuBuilder::new(&app)).map_err(|e| e.to_string())?;
+        let menu_obj =
+            build_menu_items(&app, &menu, MenuBuilder::new(&app)).map_err(|e| e.to_string())?;
         tray.set_menu(Some(menu_obj)).map_err(|e| e.to_string())?;
         if let Some(tip) = tooltip {
             tray.set_tooltip(Some(tip)).ok();
@@ -98,10 +103,15 @@ pub fn set_tray(
 
     // 首次创建托盘
     log::trace!("creating new tray with id 'main-tray'");
-    let menu_obj = build_menu_items(&app, &menu, MenuBuilder::new(&app)).map_err(|e| e.to_string())?;
+    let menu_obj =
+        build_menu_items(&app, &menu, MenuBuilder::new(&app)).map_err(|e| e.to_string())?;
 
     let tray = TrayIconBuilder::with_id("main-tray")
-        .icon(app.default_window_icon().cloned().ok_or("no default icon")?)
+        .icon(
+            app.default_window_icon()
+                .cloned()
+                .ok_or("no default icon")?,
+        )
         .tooltip(tooltip.unwrap_or_else(|| "Kimi Code Switch GUI".into()))
         .menu(&menu_obj)
         .on_menu_event(|app, event| {

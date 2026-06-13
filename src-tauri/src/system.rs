@@ -87,7 +87,8 @@ fn find_kimi_code_login_command() -> OAuthLoginCommand {
     {
         if prefix.status.success() {
             let path = String::from_utf8_lossy(&prefix.stdout).trim().to_string();
-            if let Some(candidate) = executable_path_if_exists(PathBuf::from(path).join("bin/kimi")) {
+            if let Some(candidate) = executable_path_if_exists(PathBuf::from(path).join("bin/kimi"))
+            {
                 return OAuthLoginCommand {
                     program: candidate.to_string_lossy().to_string(),
                     args: vec!["login".to_string()],
@@ -349,8 +350,10 @@ fn read_oauth_login_stream<R: Read + Send + 'static>(
 fn is_oauth_models_payment_required(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
     let mentions_models = lower.contains("models") || lower.contains("coding/v1/models");
-    let mentions_payment =
-        lower.contains("payment required") || lower.contains("http 402") || lower.contains(" 402,") || lower.contains(": 402");
+    let mentions_payment = lower.contains("payment required")
+        || lower.contains("http 402")
+        || lower.contains(" 402,")
+        || lower.contains(": 402");
     mentions_models && mentions_payment
 }
 
@@ -442,41 +445,42 @@ pub async fn start_kimi_oauth_login(
     );
 
     let app_for_task = app.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let login_command = find_oauth_login_command(target);
-        let mut child = Command::new(&login_command.program)
-            .args(&login_command.args)
-            .env("PATH", augmented_path())
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("spawn {}: {e}", target.label()))?;
+    let result =
+        tauri::async_runtime::spawn_blocking(move || {
+            let login_command = find_oauth_login_command(target);
+            let mut child = Command::new(&login_command.program)
+                .args(&login_command.args)
+                .env("PATH", augmented_path())
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .map_err(|e| format!("spawn {}: {e}", target.label()))?;
 
-        let stdout_handle = child
-            .stdout
-            .take()
-            .map(|stdout| read_oauth_login_stream(app_for_task.clone(), target, "stdout", stdout));
-        let stderr_handle = child
-            .stderr
-            .take()
-            .map(|stderr| read_oauth_login_stream(app_for_task.clone(), target, "stderr", stderr));
+            let stdout_handle = child.stdout.take().map(|stdout| {
+                read_oauth_login_stream(app_for_task.clone(), target, "stdout", stdout)
+            });
+            let stderr_handle = child.stderr.take().map(|stderr| {
+                read_oauth_login_stream(app_for_task.clone(), target, "stderr", stderr)
+            });
 
-        let status = child.wait().map_err(|e| format!("wait {}: {e}", target.label()))?;
-        let stdout = stdout_handle
-            .map(|handle| handle.join().unwrap_or_default())
-            .unwrap_or_default();
-        let stderr = stderr_handle
-            .map(|handle| handle.join().unwrap_or_default())
-            .unwrap_or_default();
-        Ok(ExecResult {
-            code: status.code().unwrap_or(-1),
-            stdout,
-            stderr,
+            let status = child
+                .wait()
+                .map_err(|e| format!("wait {}: {e}", target.label()))?;
+            let stdout = stdout_handle
+                .map(|handle| handle.join().unwrap_or_default())
+                .unwrap_or_default();
+            let stderr = stderr_handle
+                .map(|handle| handle.join().unwrap_or_default())
+                .unwrap_or_default();
+            Ok(ExecResult {
+                code: status.code().unwrap_or(-1),
+                stdout,
+                stderr,
+            })
         })
-    })
-    .await
-    .map_err(|e| format!("join error: {e}"));
+        .await
+        .map_err(|e| format!("join error: {e}"));
 
     KIMI_OAUTH_LOGIN_RUNNING.store(false, Ordering::SeqCst);
 
@@ -695,7 +699,9 @@ mod tests {
         #[cfg(windows)]
         {
             assert!(parts.iter().any(|part| part.ends_with(".kimi-code/bin")));
-            assert!(parts.iter().any(|part| part.ends_with("AppData/Roaming/npm")));
+            assert!(parts
+                .iter()
+                .any(|part| part.ends_with("AppData/Roaming/npm")));
         }
     }
 
@@ -738,8 +744,14 @@ mod tests {
 
         assert_eq!(event.kind, "device-code");
         assert_eq!(event.target, "kimi-code");
-        assert_eq!(event.url.as_deref(), Some("https://auth.example/device?code=abc"));
-        assert_eq!(event.line.as_deref(), Some("Opening browser for Kimi device login: https://auth.example/device?code=abc"));
+        assert_eq!(
+            event.url.as_deref(),
+            Some("https://auth.example/device?code=abc")
+        );
+        assert_eq!(
+            event.line.as_deref(),
+            Some("Opening browser for Kimi device login: https://auth.example/device?code=abc")
+        );
     }
 
     #[test]
@@ -819,7 +831,10 @@ mod tests {
 
     #[test]
     fn parse_device_login_line_marks_login_failure() {
-        let event = parse_device_login_line(KimiOAuthTarget::KimiCode, "Login failed: authorization expired");
+        let event = parse_device_login_line(
+            KimiOAuthTarget::KimiCode,
+            "Login failed: authorization expired",
+        );
 
         assert_eq!(event.kind, "error");
         assert_eq!(event.message.as_deref(), Some("authorization expired"));
@@ -843,7 +858,8 @@ mod tests {
     fn oauth_failure_summary_prefers_stderr() {
         let result = ExecResult {
             code: 1,
-            stdout: "Verification URL: https://www.kimi.com/code/authorize_device?user_code=ABCD\n".to_string(),
+            stdout: "Verification URL: https://www.kimi.com/code/authorize_device?user_code=ABCD\n"
+                .to_string(),
             stderr: "\nLogin failed: authorization expired\n".to_string(),
         };
 
@@ -862,7 +878,8 @@ mod tests {
                 "Verification URL: https://www.kimi.com/code/authorize_device?user_code=0FR7-01JN",
                 "Failed to get models: 402, message='Payment Required',",
                 "url='https://api.kimi.com/coding/v1/models'",
-            ].join("\n"),
+            ]
+            .join("\n"),
             stderr: String::new(),
         };
 
