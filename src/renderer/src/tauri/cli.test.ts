@@ -5,15 +5,15 @@ import type { AppState } from "@shared/types";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 import { invoke } from "@tauri-apps/api/core";
-import { classifyKimiTargetFromSignals, evaluateCliCompatibility, getCliVersion, getTargetCliVersion, MIN_CLI_VERSION, runKimiConnectivityTest, runKimiMcpServerTest, runProvidersHealthCheck, upgradeKimiCli, upgradeTargetCli } from "./cli";
+import { callKimiMcpServerTool, classifyKimiTargetFromSignals, evaluateCliCompatibility, getCliVersion, getTargetCliVersion, listKimiMcpServerTools, MIN_CLI_VERSION, runKimiConnectivityTest, runKimiMcpServerTest, runProvidersHealthCheck, upgradeKimiCli, upgradeTargetCli } from "./cli";
 
 const mockedInvoke = vi.mocked(invoke);
 
 function exec(code: number, stdout = "", stderr = ""): { code: number; stdout: string; stderr: string } {
   return { code, stdout, stderr };
 }
-function http(status: number, body = ""): { status: number; ok: boolean; body: string } {
-  return { status, ok: status >= 200 && status < 300, body };
+function http(status: number, body = "", headers: Record<string, string> = {}): { status: number; ok: boolean; body: string; headers: Record<string, string> } {
+  return { status, ok: status >= 200 && status < 300, body, headers };
 }
 
 function connectivityState(providerType = "openai_legacy"): AppState {
@@ -395,6 +395,114 @@ describe("upgradeKimiCli / runKimiMcpServerTest", () => {
       args: [],
       env: {},
     })).rejects.toThrow(/likely an SSE endpoint/);
+  });
+
+  it("parses tools from Streamable HTTP MCP endpoints", async () => {
+    mockedInvoke
+      .mockResolvedValueOnce(http(200, JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), { "mcp-session-id": "s-1" }) as unknown as never)
+      .mockResolvedValueOnce(http(202, "") as unknown as never)
+      .mockResolvedValueOnce(http(200, JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        result: {
+          tools: [{
+            name: "search",
+            description: "Search things",
+            inputSchema: { type: "object", properties: { query: { type: "string" } } },
+          }],
+        },
+      })) as unknown as never);
+
+    const result = await listKimiMcpServerTools("remote", {
+      enabled: true,
+      transport: "streamable-http",
+      url: "https://example.test/mcp",
+      headers: {},
+      command: "",
+      args: [],
+      env: {},
+    });
+
+    expect(result.tools).toEqual([expect.objectContaining({ name: "search" })]);
+    const calls = mockedInvoke.mock.calls.filter((call) => call[0] === "http_request");
+    expect(JSON.parse((calls[0][1] as { body: string }).body)).toMatchObject({ method: "initialize" });
+    expect(JSON.parse((calls[1][1] as { body: string }).body)).toMatchObject({ method: "notifications/initialized" });
+    expect(calls[1][1]).toMatchObject({ headers: expect.objectContaining({ "mcp-session-id": "s-1" }) });
+    expect(JSON.parse((calls[2][1] as { body: string }).body)).toMatchObject({ method: "tools/list" });
+  });
+
+  it("parses tools from stdio MCP endpoints with an extended timeout", async () => {
+    mockedInvoke.mockResolvedValueOnce({
+      responses: [
+        { jsonrpc: "2.0", id: 1, result: { protocolVersion: "2024-11-05" } },
+        {
+          jsonrpc: "2.0",
+          id: 2,
+          result: {
+            tools: [{
+              name: "read_text_file",
+              description: "Read text file",
+              inputSchema: { type: "object", properties: { path: { type: "string" } } },
+            }],
+          },
+        },
+      ],
+      stderr: "",
+    } as never);
+
+    const result = await listKimiMcpServerTools("filesystem", {
+      enabled: true,
+      transport: "stdio",
+      url: "",
+      headers: {},
+      command: "npx",
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      env: {},
+    });
+
+    expect(result.tools).toEqual([expect.objectContaining({ name: "read_text_file" })]);
+    expect(mockedInvoke).toHaveBeenCalledWith("run_mcp_stdio_session", {
+      program: "npx",
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"],
+      env: {},
+      requests: [
+        expect.objectContaining({ id: 1, method: "initialize" }),
+        expect.objectContaining({ method: "notifications/initialized" }),
+        expect.objectContaining({ id: 2, method: "tools/list" }),
+      ],
+      timeoutMs: 30000,
+    });
+  });
+
+  it("calls a parsed Streamable HTTP MCP tool with JSON arguments", async () => {
+    mockedInvoke
+      .mockResolvedValueOnce(http(200, JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} })) as unknown as never)
+      .mockResolvedValueOnce(http(202, "") as unknown as never)
+      .mockResolvedValueOnce(http(200, JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        result: { content: [{ type: "text", text: "ok" }] },
+      })) as unknown as never);
+
+    const result = await callKimiMcpServerTool("remote", {
+      enabled: true,
+      transport: "streamable-http",
+      url: "https://example.test/mcp",
+      headers: {},
+      command: "",
+      args: [],
+      env: {},
+    }, "search", "{\"query\":\"kimi\"}");
+
+    expect(result.result).toEqual({ content: [{ type: "text", text: "ok" }] });
+    const call = mockedInvoke.mock.calls.find((item) => {
+      const body = (item[1] as { body?: string }).body;
+      return body ? JSON.parse(body).method === "tools/call" : false;
+    });
+    expect(JSON.parse((call![1] as { body: string }).body)).toMatchObject({
+      method: "tools/call",
+      params: { name: "search", arguments: { query: "kimi" } },
+    });
   });
 });
 

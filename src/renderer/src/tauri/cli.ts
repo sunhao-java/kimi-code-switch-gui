@@ -11,6 +11,7 @@ const KIMI_CODE_HOMEBREW_URL = "https://formulae.brew.sh/api/formula/kimi-code.j
 const KIMI_CODE_GITHUB_LATEST_URL = "https://api.github.com/repos/MoonshotAI/kimi-code/releases/latest";
 const KIMI_CODE_INSTALL_SCRIPT_SH = "https://code.kimi.com/kimi-code/install.sh";
 const KIMI_CODE_INSTALL_SCRIPT_URL = "https://code.kimi.com/kimi-code/install.ps1";
+const MCP_PROTOCOL_VERSION = "2025-03-26";
 
 interface ExecResult {
   code: number;
@@ -22,6 +23,39 @@ interface HttpResponse {
   status: number;
   ok: boolean;
   body: string;
+  headers?: Record<string, string>;
+}
+
+export interface McpToolInfo {
+  name: string;
+  description: string;
+  inputSchema: unknown;
+}
+
+export interface McpToolListResult {
+  ok: true;
+  tools: McpToolInfo[];
+  raw: string;
+  stderr?: string;
+}
+
+export interface McpToolCallResult {
+  ok: true;
+  toolName: string;
+  result: unknown;
+  raw: string;
+  stderr?: string;
+}
+
+interface McpStdioRpcRequest {
+  id?: number;
+  method: string;
+  params?: unknown;
+}
+
+interface McpStdioSessionResponse {
+  responses: unknown[];
+  stderr: string;
 }
 
 function exec(program: string, args: string[], timeoutMs?: number): Promise<ExecResult> {
@@ -30,6 +64,22 @@ function exec(program: string, args: string[], timeoutMs?: number): Promise<Exec
 
 function http(method: string, url: string, headers?: Record<string, string>, body?: string): Promise<HttpResponse> {
   return invoke<HttpResponse>("http_request", { method, url, headers: headers ?? null, body: body ?? null });
+}
+
+function mcpStdioSession(
+  program: string,
+  args: string[],
+  env: Record<string, string>,
+  requests: McpStdioRpcRequest[],
+  timeoutMs = 30000,
+): Promise<McpStdioSessionResponse> {
+  return invoke<McpStdioSessionResponse>("run_mcp_stdio_session", {
+    program,
+    args,
+    env,
+    requests,
+    timeoutMs,
+  });
 }
 
 function extractSemver(value: string | undefined): string {
@@ -455,7 +505,7 @@ export async function runKimiMcpServerTest(
       id: 1,
       method: "initialize",
       params: {
-        protocolVersion: "2025-03-26",
+        protocolVersion: MCP_PROTOCOL_VERSION,
         capabilities: {},
         clientInfo: {
           name: "kimi-code-switch-gui",
@@ -471,6 +521,255 @@ export async function runKimiMcpServerTest(
     throw new Error(`MCP server "${name}" HTTP test failed: ${resp.status}${resp.body ? ` - ${resp.body.slice(0, 300)}` : ""}`);
   }
   return { ok: true, stdout: resp.body.trim(), stderr: "" };
+}
+
+function mcpInitializeRequest(id: number): McpStdioRpcRequest {
+  return {
+    id,
+    method: "initialize",
+    params: {
+      protocolVersion: MCP_PROTOCOL_VERSION,
+      capabilities: {},
+      clientInfo: {
+        name: "kimi-code-switch-gui",
+        version: "1.0.0",
+      },
+    },
+  } as McpStdioRpcRequest;
+}
+
+function mcpInitializedNotification(): McpStdioRpcRequest {
+  return { method: "notifications/initialized" };
+}
+
+function mcpHttpHeaders(server: McpServerConfig, sessionId?: string, protocolVersion = MCP_PROTOCOL_VERSION): Record<string, string> {
+  return {
+    ...server.headers,
+    ...(sessionId ? { "mcp-session-id": sessionId } : {}),
+    Accept: "application/json, text/event-stream",
+    "Content-Type": "application/json",
+    "MCP-Protocol-Version": protocolVersion,
+  };
+}
+
+async function postMcpJsonRpc(
+  name: string,
+  server: McpServerConfig,
+  request: McpStdioRpcRequest,
+  sessionId?: string,
+  protocolVersion = MCP_PROTOCOL_VERSION,
+): Promise<HttpResponse> {
+  if (!server.url.trim()) {
+    throw new Error(`MCP server "${name}" URL is required.`);
+  }
+  const payload: Record<string, unknown> = {
+    jsonrpc: "2.0",
+    method: request.method,
+  };
+  if (request.id !== undefined) payload.id = request.id;
+  if (request.params !== undefined) payload.params = request.params;
+  const resp = await http("POST", server.url.trim(), mcpHttpHeaders(server, sessionId, protocolVersion), JSON.stringify(payload));
+  if (resp.status === 405) {
+    throw new Error(`MCP server "${name}" does not accept Streamable HTTP POST requests. This URL is likely an SSE endpoint; use a real HTTP MCP URL or a stdio bridge.`);
+  }
+  if (!resp.ok) {
+    throw new Error(`MCP server "${name}" HTTP request failed: ${resp.status}${resp.body ? ` - ${resp.body.slice(0, 300)}` : ""}`);
+  }
+  return resp;
+}
+
+function parseJsonRpcBody(body: string): unknown {
+  const trimmed = body.trim();
+  if (!trimmed) {
+    throw new Error("MCP server returned an empty response.");
+  }
+  const direct = tryParseJson(trimmed);
+  if (direct.ok) return direct.value;
+
+  const eventData = trimmed
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trim())
+    .find((line) => line && line !== "[DONE]");
+  if (eventData) {
+    const parsed = tryParseJson(eventData);
+    if (parsed.ok) return parsed.value;
+  }
+  throw new Error("MCP server returned a non-JSON response.");
+}
+
+function tryParseJson(value: string): { ok: true; value: unknown } | { ok: false } {
+  try {
+    return { ok: true, value: JSON.parse(value) as unknown };
+  } catch {
+    return { ok: false };
+  }
+}
+
+function jsonRpcResult(payload: unknown): unknown {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("MCP server returned an invalid JSON-RPC response.");
+  }
+  const record = payload as Record<string, unknown>;
+  if (record.error) {
+    const error = record.error as Record<string, unknown>;
+    throw new Error(`MCP JSON-RPC error: ${String(error.message ?? JSON.stringify(error))}`);
+  }
+  return record.result;
+}
+
+function negotiatedMcpProtocolVersion(initializeResult: unknown): string {
+  if (!initializeResult || typeof initializeResult !== "object") {
+    return MCP_PROTOCOL_VERSION;
+  }
+  const version = (initializeResult as Record<string, unknown>).protocolVersion;
+  return typeof version === "string" && version.trim() ? version.trim() : MCP_PROTOCOL_VERSION;
+}
+
+function parseMcpTools(result: unknown): McpToolInfo[] {
+  const tools = result && typeof result === "object" ? (result as Record<string, unknown>).tools : null;
+  if (!Array.isArray(tools)) {
+    throw new Error("MCP tools/list response does not contain tools.");
+  }
+  return tools.map((tool, index) => {
+    if (!tool || typeof tool !== "object") {
+      throw new Error(`MCP tool at index ${index} is invalid.`);
+    }
+    const record = tool as Record<string, unknown>;
+    const name = typeof record.name === "string" ? record.name : "";
+    if (!name) {
+      throw new Error(`MCP tool at index ${index} has no name.`);
+    }
+    return {
+      name,
+      description: typeof record.description === "string" ? record.description : "",
+      inputSchema: record.inputSchema ?? record.input_schema ?? null,
+    };
+  });
+}
+
+function formatJson(value: unknown): string {
+  return JSON.stringify(value, null, 2);
+}
+
+function parseToolArguments(value: string): Record<string, unknown> {
+  const trimmed = value.trim();
+  if (!trimmed) return {};
+  const parsed = JSON.parse(trimmed) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("MCP tool arguments must be a JSON object.");
+  }
+  return parsed as Record<string, unknown>;
+}
+
+async function runHttpMcpToolList(name: string, server: McpServerConfig): Promise<McpToolListResult> {
+  const init = await postMcpJsonRpc(name, server, mcpInitializeRequest(1));
+  const sessionId = init.headers?.["mcp-session-id"] ?? init.headers?.["Mcp-Session-Id"];
+  const protocolVersion = negotiatedMcpProtocolVersion(jsonRpcResult(parseJsonRpcBody(init.body)));
+  await postMcpJsonRpc(name, server, mcpInitializedNotification(), sessionId, protocolVersion);
+  const listResp = await postMcpJsonRpc(name, server, { id: 2, method: "tools/list" }, sessionId, protocolVersion);
+  const payload = parseJsonRpcBody(listResp.body);
+  const result = jsonRpcResult(payload);
+  return { ok: true, tools: parseMcpTools(result), raw: formatJson(payload) };
+}
+
+async function runHttpMcpToolCall(
+  name: string,
+  server: McpServerConfig,
+  toolName: string,
+  argsJson: string,
+): Promise<McpToolCallResult> {
+  const init = await postMcpJsonRpc(name, server, mcpInitializeRequest(1));
+  const sessionId = init.headers?.["mcp-session-id"] ?? init.headers?.["Mcp-Session-Id"];
+  const protocolVersion = negotiatedMcpProtocolVersion(jsonRpcResult(parseJsonRpcBody(init.body)));
+  await postMcpJsonRpc(name, server, mcpInitializedNotification(), sessionId, protocolVersion);
+  const callResp = await postMcpJsonRpc(name, server, {
+    id: 2,
+    method: "tools/call",
+    params: { name: toolName, arguments: parseToolArguments(argsJson) },
+  }, sessionId, protocolVersion);
+  const payload = parseJsonRpcBody(callResp.body);
+  return { ok: true, toolName, result: jsonRpcResult(payload), raw: formatJson(payload) };
+}
+
+function ensureStdioMcpServer(name: string, server: McpServerConfig): void {
+  if (!server.command.trim()) {
+    throw new Error(`MCP server "${name}" uses stdio transport but has no command.`);
+  }
+}
+
+function findJsonRpcResponse(responses: unknown[], id: number): unknown {
+  const response = responses.find((item) => {
+    if (!item || typeof item !== "object") return false;
+    return (item as Record<string, unknown>).id === id;
+  });
+  if (!response) {
+    throw new Error(`MCP stdio server did not return response for request ${id}.`);
+  }
+  return response;
+}
+
+async function runStdioMcpToolList(name: string, server: McpServerConfig): Promise<McpToolListResult> {
+  ensureStdioMcpServer(name, server);
+  const session = await mcpStdioSession(server.command, server.args, server.env, [
+    mcpInitializeRequest(1),
+    mcpInitializedNotification(),
+    { id: 2, method: "tools/list" },
+  ]);
+  jsonRpcResult(findJsonRpcResponse(session.responses, 1));
+  const listPayload = findJsonRpcResponse(session.responses, 2);
+  return {
+    ok: true,
+    tools: parseMcpTools(jsonRpcResult(listPayload)),
+    raw: formatJson(listPayload),
+    stderr: session.stderr.trim(),
+  };
+}
+
+async function runStdioMcpToolCall(
+  name: string,
+  server: McpServerConfig,
+  toolName: string,
+  argsJson: string,
+): Promise<McpToolCallResult> {
+  ensureStdioMcpServer(name, server);
+  const session = await mcpStdioSession(server.command, server.args, server.env, [
+    mcpInitializeRequest(1),
+    mcpInitializedNotification(),
+    {
+      id: 2,
+      method: "tools/call",
+      params: { name: toolName, arguments: parseToolArguments(argsJson) },
+    },
+  ]);
+  jsonRpcResult(findJsonRpcResponse(session.responses, 1));
+  const callPayload = findJsonRpcResponse(session.responses, 2);
+  return {
+    ok: true,
+    toolName,
+    result: jsonRpcResult(callPayload),
+    raw: formatJson(callPayload),
+    stderr: session.stderr.trim(),
+  };
+}
+
+export async function listKimiMcpServerTools(name: string, server: McpServerConfig): Promise<McpToolListResult> {
+  return server.transport === "stdio" ? runStdioMcpToolList(name, server) : runHttpMcpToolList(name, server);
+}
+
+export async function callKimiMcpServerTool(
+  name: string,
+  server: McpServerConfig,
+  toolName: string,
+  argsJson: string,
+): Promise<McpToolCallResult> {
+  if (!toolName.trim()) {
+    throw new Error("MCP tool name is required.");
+  }
+  return server.transport === "stdio"
+    ? runStdioMcpToolCall(name, server, toolName, argsJson)
+    : runHttpMcpToolCall(name, server, toolName, argsJson);
 }
 
 function quoteForShell(value: string): string {

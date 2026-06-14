@@ -44,6 +44,7 @@ pub fn run() {
             system::file_stat,
             system::read_file_slice,
             system::http_request,
+            system::run_mcp_stdio_session,
             // 用量洞察 SQLite
             usage::usage_open,
             usage::usage_query,

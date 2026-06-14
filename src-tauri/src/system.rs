@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use tauri::Emitter;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader as TokioBufReader};
 
 static KIMI_OAUTH_LOGIN_RUNNING: AtomicBool = AtomicBool::new(false);
 
@@ -24,6 +25,7 @@ fn validate_command(program: &str) -> Result<(), String> {
         "open",
         "osascript",
         "uv",
+        "uvx",
         "python",
         "python3",
         "node",
@@ -233,6 +235,43 @@ fn augmented_path() -> String {
         .filter(|e| !e.is_empty() && seen.insert(e.clone()))
         .collect::<Vec<_>>()
         .join(if cfg!(windows) { ";" } else { ":" })
+}
+
+fn expand_shell_like_path_value(value: &str) -> String {
+    if value == "~" {
+        return dirs::home_dir()
+            .map(|home| home.to_string_lossy().to_string())
+            .unwrap_or_else(|| value.to_string());
+    }
+    if let Some(stripped) = value.strip_prefix("~/") {
+        return dirs::home_dir()
+            .map(|home| home.join(stripped).to_string_lossy().to_string())
+            .unwrap_or_else(|| value.to_string());
+    }
+    value.to_string()
+}
+
+fn normalize_mcp_stdio_args(program: &str, args: &[String]) -> Vec<String> {
+    let program_name = Path::new(program)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(program)
+        .to_ascii_lowercase();
+    let mut normalized: Vec<String> = args
+        .iter()
+        .map(|arg| expand_shell_like_path_value(arg))
+        .collect();
+
+    if program_name == "npx"
+        && normalized
+            .iter()
+            .any(|arg| arg == "@modelcontextprotocol/server-filesystem")
+        && !normalized.iter().any(|arg| arg == "-y" || arg == "--yes")
+    {
+        normalized.insert(0, "-y".to_string());
+    }
+
+    normalized
 }
 
 #[derive(serde::Serialize)]
@@ -728,6 +767,91 @@ pub struct HttpResponse {
     pub status: u16,
     pub ok: bool,
     pub body: String,
+    pub headers: HashMap<String, String>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct McpStdioRequest {
+    pub id: Option<u64>,
+    pub method: String,
+    pub params: Option<serde_json::Value>,
+}
+
+#[derive(serde::Serialize)]
+pub struct McpStdioResponse {
+    pub responses: Vec<serde_json::Value>,
+    pub stderr: String,
+}
+
+async fn write_mcp_stdio_message<W: AsyncWriteExt + Unpin>(
+    writer: &mut W,
+    payload: &serde_json::Value,
+) -> Result<(), String> {
+    writer
+        .write_all(format!("{payload}\n").as_bytes())
+        .await
+        .map_err(|e| format!("write MCP stdio request: {e}"))?;
+    writer
+        .flush()
+        .await
+        .map_err(|e| format!("flush MCP stdio request: {e}"))
+}
+
+async fn read_mcp_stdio_message<R: AsyncBufReadExt + AsyncReadExt + Unpin>(
+    reader: &mut R,
+) -> Result<Option<serde_json::Value>, String> {
+    loop {
+        let mut line = String::new();
+        let read = reader
+            .read_line(&mut line)
+            .await
+            .map_err(|e| format!("read MCP stdio stdout: {e}"))?;
+        if read == 0 {
+            return Ok(None);
+        }
+        let trimmed = line.trim_end_matches(['\r', '\n']);
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if trimmed.starts_with('{') {
+            let value = serde_json::from_str::<serde_json::Value>(trimmed)
+                .map_err(|e| format!("parse MCP stdio JSON-RPC line: {e}"))?;
+            return Ok(Some(value));
+        }
+
+        if let Some((name, value)) = trimmed.split_once(':') {
+            if name.eq_ignore_ascii_case("content-length") {
+                let length = value
+                    .trim()
+                    .parse::<usize>()
+                    .map_err(|e| format!("parse MCP stdio content-length: {e}"))?;
+
+                loop {
+                    let mut header = String::new();
+                    let read = reader
+                        .read_line(&mut header)
+                        .await
+                        .map_err(|e| format!("read MCP stdio header: {e}"))?;
+                    if read == 0 {
+                        return Ok(None);
+                    }
+                    if header.trim_end_matches(['\r', '\n']).is_empty() {
+                        break;
+                    }
+                }
+
+                let mut body = vec![0u8; length];
+                reader
+                    .read_exact(&mut body)
+                    .await
+                    .map_err(|e| format!("read MCP stdio body: {e}"))?;
+                let value = serde_json::from_slice::<serde_json::Value>(&body)
+                    .map_err(|e| format!("parse MCP stdio JSON-RPC body: {e}"))?;
+                return Ok(Some(value));
+            }
+        }
+    }
 }
 
 /// 纯构造：把方法/URL/头部/请求体组装成一个 reqwest::Request。
@@ -778,12 +902,132 @@ pub async fn http_request(
         .await
         .map_err(|e| format!("request: {e}"))?;
     let status = resp.status();
+    let headers = resp
+        .headers()
+        .iter()
+        .filter_map(|(key, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|v| (key.as_str().to_ascii_lowercase(), v.to_string()))
+        })
+        .collect();
     let text = resp.text().await.map_err(|e| format!("read body: {e}"))?;
     Ok(HttpResponse {
         status: status.as_u16(),
         ok: status.is_success(),
         body: text,
+        headers,
     })
+}
+
+#[tauri::command]
+pub async fn run_mcp_stdio_session(
+    program: String,
+    args: Vec<String>,
+    env: HashMap<String, String>,
+    requests: Vec<McpStdioRequest>,
+    timeout_ms: Option<u64>,
+) -> Result<McpStdioResponse, String> {
+    validate_command(&program)?;
+    if requests.is_empty() {
+        return Err("MCP stdio request list cannot be empty.".to_string());
+    }
+
+    let args = normalize_mcp_stdio_args(&program, &args);
+    let env = env
+        .into_iter()
+        .map(|(key, value)| (key, expand_shell_like_path_value(&value)))
+        .collect::<HashMap<_, _>>();
+    let timeout = Duration::from_millis(timeout_ms.unwrap_or(30000).max(1000));
+    let task = async move {
+        let mut child = tokio::process::Command::new(&program)
+            .args(&args)
+            .env("PATH", augmented_path())
+            .envs(env)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("spawn MCP stdio server: {e}"))?;
+
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "MCP stdio server stdin is unavailable.".to_string())?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "MCP stdio server stdout is unavailable.".to_string())?;
+        let mut stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| "MCP stdio server stderr is unavailable.".to_string())?;
+        let stderr_task = tokio::spawn(async move {
+            let mut stderr_output = String::new();
+            let _ = stderr.read_to_string(&mut stderr_output).await;
+            stderr_output
+        });
+        let mut reader = TokioBufReader::new(stdout);
+        let mut responses = Vec::new();
+        for request in &requests {
+            let mut payload = serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": request.method,
+            });
+            if let Some(id) = request.id {
+                payload["id"] = serde_json::json!(id);
+            }
+            if let Some(params) = &request.params {
+                payload["params"] = params.clone();
+            }
+            write_mcp_stdio_message(&mut stdin, &payload).await?;
+
+            let Some(expected_id) = request.id else {
+                continue;
+            };
+
+            loop {
+                let Some(parsed) = read_mcp_stdio_message(&mut reader).await? else {
+                    break;
+                };
+                let Some(id) = parsed.get("id").and_then(|value| value.as_u64()) else {
+                    continue;
+                };
+                if id == expected_id {
+                    responses.push(parsed);
+                    break;
+                }
+            }
+        }
+
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+        let stderr = match tokio::time::timeout(Duration::from_millis(500), stderr_task).await {
+            Ok(join_result) => join_result.unwrap_or_default(),
+            Err(_) => String::new(),
+        };
+
+        if responses.is_empty() {
+            return Err(format!(
+                "MCP stdio server returned no JSON-RPC response.{}",
+                if stderr.trim().is_empty() {
+                    String::new()
+                } else {
+                    format!(" stderr: {}", stderr.trim())
+                }
+            ));
+        }
+
+        Ok(McpStdioResponse { responses, stderr })
+    };
+
+    tokio::time::timeout(timeout, task).await.map_err(|_| {
+        format!(
+            "MCP stdio session timed out after {}ms",
+            timeout.as_millis()
+        )
+    })?
 }
 
 #[cfg(test)]
@@ -831,6 +1075,52 @@ mod tests {
     }
 
     #[test]
+    fn normalize_mcp_stdio_args_adds_npx_yes_for_filesystem() {
+        assert_eq!(
+            normalize_mcp_stdio_args(
+                "npx",
+                &[
+                    "@modelcontextprotocol/server-filesystem".to_string(),
+                    "/tmp".to_string()
+                ]
+            ),
+            vec![
+                "-y".to_string(),
+                "@modelcontextprotocol/server-filesystem".to_string(),
+                "/tmp".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn normalize_mcp_stdio_args_keeps_existing_npx_yes() {
+        assert_eq!(
+            normalize_mcp_stdio_args(
+                "npx",
+                &[
+                    "--yes".to_string(),
+                    "@modelcontextprotocol/server-filesystem".to_string(),
+                    "/tmp".to_string()
+                ]
+            ),
+            vec![
+                "--yes".to_string(),
+                "@modelcontextprotocol/server-filesystem".to_string(),
+                "/tmp".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn normalize_mcp_stdio_args_expands_tilde_args() {
+        let home = dirs::home_dir().expect("home dir required");
+        assert_eq!(
+            normalize_mcp_stdio_args("node", &["~/server.js".to_string()]),
+            vec![home.join("server.js").to_string_lossy().to_string()]
+        );
+    }
+
+    #[test]
     fn command_allowlist_supports_kimi_detection_shells() {
         assert!(validate_command("sh").is_ok());
         assert!(validate_command("powershell.exe").is_ok());
@@ -844,6 +1134,55 @@ mod tests {
         assert!(panel_tmp
             .join("terminal/kimi-launch.sh")
             .starts_with(&panel_tmp));
+    }
+
+    #[test]
+    #[ignore = "requires npx network/package availability"]
+    fn run_mcp_stdio_session_lists_filesystem_tools() {
+        let result = tauri::async_runtime::block_on(async {
+            run_mcp_stdio_session(
+                "npx".to_string(),
+                vec![
+                    "-y".to_string(),
+                    "@modelcontextprotocol/server-filesystem".to_string(),
+                    "/tmp".to_string(),
+                ],
+                HashMap::new(),
+                vec![
+                    McpStdioRequest {
+                        id: Some(1),
+                        method: "initialize".to_string(),
+                        params: Some(serde_json::json!({
+                            "protocolVersion": "2025-03-26",
+                            "capabilities": {},
+                            "clientInfo": {
+                                "name": "kimi-code-switch-gui-test",
+                                "version": "0.0.0"
+                            }
+                        })),
+                    },
+                    McpStdioRequest {
+                        id: None,
+                        method: "notifications/initialized".to_string(),
+                        params: None,
+                    },
+                    McpStdioRequest {
+                        id: Some(2),
+                        method: "tools/list".to_string(),
+                        params: None,
+                    },
+                ],
+                Some(30000),
+            )
+            .await
+        })
+        .expect("filesystem MCP tools/list should complete");
+
+        assert_eq!(result.responses.len(), 2);
+        assert!(result
+            .responses
+            .iter()
+            .any(|response| response.get("id").and_then(|id| id.as_u64()) == Some(2)));
     }
 
     #[test]
