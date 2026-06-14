@@ -3,6 +3,24 @@
 Diese Datei dokumentiert die wesentlichen Änderungen des Projekts. Das Format folgt Keep a Changelog; verwendet wird das `major.minor.patch`-Versionsschema.
 
 
+## [2.2.2] - 2026-06-15
+
+### Hinzugefügt
+
+- **MCP-Tool-Erkennung und Tests**: Die MCP-Seite bietet jetzt Tool-Erkennung, Argumentformulare, rohe JSON-Ergebnisanzeige, Kopieren/Einklappen sowie einen 1-Tages-Cache mit manueller Neuerkennung.
+- **Erweiterter Modellkonfigurations-Assistent**: Neue Modellkonfigurationen können einen global eindeutigen Profilnamen setzen und die Endpoint-URL auf Format und Erreichbarkeit prüfen.
+
+### Geändert
+
+- **Integration von Einstellungen und About**: Die About-Seite liegt jetzt unter Einstellungen; Split-Layout-Seiten nutzen ein einheitliches Scroll-Verhalten gegen zu hohe Hintergründe und überlappende Aktionsbuttons.
+- **Kimi-Code-Versionserkennung**: Das Start-Ergebnis wird für die Übersicht wiederverwendet, manuelle Update-Prüfungen bleiben verfügbar.
+
+### Behoben
+
+- Behoben, dass stdio-MCP-Server wie filesystem nach bereits erfolgreichem tools/list wegen unbegrenztem Warten auf stderr-Cleanup in einen Timeout liefen.
+- Behoben, dass Terminalstarts weiterhin das von Kimi Code nicht unterstützte `--config-file` übergaben; stattdessen werden unterstützte Modell-, YOLO- und Plan-Flags genutzt.
+- Behoben, dass Trends und Aufschlüsselungen in Usage Insights trotz vorhandener Events leer blieben; zusätzlich wird Kimi-Code-wire-Log-Ingestion unterstützt.
+
 ## [2.2.1] - 2026-06-14
 
 ### Geändert

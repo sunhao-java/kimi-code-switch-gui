@@ -3,6 +3,24 @@
 Este archivo recoge los cambios relevantes del proyecto. El formato sigue Keep a Changelog y el proyecto adopta el esquema de versiones `major.minor.patch`.
 
 
+## [2.2.2] - 2026-06-15
+
+### Añadido
+
+- **Análisis y prueba de herramientas MCP**: la página MCP ahora incluye descubrimiento de tools, formularios de argumentos, visualización del JSON original, copiar/plegar y caché de 1 día con reanálisis manual.
+- **Asistente de configuración de modelos mejorado**: las nuevas configuraciones pueden definir un nombre de perfil globalmente único y validar el formato y la conectividad del endpoint.
+
+### Cambiado
+
+- **Integración de Ajustes y About**: la página About ahora vive dentro de Ajustes, y las páginas con layout dividido comparten un modelo de scroll consistente para evitar fondos excesivos y botones superpuestos.
+- **Detección de versión de Kimi Code**: el resultado detectado al iniciar se reutiliza en la vista general, manteniendo la comprobación manual de actualizaciones.
+
+### Corregido
+
+- Corregido que servidores MCP stdio como filesystem agotaran el tiempo tras devolver tools/list porque la limpieza de stderr esperaba indefinidamente.
+- Corregido que el lanzamiento en terminal siguiera pasando el flag `--config-file` no soportado por Kimi Code; ahora usa flags soportados de modelo, YOLO y Plan.
+- Corregido que las tendencias y desgloses de Usage Insights aparecieran sin datos pese a existir eventos, y se añadió ingesta de logs wire de Kimi Code.
+
 ## [2.2.1] - 2026-06-14
 
 ### Cambiado

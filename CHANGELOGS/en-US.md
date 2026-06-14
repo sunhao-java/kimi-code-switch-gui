@@ -2,6 +2,24 @@
 
 This file records the project's notable changes. Format follows Keep a Changelog; the project uses `major.minor.patch` versioning.
 
+## [2.2.2] - 2026-06-15
+
+### Added
+
+- **MCP tool parsing and testing**: the MCP page now includes tool discovery, argument forms, raw JSON result viewing, copy/collapse actions, and a 1-day parse cache with manual reparse.
+- **Enhanced model configuration wizard**: new model configurations can specify a globally unique profile name and validate endpoint URL format plus reachability.
+
+### Changed
+
+- **Settings/About integration**: the About page now lives under Settings, and split-layout pages share a consistent scrolling model to avoid overextended backgrounds and action-button overlap.
+- **Kimi Code version detection**: startup detection is cached for overview display while keeping manual update checks available.
+
+### Fixed
+
+- Fixed stdio MCP servers such as filesystem timing out after tools/list had already returned because stderr cleanup waited indefinitely.
+- Fixed terminal launches still passing the unsupported `--config-file` flag to Kimi Code; launches now use supported model, YOLO, and Plan flags.
+- Fixed Usage Insights trend and breakdown charts showing no data despite existing events, and added Kimi Code wire-log ingestion.
+
 ## [2.2.1] - 2026-06-14
 
 ### Changed
