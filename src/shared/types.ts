@@ -204,6 +204,11 @@ export interface AppState {
     installed: boolean;
     status: KimiTargetDetectionStatus;
     version: string;
+    latestVersion?: string;
+    hasUpdate?: boolean;
+    packageName?: string;
+    installCommand?: string;
+    updateCommand?: string;
     executablePath: string;
     resolvedPath: string;
     candidates: string[];

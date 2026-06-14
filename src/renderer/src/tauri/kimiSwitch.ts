@@ -51,6 +51,7 @@ let logWatcher: UsageLogWatcher | null = null;
 let usageOpen = false;
 let currentAppState: AppState | null = null;
 let shortcutSyncTask: Promise<void> = Promise.resolve();
+let startupKimiCodeDetection: AppState["kimiTargetDetection"] | null = null;
 
 type LoadStatePaths = {
   configTarget?: AppState["configTarget"];
@@ -60,8 +61,33 @@ type LoadStatePaths = {
   mcpConfigPath?: string;
 };
 
+export type EndpointReachabilityResult = {
+  ok: boolean;
+  status: number;
+  message: string;
+};
+
 function activeProfile(): string {
   return currentAppState?.activeProfile ?? "default";
+}
+
+async function getStartupKimiCodeDetection(): Promise<AppState["kimiTargetDetection"]> {
+  if (startupKimiCodeDetection) return startupKimiCodeDetection;
+  const detection = await cli.detectActiveKimiTarget();
+  const version = await cli.getTargetCliVersion("kimi-code", { checkLatest: true });
+  startupKimiCodeDetection = {
+    ...detection,
+    installed: version.installed,
+    status: version.installed ? "detected" : "not-installed",
+    version: version.version,
+    latestVersion: version.latestVersion,
+    hasUpdate: version.hasUpdate,
+    packageName: version.packageName,
+    installCommand: version.installCommand,
+    updateCommand: version.updateCommand,
+    installSource: version.installSource ?? detection.installSource,
+  };
+  return startupKimiCodeDetection;
 }
 
 /**
@@ -203,7 +229,7 @@ export const kimiSwitchTauri = {
     await initMcpServersStore();
     await officialAccounts.initOfficialAccountsStore();
 
-    const detectedTarget = await cli.detectActiveKimiTarget();
+    const detectedTarget = await getStartupKimiCodeDetection();
     const effectiveTarget = "kimi-code";
     const effectivePaths: LoadStatePaths = {
       ...paths,
@@ -480,6 +506,16 @@ export const kimiSwitchTauri = {
     if (!server) throw new Error(`MCP server not found: ${name}`);
     return cli.runKimiMcpServerTest(name, server);
   },
+  listMcpServerTools: (name: string, server?: AppState["mcpConfig"]["mcpServers"][string]) => {
+    const target = server ?? currentAppState?.mcpConfig.mcpServers[name];
+    if (!target) throw new Error(`MCP server not found: ${name}`);
+    return cli.listKimiMcpServerTools(name, target);
+  },
+  callMcpServerTool: (name: string, toolName: string, argsJson: string, server?: AppState["mcpConfig"]["mcpServers"][string]) => {
+    const target = server ?? currentAppState?.mcpConfig.mcpServers[name];
+    if (!target) throw new Error(`MCP server not found: ${name}`);
+    return cli.callKimiMcpServerTool(name, target, toolName, argsJson);
+  },
   authMcpServer: (name: string) => {
     void name;
     throw new Error("Kimi Code does not expose MCP authorization commands in the current CLI.");
@@ -492,6 +528,41 @@ export const kimiSwitchTauri = {
     const draft = cloneState(state);
     applyProfile(draft, profileName);
     return cli.runKimiConnectivityTest(draft, modelName ?? draft.mainConfig.default_model);
+  },
+  testEndpointReachability: async (url: string): Promise<EndpointReachabilityResult> => {
+    let endpoint: URL;
+    try {
+      endpoint = new URL(url.trim());
+    } catch {
+      return { ok: false, status: 0, message: "Invalid endpoint URL." };
+    }
+    if (endpoint.protocol !== "http:" && endpoint.protocol !== "https:") {
+      return { ok: false, status: 0, message: "Endpoint URL must use http or https." };
+    }
+    try {
+      const resp = await Promise.race([
+        invoke<{ status: number; ok: boolean; body: string }>("http_request", {
+          method: "GET",
+          url: endpoint.toString(),
+          headers: { Accept: "*/*", "User-Agent": "kimi-code-switch-gui" },
+          body: null,
+        }),
+        new Promise<never>((_, reject) => {
+          window.setTimeout(() => reject(new Error("Endpoint health check timed out.")), 8000);
+        }),
+      ]);
+      return {
+        ok: resp.status === 200,
+        status: resp.status,
+        message: `HTTP ${resp.status}`,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        status: 0,
+        message: err instanceof Error ? err.message : String(err),
+      };
+    }
   },
 
   // ── 更新 / changelog ──

@@ -25,7 +25,7 @@ export function AddAssistantWizard(props: WizardProps): JSX.Element {
   const { locale, state, onComplete, onCancel } = props;
   const [step, setStep] = useState<WizardStep>(1);
   const [source, setSource] = useState<SourcePreset | null>(null);
-  const [formData, setFormData] = useState<ConnectionFormData>({ apiKey: "", endpoint: "", modelId: "" });
+  const [formData, setFormData] = useState<ConnectionFormData>({ apiKey: "", endpoint: "", modelId: "", profileName: "" });
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogEscape(onCancel);
   useFocusTrap(dialogRef);
@@ -51,7 +51,13 @@ export function AddAssistantWizard(props: WizardProps): JSX.Element {
             locale={locale}
             onSelect={(preset) => {
               setSource(preset);
-              setFormData({ apiKey: "", endpoint: preset.defaultEndpoint, modelId: preset.commonModels[0] ?? "" });
+              const modelId = preset.commonModels[0] ?? "";
+              setFormData({
+                apiKey: "",
+                endpoint: preset.defaultEndpoint,
+                modelId,
+                profileName: createUniqueName(`${preset.name} ${modelId}`.trim(), Object.keys(state.profiles)),
+              });
               setStep(2);
             }}
           />
@@ -62,9 +68,10 @@ export function AddAssistantWizard(props: WizardProps): JSX.Element {
             locale={locale}
             source={source}
             initialData={formData}
+            existingProfileNames={Object.keys(state.profiles)}
             onBack={() => setStep(1)}
             onNext={(data) => {
-              setFormData(data);
+              setFormData({ ...data, profileName: data.profileName.trim() });
               setStep(3);
             }}
           />
@@ -73,11 +80,10 @@ export function AddAssistantWizard(props: WizardProps): JSX.Element {
         {step === 3 && source ? (
           <WizardStep3Name
             locale={locale}
-            defaultName={`${source.name} ${formData.modelId}`}
-            existingProfileNames={Object.keys(state.profiles)}
+            profileName={formData.profileName}
             onBack={() => setStep(2)}
             onComplete={(profileName, activate) => {
-              const providerName = createUniqueName(source.id, Object.keys(state.mainConfig.providers));
+              const providerName = createUniqueName(profileName, Object.keys(state.mainConfig.providers));
               const modelName = buildModelName(providerName, formData.modelId);
               onComplete((draft) => {
                 upsertProvider(draft, providerName, {

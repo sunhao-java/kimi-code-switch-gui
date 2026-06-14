@@ -4,19 +4,15 @@ import { t } from "../i18n";
 
 interface Step3Props {
   locale: Locale;
-  defaultName: string;
-  existingProfileNames: string[];
+  profileName: string;
   onBack: () => void;
   onComplete: (profileName: string, activate: boolean) => void;
 }
 
 export function WizardStep3Name(props: Step3Props): JSX.Element {
-  const { locale, defaultName, existingProfileNames, onBack, onComplete } = props;
-  const [name, setName] = useState(defaultName);
+  const { locale, profileName, onBack, onComplete } = props;
   const [activate, setActivate] = useState(true);
-
-  const trimmed = name.trim();
-  const isDuplicate = trimmed.length > 0 && existingProfileNames.includes(trimmed);
+  const trimmed = profileName.trim();
 
   return (
     <div className="wizard-step">
@@ -24,18 +20,10 @@ export function WizardStep3Name(props: Step3Props): JSX.Element {
       <p className="wizard-step-hint">{t(locale, "wizardStep3Hint")}</p>
 
       <div className="wizard-form">
-        <label className="wizard-field">
+        <div className="wizard-field">
           <span>{t(locale, "profileNameLabel")}</span>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoFocus
-          />
-          {isDuplicate ? (
-            <span className="wizard-field-error">{t(locale, "wizardProfileNameExists")}</span>
-          ) : null}
-        </label>
+          <div className="wizard-readonly-value">{trimmed}</div>
+        </div>
 
         <label className="wizard-toggle">
           <input
@@ -54,7 +42,7 @@ export function WizardStep3Name(props: Step3Props): JSX.Element {
         <button
           className="action-button primary"
           type="button"
-          disabled={!trimmed || isDuplicate}
+          disabled={!trimmed}
           onClick={() => onComplete(trimmed, activate)}
         >
           {t(locale, "wizardComplete")}
