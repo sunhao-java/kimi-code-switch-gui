@@ -37,10 +37,10 @@ const DEFAULT_UI_PREFS: InsightsUiPrefs = {
   timeRangeMode: "preset",
   customFrom: "",
   customTo: "",
-  trendMetric: "tokens",
+  trendMetric: "calls",
   trendChartType: "bar",
-  breakdownModelView: "pie",
-  breakdownProfileView: "pie",
+  breakdownModelView: "table",
+  breakdownProfileView: "table",
 };
 
 function loadUiPrefs(): InsightsUiPrefs {

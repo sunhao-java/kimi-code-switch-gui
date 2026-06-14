@@ -137,6 +137,8 @@ export class UsageLogWatcher {
         for (const session of sessions) {
           const logPath = `${workDirPath}/${session}/logs/kimi-code.log`;
           if (await this.fileStat(logPath)) paths.push(logPath);
+          const wirePath = `${workDirPath}/${session}/agents/main/wire.jsonl`;
+          if (await this.fileStat(wirePath)) paths.push(wirePath);
         }
       }
     } catch {
@@ -200,8 +202,67 @@ export class UsageLogWatcher {
     return `log-${Math.abs(hash).toString(36)}-${ts}`;
   }
 
+  private sessionHintFromPath(path: string): string | null {
+    const parts = path.split("/");
+    const agentsIndex = parts.lastIndexOf("agents");
+    if (agentsIndex > 0) return parts[agentsIndex - 1] || null;
+    const logsIndex = parts.lastIndexOf("logs");
+    if (logsIndex > 0) return parts[logsIndex - 1] || null;
+    return null;
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+
+  private numberField(value: unknown): number {
+    return typeof value === "number" && Number.isFinite(value) ? value : 0;
+  }
+
+  private async parseWireJsonLine(line: string, sourcePath: string): Promise<boolean> {
+    if (!line.startsWith("{")) return false;
+    let payload: unknown;
+    try {
+      payload = JSON.parse(line);
+    } catch {
+      return false;
+    }
+    if (!this.isRecord(payload) || payload.type !== "usage.record") return false;
+    const usage = this.isRecord(payload.usage) ? payload.usage : {};
+    const ts = this.numberField(payload.time) || Date.now();
+    const model = typeof payload.model === "string" ? payload.model : this.currentModelAlias || this.currentModel;
+    const provider = model.includes("/") ? model.split("/")[0] : this.currentProvider || "kimi";
+    const event: UsageEvent = {
+      request_id: this.stableRequestId(sourcePath, ts, "usage", model),
+      ts,
+      ts_end: ts,
+      provider,
+      model,
+      profile: this.options.getActiveProfile(),
+      prompt_tokens: this.numberField(usage.inputOther),
+      completion_tokens: this.numberField(usage.output),
+      cache_read_tokens: this.numberField(usage.inputCacheRead),
+      cache_creation_tokens: this.numberField(usage.inputCacheCreation),
+      reasoning_tokens: this.numberField(usage.reasoningTokens),
+      latency_ms: 0,
+      proxy_overhead_ms: 0,
+      error_code: null,
+      error_message: null,
+      http_status: 200,
+      session_hint: this.sessionHintFromPath(sourcePath),
+      cost_estimate: null,
+      pricing_version: null,
+      metadata_json: JSON.stringify({ source: "kimi-code-wire", usageScope: payload.usageScope ?? null }),
+    };
+    if (await db.insertEvent(event)) this.eventsIngested += 1;
+    this.options.onEvent?.(event);
+    return true;
+  }
+
   private async parseLine(line: string, sourcePath = LOG_PATH): Promise<void> {
     let m: RegExpMatchArray | null;
+
+    if (await this.parseWireJsonLine(line, sourcePath)) return;
 
     m = line.match(RE_SESSION_CREATE);
     if (m) {
@@ -296,7 +357,7 @@ export class UsageLogWatcher {
         error_code: fields.errorName || (status ? String(status) : "llm_request_failed"),
         error_message: fields.errorMessage || null,
         http_status: Number.isFinite(status) ? status : 0,
-        session_hint: sourcePath.split("/").at(-3) ?? null,
+        session_hint: this.sessionHintFromPath(sourcePath),
         cost_estimate: null,
         pricing_version: null,
         metadata_json: JSON.stringify({ source: "kimi-code-log", turnStep, modelAlias: pending?.modelAlias ?? this.currentModelAlias }),

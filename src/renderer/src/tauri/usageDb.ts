@@ -137,8 +137,10 @@ function msToDayString(ms: number): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
 
-function dayStringToMs(day: string): number {
-  return new Date(`${day}T00:00:00.000Z`).getTime();
+function localDayStringToMs(day: string): number {
+  const [year, month, date] = day.split("-").map((part) => Number(part));
+  if (!year || !month || !date) return 0;
+  return new Date(year, month - 1, date).getTime();
 }
 
 function makeBounds(fromMs: number, toMs: number): RangeBounds {
@@ -299,15 +301,15 @@ export async function queryOverview(range: TimeRange): Promise<OverviewSlice> {
   const b = computeBounds(range);
   const rows = await query(
     `SELECT
-       COALESCE(SUM(call_count),0) AS calls,
-       COALESCE(SUM(prompt_tokens_sum+completion_tokens_sum+cache_read_tokens_sum+cache_creation_tokens_sum+reasoning_tokens_sum),0) AS tokens,
-       COALESCE(SUM(cache_read_tokens_sum),0) AS cache_read,
-       COALESCE(SUM(prompt_tokens_sum+cache_read_tokens_sum),0) AS cache_input,
-       COALESCE(SUM(reasoning_tokens_sum),0) AS reasoning,
-       COALESCE(SUM(latency_ms_sum),0) AS latency_sum,
-       COALESCE(SUM(error_count),0) AS errors
-     FROM daily_aggregate WHERE day_utc BETWEEN @from_day AND @to_day`,
-    { from_day: b.fromDay, to_day: b.toDay },
+       COUNT(*) AS calls,
+       COALESCE(SUM(prompt_tokens+completion_tokens+cache_read_tokens+cache_creation_tokens+reasoning_tokens),0) AS tokens,
+       COALESCE(SUM(cache_read_tokens),0) AS cache_read,
+       COALESCE(SUM(prompt_tokens+cache_read_tokens),0) AS cache_input,
+       COALESCE(SUM(reasoning_tokens),0) AS reasoning,
+       COALESCE(SUM(latency_ms),0) AS latency_sum,
+       COALESCE(SUM(CASE WHEN error_code IS NOT NULL THEN 1 ELSE 0 END),0) AS errors
+     FROM events WHERE ts >= @from_ms AND ts < @to_ms`,
+    { from_ms: b.fromMs, to_ms: b.toMs },
   );
   const r = rows[0] ?? {};
   const calls = num(r.calls);
@@ -337,28 +339,28 @@ export async function queryTrend(range: TimeRange, bucket: Bucket, groupBy: Grou
     return rows.map((r) => ({ bucket: num(r.bucket), group: str(r.grp), tokens: num(r.tokens), calls: num(r.calls) }));
   }
   const rows = await query(
-    `SELECT day_utc AS bucket, ${groupCol} AS grp,
-       SUM(prompt_tokens_sum+completion_tokens_sum+cache_read_tokens_sum+cache_creation_tokens_sum+reasoning_tokens_sum) AS tokens,
-       SUM(call_count) AS calls
-     FROM daily_aggregate WHERE day_utc BETWEEN @from_day AND @to_day
-     GROUP BY day_utc, grp ORDER BY day_utc`,
-    { from_day: b.fromDay, to_day: b.toDay },
+    `SELECT strftime('%Y-%m-%d', ts / 1000, 'unixepoch', 'localtime') AS bucket, ${groupCol} AS grp,
+       SUM(prompt_tokens+completion_tokens+cache_read_tokens+cache_creation_tokens+reasoning_tokens) AS tokens,
+       COUNT(*) AS calls
+     FROM events WHERE ts >= @from_ms AND ts < @to_ms
+     GROUP BY bucket, grp ORDER BY bucket`,
+    { from_ms: b.fromMs, to_ms: b.toMs },
   );
-  return rows.map((r) => ({ bucket: dayStringToMs(str(r.bucket)), group: str(r.grp), tokens: num(r.tokens), calls: num(r.calls) }));
+  return rows.map((r) => ({ bucket: localDayStringToMs(str(r.bucket)), group: str(r.grp), tokens: num(r.tokens), calls: num(r.calls) }));
 }
 
 export async function queryBreakdown(dim: "profile" | "model", range: TimeRange, limit: number, orderBy: BreakdownOrder): Promise<BreakdownRow[]> {
   const b = computeBounds(range);
   const orderCol = ORDER_COLUMN_MAP[orderBy];
   const rows = await query(
-    `SELECT ${dim} AS name, SUM(call_count) AS calls,
-       SUM(prompt_tokens_sum+completion_tokens_sum+cache_read_tokens_sum+cache_creation_tokens_sum+reasoning_tokens_sum) AS tokens,
-       SUM(error_count) AS errors,
-       CAST(SUM(latency_ms_sum) AS REAL)/NULLIF(SUM(call_count),0) AS avg_latency_ms,
-       CAST(SUM(cache_read_tokens_sum) AS REAL)/NULLIF(SUM(prompt_tokens_sum+cache_read_tokens_sum),0) AS cache_hit_rate
-     FROM daily_aggregate WHERE day_utc BETWEEN @from_day AND @to_day
+    `SELECT ${dim} AS name, COUNT(*) AS calls,
+       SUM(prompt_tokens+completion_tokens+cache_read_tokens+cache_creation_tokens+reasoning_tokens) AS tokens,
+       SUM(CASE WHEN error_code IS NOT NULL THEN 1 ELSE 0 END) AS errors,
+       CAST(SUM(latency_ms) AS REAL)/NULLIF(COUNT(*),0) AS avg_latency_ms,
+       CAST(SUM(cache_read_tokens) AS REAL)/NULLIF(SUM(prompt_tokens+cache_read_tokens),0) AS cache_hit_rate
+     FROM events WHERE ts >= @from_ms AND ts < @to_ms
      GROUP BY ${dim} ORDER BY ${orderCol} DESC LIMIT @limit`,
-    { from_day: b.fromDay, to_day: b.toDay, limit: Math.max(1, Math.min(50, limit)) },
+    { from_ms: b.fromMs, to_ms: b.toMs, limit: Math.max(1, Math.min(50, limit)) },
   );
   return rows.map((r) => ({
     name: str(r.name),
@@ -388,17 +390,16 @@ export interface ModelTokenSums {
 
 export async function queryModelTokenSums(range: TimeRange, byDay: boolean): Promise<ModelTokenSums[]> {
   const b = computeBounds(range);
-  const dayCol = byDay ? "day_utc" : "''";
   const rows = await query(
-    `SELECT model AS model, ${dayCol} AS day,
-       SUM(prompt_tokens_sum) AS prompt_tokens,
-       SUM(completion_tokens_sum) AS completion_tokens,
-       SUM(cache_read_tokens_sum) AS cache_read_tokens,
-       SUM(cache_creation_tokens_sum) AS cache_creation_tokens,
-       SUM(reasoning_tokens_sum) AS reasoning_tokens
-     FROM daily_aggregate WHERE day_utc BETWEEN @from_day AND @to_day
-     GROUP BY model${byDay ? ", day_utc" : ""}`,
-    { from_day: b.fromDay, to_day: b.toDay },
+    `SELECT model AS model, ${byDay ? "strftime('%Y-%m-%d', ts / 1000, 'unixepoch', 'localtime')" : "''"} AS day,
+       SUM(prompt_tokens) AS prompt_tokens,
+       SUM(completion_tokens) AS completion_tokens,
+       SUM(cache_read_tokens) AS cache_read_tokens,
+       SUM(cache_creation_tokens) AS cache_creation_tokens,
+       SUM(reasoning_tokens) AS reasoning_tokens
+     FROM events WHERE ts >= @from_ms AND ts < @to_ms
+     GROUP BY model${byDay ? ", day" : ""}`,
+    { from_ms: b.fromMs, to_ms: b.toMs },
   );
   return rows.map((r) => ({
     model: str(r.model),

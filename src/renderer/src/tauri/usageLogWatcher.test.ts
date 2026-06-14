@@ -37,6 +37,21 @@ const KIMI_CODE_LOG = [
   "2026-06-13T14:30:27.994Z WARN  llm request failed  turnStep=0.1 attempt=1/3 model=moonshot/kimi-k2.5 errorName=APIStatusError errorMessage=\"403 Payment Required\" statusCode=403",
 ].join("\n");
 
+const KIMI_CODE_WIRE_LOG = [
+  JSON.stringify({
+    type: "usage.record",
+    model: "牛逼公益站/gpt-5.5",
+    usage: {
+      inputOther: 19269,
+      output: 11,
+      inputCacheRead: 120,
+      inputCacheCreation: 42,
+    },
+    usageScope: "turn",
+    time: 1781448319664,
+  }),
+].join("\n");
+
 /** Drives a watcher through one historical-ingest pass over SAMPLE_LOG. */
 function primeInvokeForHistoricalIngest(log: string): void {
   mockedInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
@@ -45,6 +60,7 @@ function primeInvokeForHistoricalIngest(log: string): void {
     if (cmd === "file_stat") {
       // historical file has content; live kimi.log is empty so readNewLines is a no-op
       if (a.path?.endsWith("kimi.log")) return { size: 0, mtime_ms: 0, ino: 1 } as never;
+      if (a.path?.startsWith("~/.kimi-code/sessions/")) return null as never;
       return { size: log.length, mtime_ms: 0, ino: 2 } as never;
     }
     if (cmd === "read_file_slice") {
@@ -66,6 +82,30 @@ function primeInvokeForKimiCodeSessionLog(log: string): void {
     if (cmd === "file_stat") {
       if (a.path === "~/.kimi-code/logs/kimi-code.log") return { size: 0, mtime_ms: 0, ino: 1 } as never;
       if (a.path === "~/.kimi-code/sessions/wd_project/session_abc/logs/kimi-code.log") {
+        return { size: log.length, mtime_ms: 100, ino: 2 } as never;
+      }
+      return null as never;
+    }
+    if (cmd === "read_file_slice") return log as never;
+    if (cmd === "usage_query") return [] as never;
+    if (cmd === "usage_exec") return 1 as never;
+    return undefined as never;
+  });
+}
+
+function primeInvokeForKimiCodeWireLog(log: string): void {
+  mockedInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+    const a = (args ?? {}) as { path?: string };
+    if (cmd === "list_dir") {
+      if (a.path === "~/.kimi-code/logs") return [] as never;
+      if (a.path === "~/.kimi-code/sessions") return ["wd_project"] as never;
+      if (a.path === "~/.kimi-code/sessions/wd_project") return ["session_abc"] as never;
+      return [] as never;
+    }
+    if (cmd === "file_stat") {
+      if (a.path === "~/.kimi-code/logs/kimi-code.log") return { size: 0, mtime_ms: 0, ino: 1 } as never;
+      if (a.path === "~/.kimi-code/sessions/wd_project/session_abc/logs/kimi-code.log") return null as never;
+      if (a.path === "~/.kimi-code/sessions/wd_project/session_abc/agents/main/wire.jsonl") {
         return { size: log.length, mtime_ms: 100, ino: 2 } as never;
       }
       return null as never;
@@ -154,6 +194,31 @@ describe("UsageLogWatcher parsing", () => {
       session_hint: "session_abc",
     });
     expect(events[0].latency_ms).toBe(959);
+    expect(events[0].request_id).toMatch(/^log-/);
+    expect(watcher.getStats()).toMatchObject({ eventsIngested: 1 });
+  });
+
+  it("discovers Kimi Code wire logs and records usage tokens", async () => {
+    primeInvokeForKimiCodeWireLog(KIMI_CODE_WIRE_LOG);
+    const events: UsageEvent[] = [];
+    const watcher = new UsageLogWatcher({ getActiveProfile: () => "牛逼公益站", onEvent: (e) => events.push(e) });
+
+    await watcher.start();
+    watcher.stop();
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      provider: "牛逼公益站",
+      model: "牛逼公益站/gpt-5.5",
+      profile: "牛逼公益站",
+      prompt_tokens: 19269,
+      completion_tokens: 11,
+      cache_read_tokens: 120,
+      cache_creation_tokens: 42,
+      error_code: null,
+      http_status: 200,
+      session_hint: "session_abc",
+    });
     expect(events[0].request_id).toMatch(/^log-/);
     expect(watcher.getStats()).toMatchObject({ eventsIngested: 1 });
   });

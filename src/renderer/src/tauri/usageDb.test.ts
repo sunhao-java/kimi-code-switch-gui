@@ -16,6 +16,7 @@ import {
   purgeAll,
   queryBreakdown,
   queryEvents,
+  queryModelTokenSums,
   queryOverview,
   queryTrend,
   setIngestState,
@@ -143,9 +144,9 @@ describe("queryOverview", () => {
     expect(slice.errorRate).toBe(0.25);
 
     const call = lastQuery("usage_query");
-    expect(call.sql).toMatch(/FROM daily_aggregate WHERE day_utc BETWEEN @from_day AND @to_day/);
-    expect(call.params).toHaveProperty("from_day");
-    expect(call.params).toHaveProperty("to_day");
+    expect(call.sql).toMatch(/FROM events WHERE ts >= @from_ms AND ts < @to_ms/);
+    expect(call.params).toHaveProperty("from_ms");
+    expect(call.params).toHaveProperty("to_ms");
   });
 
   it("avoids divide-by-zero when there are no calls", async () => {
@@ -167,11 +168,13 @@ describe("queryTrend", () => {
     expect(call.sql).toContain("profile AS grp");
   });
 
-  it("uses day buckets from daily_aggregate and converts day strings to ms", async () => {
+  it("uses day buckets from events and converts local day strings to ms", async () => {
     mockedInvoke.mockResolvedValue([{ bucket: "2026-01-02", grp: "", tokens: 7, calls: 2 }] as unknown as never);
     const points = await queryTrend("7d", "day", null);
-    expect(points[0].bucket).toBe(new Date("2026-01-02T00:00:00.000Z").getTime());
-    expect(lastQuery("usage_query").sql).toMatch(/FROM daily_aggregate/);
+    expect(points[0].bucket).toBe(new Date(2026, 0, 2).getTime());
+    const call = lastQuery("usage_query");
+    expect(call.sql).toMatch(/FROM events WHERE ts >= @from_ms AND ts < @to_ms/);
+    expect(call.sql).toContain("localtime");
   });
 });
 
@@ -180,8 +183,37 @@ describe("queryBreakdown", () => {
     mockedInvoke.mockResolvedValue([{ name: "m", calls: 3, tokens: 9, errors: 0, avg_latency_ms: 100, cache_hit_rate: 0.3 }] as unknown as never);
     await queryBreakdown("model", "30d", 999, "errors");
     const call = lastQuery("usage_query");
+    expect(call.sql).toMatch(/FROM events WHERE ts >= @from_ms AND ts < @to_ms/);
     expect(call.sql).toContain("ORDER BY errors DESC");
     expect(call.params).toMatchObject({ limit: 50 });
+  });
+});
+
+describe("queryModelTokenSums", () => {
+  it("sums token dimensions from events within the exact range", async () => {
+    mockedInvoke.mockResolvedValue([{
+      model: "k2",
+      day: "2026-01-02",
+      prompt_tokens: 10,
+      completion_tokens: 20,
+      cache_read_tokens: 3,
+      cache_creation_tokens: 4,
+      reasoning_tokens: 5,
+    }] as unknown as never);
+
+    const rows = await queryModelTokenSums("7d", true);
+    expect(rows).toEqual([{
+      model: "k2",
+      day: "2026-01-02",
+      prompt_tokens: 10,
+      completion_tokens: 20,
+      cache_read_tokens: 3,
+      cache_creation_tokens: 4,
+      reasoning_tokens: 5,
+    }]);
+    const call = lastQuery("usage_query");
+    expect(call.sql).toMatch(/FROM events WHERE ts >= @from_ms AND ts < @to_ms/);
+    expect(call.sql).toContain("localtime");
   });
 });
 
