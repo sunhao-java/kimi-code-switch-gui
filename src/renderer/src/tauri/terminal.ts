@@ -4,14 +4,11 @@ import { invoke } from "@tauri-apps/api/core";
 
 import {
   applyProfile,
-  buildConfigDocument,
   cloneState,
   DEFAULT_CONFIG_PATH,
   DEFAULT_PANEL_DIRECTORY,
 } from "@shared/configStore";
 import type { OpenKimiTerminalRequest, PanelSettings, TerminalApp } from "@shared/types";
-
-import { tauriFileAccess } from "./fileAccess";
 
 interface ExecResult {
   code: number;
@@ -24,7 +21,6 @@ function exec(program: string, args: string[]): Promise<ExecResult> {
 }
 
 function resolveHome(p: string): string {
-  // 仅用于拼接展示路径；真实解析在 Rust 端。这里把 ~/ 留给 Rust。
   return p;
 }
 
@@ -39,16 +35,22 @@ const TERMINAL_APP_LABELS: Record<TerminalApp, string> = { "system-terminal": "T
 function quoteForShell(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
+function quotePathForShell(value: string): string {
+  if (value === "~") {
+    return "$HOME";
+  }
+  if (value.startsWith("~/")) {
+    return `$HOME/${quoteForShell(value.slice(2))}`;
+  }
+  return quoteForShell(value);
+}
 function escapeForAppleScript(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
-function sanitizeProfileFileSegment(value: string): string {
-  return value.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/-+/g, "-") || "profile";
-}
-
-function buildKimiShellCommand(workingDirectory: string, configPath: string): string {
+function buildKimiShellCommand(workingDirectory: string, args: string[] = []): string {
   // PATH 由 Rust exec 注入，这里不再 export PATH。
-  return `cd ${quoteForShell(workingDirectory)}; kimi --config-file ${quoteForShell(configPath)}`;
+  const kimiArgs = args.length ? ` ${args.map(quoteForShell).join(" ")}` : "";
+  return `cd ${quotePathForShell(workingDirectory)}; kimi${kimiArgs}`;
 }
 
 function buildAppleScriptLines(app: TerminalApp, shellCommand: string, scriptPath?: string): string[] {
@@ -69,17 +71,22 @@ function appleScriptArgs(lines: string[]): string[] {
   return lines.flatMap((line) => ["-e", line]);
 }
 
-async function writeProfileConfig(request: OpenKimiTerminalRequest, profileName: string): Promise<string> {
+function buildProfileKimiArgs(request: OpenKimiTerminalRequest, profileName: string): string[] {
   if (!request.state) throw new Error("Profile launch requires the current app state.");
   if (!request.state.profiles[profileName]) throw new Error(`Profile not found: ${profileName}`);
   const draft = cloneState(request.state);
   applyProfile(draft, profileName);
-  const doc = buildConfigDocument(draft);
-  const tempDir = `${DEFAULT_PANEL_DIRECTORY}/tmp/terminal`;
-  const configPath = `${tempDir}/config-${sanitizeProfileFileSegment(profileName)}.toml`;
-  await tauriFileAccess.ensureDir(tempDir);
-  await tauriFileAccess.writeText(configPath, doc);
-  return configPath;
+  const args: string[] = [];
+  if (draft.mainConfig.default_model.trim()) {
+    args.push("-m", draft.mainConfig.default_model.trim());
+  }
+  if (draft.mainConfig.default_yolo) {
+    args.push("--yolo");
+  }
+  if (draft.mainConfig.default_plan_mode) {
+    args.push("--plan");
+  }
+  return args;
 }
 
 export async function openKimiInTerminal(
@@ -95,10 +102,8 @@ export async function openKimiInTerminal(
 
   const configPathRaw = settings.config_path.trim() || DEFAULT_CONFIG_PATH;
   const workingDirectory = dirname(resolveHome(configPathRaw));
-  const configPath = targetProfileName
-    ? await writeProfileConfig(request as OpenKimiTerminalRequest, targetProfileName)
-    : configPathRaw;
-  const shellCommand = buildKimiShellCommand(workingDirectory, configPath);
+  const kimiArgs = targetProfileName ? buildProfileKimiArgs(request as OpenKimiTerminalRequest, targetProfileName) : [];
+  const shellCommand = buildKimiShellCommand(workingDirectory, kimiArgs);
 
   let scriptPath: string | undefined;
   if (settings.terminal_app === "iterm2") {

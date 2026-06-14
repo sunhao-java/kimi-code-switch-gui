@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { PanelSettings, TerminalApp } from "@shared/types";
+import type { AppState, PanelSettings, TerminalApp } from "@shared/types";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
@@ -15,6 +15,82 @@ function exec(code: number, stdout = "", stderr = ""): { code: number; stdout: s
 
 function settings(terminalApp: TerminalApp, configPath = "~/.kimi/config.toml"): Pick<PanelSettings, "config_path" | "terminal_app"> {
   return { terminal_app: terminalApp, config_path: configPath };
+}
+
+function appState(): AppState {
+  return {
+    configTarget: "kimi-code",
+    configPath: "~/.kimi-code/config.toml",
+    profilesPath: "",
+    panelSettingsPath: "~/.kimi-code/.panel/config.panel.toml",
+    mcpConfigPath: "~/.kimi-code/mcp.json",
+    mainConfig: {
+      default_model: "base/model",
+      default_thinking: true,
+      default_yolo: false,
+      default_plan_mode: false,
+      default_editor: "",
+      theme: "dark",
+      show_thinking_stream: false,
+      merge_all_available_skills: false,
+      hooks: [],
+      models: {
+        "alt/model": { model: "raw-model", provider: "provider", context_size: 1000, max_tokens: 1000 },
+      },
+      providers: {
+        provider: { type: "openai_legacy", base_url: "https://example.com/v1", api_key: "key" },
+      },
+      loop_control: {},
+      background: {},
+      notifications: {},
+      services: {},
+      mcp: {},
+    },
+    profiles: {
+      work: {
+        name: "work",
+        label: "Work",
+        default_model: "alt/model",
+        default_thinking: true,
+        default_yolo: true,
+        default_plan_mode: true,
+        default_editor: "",
+        theme: "dark",
+        show_thinking_stream: false,
+        merge_all_available_skills: false,
+      },
+    },
+    activeProfile: "work",
+    panelSettings: {
+      version: 1,
+      config_path: "~/.kimi-code/config.toml",
+      profiles: {},
+      active_profile: "work",
+      profiles_path: "",
+      follow_config_profiles: true,
+      theme: "dark",
+      appearance_theme: "aurora",
+      ui_font_size: "medium",
+      locale: "zh-CN",
+      tray_icon: false,
+      sidebar_collapsed: false,
+      display_open_mode: "default",
+      close_behavior: "quit",
+      terminal_app: "system-terminal",
+      backup_strategy: "manual",
+      backup_frequency: "daily",
+      backup_retention_count: 10,
+      backup_destination_type: "local",
+      backup_local_path: "",
+      backup_webdav_url: "",
+      backup_webdav_username: "",
+      backup_webdav_password: "",
+      backup_webdav_path: "",
+      shortcuts: {},
+      mcp_servers: {},
+    },
+    mcpConfig: { mcpServers: {} },
+  };
 }
 
 /** Returns the osascript invocation's -e lines joined for substring assertions. */
@@ -49,7 +125,9 @@ describe("openKimiInTerminal (no profile)", () => {
     const script = osascriptLines();
     expect(script).toContain('tell application "Terminal"');
     expect(script).toContain("do script");
-    expect(script).toContain("kimi --config-file");
+    expect(script).toContain("kimi");
+    expect(script).not.toContain("--config-file");
+    expect(script).toContain("cd $HOME/");
     // working directory is the config file's parent dir
     expect(script).toContain("cd ");
   });
@@ -76,7 +154,9 @@ describe("openKimiInTerminal (no profile)", () => {
     };
     expect(writeCall.path).toContain("kimi-launch.sh");
     expect(writeCall.content.startsWith("#!/bin/sh")).toBe(true);
-    expect(writeCall.content).toContain("kimi --config-file");
+    expect(writeCall.content).toContain("kimi");
+    expect(writeCall.content).not.toContain("--config-file");
+    expect(writeCall.content).toContain("cd $HOME/");
 
     const script = osascriptLines();
     expect(script).toContain('tell application "iTerm"');
@@ -91,6 +171,30 @@ describe("openKimiInTerminal (no profile)", () => {
       return exec(1, "", "applescript error") as never;
     });
     await expect(openKimiInTerminal(settings("system-terminal"))).rejects.toThrow(/Failed to launch terminal/);
+  });
+
+  it("maps profile launch to supported Kimi Code CLI flags", async () => {
+    mockedInvoke.mockImplementation(async (cmd: string, args?: unknown) => {
+      const a = (args ?? {}) as { program?: string };
+      if (cmd === "exec_command" && a.program === "open") return exec(0) as never;
+      if (cmd === "exec_command" && a.program === "osascript") return exec(0) as never;
+      return undefined as never;
+    });
+
+    const state = appState();
+    await openKimiInTerminal({
+      settings: state.panelSettings,
+      state,
+      profileName: "work",
+    });
+
+    const script = osascriptLines();
+    expect(script).toContain("kimi");
+    expect(script).toContain("-m");
+    expect(script).toContain("alt/model");
+    expect(script).toContain("--yolo");
+    expect(script).toContain("--plan");
+    expect(script).not.toContain("--config-file");
   });
 });
 
