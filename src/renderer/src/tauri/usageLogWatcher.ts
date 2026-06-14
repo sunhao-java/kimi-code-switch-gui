@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { UsageEvent } from "@shared/usageTypes";
 import * as db from "./usageDb";
 
+const SESSION_ROOT = "~/.kimi-code/sessions";
 const LOG_DIR = "~/.kimi-code/logs";
 const LOG_PATH = "~/.kimi-code/logs/kimi-code.log";
 
@@ -12,6 +13,9 @@ const RE_LLM_STEP = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+) \| INFO\s+\| .+
 const RE_SESSION_CREATE = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+) \| INFO\s+\| .+:_run:\d+ \|  - Created new session: ([0-9a-f-]+)/;
 const RE_PROVIDER = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+) \| INFO\s+\| .+:create:\d+ \|  - Using LLM provider: type='([^']+)' base_url='([^']+)'/;
 const RE_MODEL = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+) \| INFO\s+\| .+:create:\d+ \|  - Using LLM model: provider='([^']+)' model='([^']+)'/;
+const RE_CODE_LLM_CONFIG = /^(\d{4}-\d{2}-\d{2}T[^ ]+) INFO\s+llm config\s+(.+)$/;
+const RE_CODE_LLM_REQUEST = /^(\d{4}-\d{2}-\d{2}T[^ ]+) INFO\s+llm request\s+(.+)$/;
+const RE_CODE_LLM_FAILED = /^(\d{4}-\d{2}-\d{2}T[^ ]+) WARN\s+llm request failed\s+(.+)$/;
 
 interface FileStat {
   size: number;
@@ -23,10 +27,6 @@ interface SessionContext {
   provider: string;
   model: string;
   baseUrl: string;
-}
-
-function uuid(): string {
-  return crypto.randomUUID();
 }
 
 export interface UsageLogWatcherOptions {
@@ -41,6 +41,8 @@ export class UsageLogWatcher {
   private currentSession: string | null = null;
   private currentProvider = "";
   private currentModel = "";
+  private currentModelAlias = "";
+  private pendingRequests = new Map<string, { ts: number; provider: string; model: string; modelAlias: string }>();
   private running = false;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private eventsIngested = 0;
@@ -51,9 +53,11 @@ export class UsageLogWatcher {
     if (this.running) return;
     this.running = true;
     await this.ingestHistoricalLogs();
-    this.fileOffset = 0;
-    await this.readNewLines();
-    this.pollTimer = setInterval(() => void this.readNewLines(), 5000);
+    await this.readNewLines(LOG_PATH);
+    this.pollTimer = setInterval(() => {
+      void this.readNewLines();
+      void this.readSessionLogs();
+    }, 5000);
   }
 
   stop(): void {
@@ -96,6 +100,7 @@ export class UsageLogWatcher {
     } catch {
       /* logs dir may not exist */
     }
+    await this.readSessionLogs();
   }
 
   private async ingestFile(path: string): Promise<void> {
@@ -111,25 +116,91 @@ export class UsageLogWatcher {
     }
   }
 
-  private async readNewLines(): Promise<void> {
+  private async readSessionLogs(): Promise<void> {
+    for (const path of await this.discoverSessionLogPaths()) {
+      await this.readNewLines(path);
+    }
+  }
+
+  private async discoverSessionLogPaths(): Promise<string[]> {
+    const paths: string[] = [];
+    try {
+      const workDirs = await this.listDir(SESSION_ROOT);
+      for (const workDir of workDirs) {
+        const workDirPath = `${SESSION_ROOT}/${workDir}`;
+        let sessions: string[];
+        try {
+          sessions = await this.listDir(workDirPath);
+        } catch {
+          continue;
+        }
+        for (const session of sessions) {
+          const logPath = `${workDirPath}/${session}/logs/kimi-code.log`;
+          if (await this.fileStat(logPath)) paths.push(logPath);
+        }
+      }
+    } catch {
+      /* sessions dir may not exist */
+    }
+    return paths;
+  }
+
+  private inodeSignature(stat: FileStat): string {
+    return `${stat.ino}:${stat.mtime_ms}`;
+  }
+
+  private byteLength(text: string): number {
+    return new TextEncoder().encode(text).length;
+  }
+
+  private async readNewLines(path = LOG_PATH): Promise<void> {
     if (!this.running) return;
     try {
-      const s = await this.fileStat(LOG_PATH);
+      const s = await this.fileStat(path);
       if (!s) return;
-      if (s.size < this.fileOffset) this.fileOffset = 0;
-      if (s.size <= this.fileOffset) return;
+      const signature = this.inodeSignature(s);
+      const saved = path === LOG_PATH ? null : await db.getIngestState(path);
+      let offset = path === LOG_PATH ? this.fileOffset : saved?.byteOffset ?? 0;
+      if (saved?.inodeSignature && saved.inodeSignature !== signature) offset = 0;
+      if (s.size < offset) offset = 0;
+      if (s.size <= offset) return;
 
-      const text = this.tailBuffer + (await this.readSlice(LOG_PATH, this.fileOffset, s.size - this.fileOffset));
-      this.fileOffset = s.size;
+      const text = (path === LOG_PATH ? this.tailBuffer : "") + (await this.readSlice(path, offset, s.size - offset));
+      if (path === LOG_PATH) this.fileOffset = s.size;
       const lines = text.split("\n");
-      this.tailBuffer = lines.pop() ?? "";
-      for (const line of lines) await this.parseLine(line);
+      const tail = lines.pop() ?? "";
+      if (path === LOG_PATH) {
+        this.tailBuffer = tail;
+      } else if (tail.trim()) {
+        lines.push(tail);
+      }
+      for (const line of lines) await this.parseLine(line, path);
+      if (path !== LOG_PATH) await db.setIngestState(path, s.size, signature);
     } catch {
       /* log file may not exist yet */
     }
   }
 
-  private async parseLine(line: string): Promise<void> {
+  private parseFields(raw: string): Record<string, string> {
+    const fields: Record<string, string> = {};
+    const re = /(\w+)=((?:"[^"]*")|(?:\S+))/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(raw)) !== null) {
+      fields[m[1]] = m[2].replace(/^"|"$/g, "");
+    }
+    return fields;
+  }
+
+  private stableRequestId(path: string, ts: number, kind: string, key: string): string {
+    const raw = `${path}:${ts}:${kind}:${key}`;
+    let hash = 0;
+    for (let i = 0; i < raw.length; i += 1) {
+      hash = Math.imul(31, hash) + raw.charCodeAt(i) | 0;
+    }
+    return `log-${Math.abs(hash).toString(36)}-${ts}`;
+  }
+
+  private async parseLine(line: string, sourcePath = LOG_PATH): Promise<void> {
     let m: RegExpMatchArray | null;
 
     m = line.match(RE_SESSION_CREATE);
@@ -161,6 +232,81 @@ export class UsageLogWatcher {
       return;
     }
 
+    m = line.match(RE_CODE_LLM_CONFIG);
+    if (m) {
+      const [, timestamp, rawFields] = m;
+      const fields = this.parseFields(rawFields);
+      this.currentProvider = fields.provider || this.currentProvider;
+      this.currentModel = fields.model || this.currentModel;
+      this.currentModelAlias = fields.modelAlias || this.currentModelAlias;
+      const turnStep = fields.turnStep || "unknown";
+      const ts = new Date(timestamp).getTime();
+      if (!Number.isNaN(ts)) {
+        this.pendingRequests.set(turnStep, {
+          ts,
+          provider: this.currentProvider,
+          model: this.currentModelAlias || this.currentModel,
+          modelAlias: this.currentModelAlias,
+        });
+      }
+      return;
+    }
+
+    m = line.match(RE_CODE_LLM_REQUEST);
+    if (m) {
+      const [, timestamp, rawFields] = m;
+      const fields = this.parseFields(rawFields);
+      const turnStep = fields.turnStep || "unknown";
+      const ts = new Date(timestamp).getTime();
+      if (!Number.isNaN(ts) && !this.pendingRequests.has(turnStep)) {
+        this.pendingRequests.set(turnStep, {
+          ts,
+          provider: this.currentProvider,
+          model: this.currentModelAlias || this.currentModel,
+          modelAlias: this.currentModelAlias,
+        });
+      }
+      return;
+    }
+
+    m = line.match(RE_CODE_LLM_FAILED);
+    if (m) {
+      const [, timestamp, rawFields] = m;
+      const fields = this.parseFields(rawFields);
+      const ts = new Date(timestamp).getTime();
+      if (Number.isNaN(ts)) return;
+      const turnStep = fields.turnStep || "unknown";
+      const pending = this.pendingRequests.get(turnStep);
+      const status = Number.parseInt(fields.statusCode ?? "0", 10);
+      const model = fields.model || pending?.model || this.currentModelAlias || this.currentModel;
+      const event: UsageEvent = {
+        request_id: this.stableRequestId(sourcePath, ts, "failed", turnStep),
+        ts: pending?.ts ?? ts,
+        ts_end: ts,
+        provider: pending?.provider || this.currentProvider || "kimi",
+        model,
+        profile: this.options.getActiveProfile(),
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        cache_read_tokens: 0,
+        cache_creation_tokens: 0,
+        reasoning_tokens: 0,
+        latency_ms: pending ? Math.max(0, ts - pending.ts) : 0,
+        proxy_overhead_ms: 0,
+        error_code: fields.errorName || (status ? String(status) : "llm_request_failed"),
+        error_message: fields.errorMessage || null,
+        http_status: Number.isFinite(status) ? status : 0,
+        session_hint: sourcePath.split("/").at(-3) ?? null,
+        cost_estimate: null,
+        pricing_version: null,
+        metadata_json: JSON.stringify({ source: "kimi-code-log", turnStep, modelAlias: pending?.modelAlias ?? this.currentModelAlias }),
+      };
+      if (await db.insertEvent(event)) this.eventsIngested += 1;
+      this.options.onEvent?.(event);
+      this.pendingRequests.delete(turnStep);
+      return;
+    }
+
     m = line.match(RE_LLM_STEP);
     if (m) {
       const [, timestamp, sessionId, latencyStr, inputStr, outputStr] = m;
@@ -169,7 +315,7 @@ export class UsageLogWatcher {
       if (Number.isNaN(ts)) return;
 
       const event: UsageEvent = {
-        request_id: uuid(),
+        request_id: this.stableRequestId(sourcePath, ts, "step", sessionId),
         ts,
         ts_end: null,
         provider: ctx.provider,
