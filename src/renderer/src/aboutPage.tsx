@@ -29,7 +29,7 @@ interface UpdateCheckResult {
 }
 
 export const ABOUT_INFO = {
-  version: "2.2.0",
+  version: "2.2.1",
   author: "Hulk Sun",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",

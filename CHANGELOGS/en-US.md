@@ -2,6 +2,18 @@
 
 This file records the project's notable changes. Format follows Keep a Changelog; the project uses `major.minor.patch` versioning.
 
+## [2.2.1] - 2026-06-14
+
+### Changed
+
+- **Improved Kimi Code instance detection display**: version, install source, executable, and resolved path are shown more accurately; install guidance now renders as UI content instead of raw Markdown text.
+- **More reliable backups and history snapshots**: refined config history, panel settings, MCP storage, and file snapshot handling for more dependable backup and restore behavior under Kimi Code standard paths.
+
+### Fixed
+
+- Fixed inconsistent backup and history snapshot reads/writes in some scenarios.
+- Fixed incomplete Kimi Code version and install-source information on the overview and settings pages.
+
 ## [2.2.0] - 2026-06-12
 
 ### Added

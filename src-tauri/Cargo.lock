@@ -2114,7 +2114,7 @@ dependencies = [
 
 [[package]]
 name = "kimi-code-switch-gui"
-version = "2.2.0"
+version = "2.2.1"
 dependencies = [
  "chrono",
  "dirs 5.0.1",

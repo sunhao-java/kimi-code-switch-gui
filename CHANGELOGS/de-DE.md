@@ -3,6 +3,18 @@
 Diese Datei dokumentiert die wesentlichen Änderungen des Projekts. Das Format folgt Keep a Changelog; verwendet wird das `major.minor.patch`-Versionsschema.
 
 
+## [2.2.1] - 2026-06-14
+
+### Geändert
+
+- **Anzeige der Kimi-Code-Instanzerkennung verbessert**: Version, Installationsquelle, ausführbare Datei und aufgelöster Pfad werden genauer angezeigt; Installationshinweise werden nun als UI-Inhalt statt als roher Markdown-Text gerendert.
+- **Zuverlässigere Backups und Verlaufssnapshots**: Konfigurationsverlauf, Panel-Einstellungen, MCP-Speicherung und Dateisnapshots wurden verbessert, damit Backup und Wiederherstellung unter den Kimi-Code-Standardpfaden verlässlicher funktionieren.
+
+### Behoben
+
+- Behoben, dass Backup- und Verlaufssnapshot-Lese-/Schreibvorgänge in einigen Szenarien inkonsistent waren.
+- Behoben, dass Kimi-Code-Version und Installationsquelle auf Übersichts- und Einstellungsseiten unvollständig angezeigt wurden.
+
 ## [2.2.0] - 2026-06-12
 
 ### Hinzugefügt

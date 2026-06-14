@@ -3,6 +3,18 @@
 Este archivo recoge los cambios relevantes del proyecto. El formato sigue Keep a Changelog y el proyecto adopta el esquema de versiones `major.minor.patch`.
 
 
+## [2.2.1] - 2026-06-14
+
+### Cambiado
+
+- **Mejor visualización de detección de la instancia Kimi Code**: versión, origen de instalación, ejecutable y ruta resuelta se muestran con más precisión; las instrucciones de instalación ahora se renderizan como contenido de interfaz en vez de texto Markdown sin procesar.
+- **Copias de seguridad e instantáneas de historial más fiables**: se refinó el historial de configuración, los ajustes del panel, el almacenamiento MCP y las instantáneas de archivos para mejorar la fiabilidad de copia y restauración bajo las rutas estándar de Kimi Code.
+
+### Corregido
+
+- Se corrigieron inconsistencias de lectura/escritura de copias de seguridad e instantáneas de historial en algunos escenarios.
+- Se corrigió la visualización incompleta de versión y origen de instalación de Kimi Code en las páginas de resumen y ajustes.
+
 ## [2.2.0] - 2026-06-12
 
 ### Añadido
