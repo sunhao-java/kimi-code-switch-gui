@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Activity, Braces, Bug, Copy, Download, ExternalLink, FileInput, FolderOpen, History, LoaderCircle, LogIn, Plus, Power, RefreshCw, RotateCcw, Star, Terminal, Trash2, Upload, X } from "lucide-react";
 import { applyProfile, cloneProfile, deleteModel, deleteProfile, deleteProvider, exportConfig, getImportPreview, importConfig, toggleFavorite, validateImportData, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
@@ -26,6 +26,7 @@ import type {
   ImportPreview,
   KimiCodeInstallSource,
   Locale,
+  OfficialAccount,
   ShortcutAction,
   ShortcutBinding,
   ConfigDoctorReport,
@@ -356,6 +357,22 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   const [isProviderHealthChecking, setIsProviderHealthChecking] = useState(false);
   const [providerHealthBannerOpen, setProviderHealthBannerOpen] = useState(false);
   const [providerHealthBannerKey, setProviderHealthBannerKey] = useState(0);
+  const [officialAccounts, setOfficialAccounts] = useState<OfficialAccount[]>([]);
+  const [officialAccountsLoading, setOfficialAccountsLoading] = useState(false);
+
+  const refreshOfficialAccounts = (): void => {
+    const api = getApi();
+    if (!api?.listOfficialAccounts) return;
+    setOfficialAccountsLoading(true);
+    void api.listOfficialAccounts()
+      .then((accounts) => setOfficialAccounts(accounts))
+      .catch(() => setOfficialAccounts([]))
+      .finally(() => setOfficialAccountsLoading(false));
+  };
+
+  useEffect(() => {
+    refreshOfficialAccounts();
+  }, []);
 
   const startKimiOAuthLogin = (): void => {
     const api = getApi();
@@ -397,6 +414,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
           messageKey: "kimiOauthSuccess",
         }));
         setNotice(formatMessage(t(locale, "kimiOauthSuccess"), { target: loginTargetLabel }));
+        refreshOfficialAccounts();
         await loadState();
       })
       .catch((error) => {
@@ -411,6 +429,30 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
         console.debug("[kimi-oauth-login]", { kind: "failed", target: loginTarget, message });
         setError(formatMessage(t(locale, messageKey), { target: loginTargetLabel, message }));
       });
+  };
+
+  const activateOfficialAccount = (id: string): void => {
+    const api = getApi();
+    if (!api?.activateOfficialAccount) return;
+    void api.activateOfficialAccount(id)
+      .then(async () => {
+        setNotice(t(locale, "officialAccountActivated"));
+        refreshOfficialAccounts();
+        await loadState();
+      })
+      .catch((error) => setError(error instanceof Error ? error.message : String(error)));
+  };
+
+  const deleteOfficialAccount = (account: OfficialAccount): void => {
+    const api = getApi();
+    if (!api?.deleteOfficialAccount) return;
+    void (async () => {
+      if (!(await confirmDeleteResource(t(locale, "officialAccount"), account.display_name))) return;
+      await api.deleteOfficialAccount(account.id);
+      setNotice(t(locale, "officialAccountDeleted"));
+      refreshOfficialAccounts();
+      await loadState();
+    })().catch((error) => setError(error instanceof Error ? error.message : String(error)));
   };
 
   const runProvidersHealthCheck = (): void => {
@@ -711,6 +753,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               <ModelForm
                 locale={locale}
                 providers={Object.keys(state.mainConfig.providers)}
+                officialAccounts={officialAccounts}
+                activeOfficialAccountId={state.panelSettings.active_official_account_id}
                 name={selectedModelName}
                 value={selectedModelData}
                 onChange={(_name, patch) =>
@@ -724,6 +768,9 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       provider: normalizeEntryName(patch.provider ?? currentModel.provider),
                       model: normalizeEntryName(patch.model ?? currentModel.model),
                     };
+                    if (nextModel.auth_mode !== "official-account") {
+                      delete nextModel.official_account_scope;
+                    }
                     const nextName = renameModelInState(draft, currentName, nextModel);
                     setSelectedModel(nextName);
                   }, { persist: false })
@@ -1317,6 +1364,63 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                     </div>
                   ) : null}
                 </div>
+                <SettingsGroup title={t(locale, "officialAccountsTitle")}>
+                  <div className="official-account-panel">
+                    <div className="official-account-toolbar">
+                      <div>
+                        <strong>{t(locale, "officialAccountsCurrent")}</strong>
+                        <span>
+                          {officialAccounts.find((account) => account.id === state.panelSettings.active_official_account_id)?.display_name
+                            || t(locale, "officialAccountNoneActive")}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="official-account-list">
+                      {officialAccountsLoading ? (
+                        <div className="official-account-empty">
+                          <LoaderCircle size={14} className="button-spinner" />
+                          <span>{t(locale, "loading")}</span>
+                        </div>
+                      ) : officialAccounts.length === 0 ? (
+                        <div className="official-account-empty">{t(locale, "officialAccountEmpty")}</div>
+                      ) : officialAccounts.map((account) => (
+                        <div className={account.is_active ? "official-account-card active" : "official-account-card"} key={account.id}>
+                          <div className="official-account-main">
+                            <strong>{account.display_name}</strong>
+                            <span>{account.credentials_slot_path}</span>
+                          </div>
+                          <div className="official-account-meta">
+                            <span className={account.status === "logged-in" ? "config-target-status is-ok" : "config-target-status is-danger"}>
+                              {account.status === "logged-in" ? t(locale, "officialAccountLoggedIn") : t(locale, "officialAccountEmptyStatus")}
+                            </span>
+                            {account.is_active ? <span className="config-target-status is-ok">{t(locale, "officialAccountActive")}</span> : null}
+                          </div>
+                          <div className="official-account-actions">
+                            <button
+                              className="action-button compact secondary"
+                              type="button"
+                              disabled={account.is_active || kimiCodeOAuthLogin.status === "running"}
+                              onClick={() => activateOfficialAccount(account.id)}
+                            >
+                              <Power size={13} />
+                              <span>{t(locale, "officialAccountActivate")}</span>
+                            </button>
+                            <button
+                              className="action-button compact danger"
+                              type="button"
+                              disabled={kimiCodeOAuthLogin.status === "running"}
+                              aria-label={t(locale, "delete")}
+                              title={t(locale, "delete")}
+                              onClick={() => deleteOfficialAccount(account)}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </SettingsGroup>
                 <SettingsGroup title={t(locale, "settingsGroupConfigTarget")}>
                   <div className="config-target-detection">
                     <div className="config-target-detection-main">

@@ -249,7 +249,16 @@ describe("configSafety", () => {
           default_model: "kimi_gateway/kimi-k2.5",
           profile_label: "Default",
           theme: "dark",
-          models: { "kimi_gateway/kimi-k2.5": { provider: "kimi_gateway", model: "kimi-k2.5", max_context_size: 1024, capabilities: [] } },
+          models: {
+            "kimi_gateway/kimi-k2.5": {
+              provider: "kimi_gateway",
+              model: "kimi-k2.5",
+              max_context_size: 1024,
+              capabilities: [],
+              auth_mode: "official-account",
+              official_account_scope: "global",
+            },
+          },
           providers: { kimi_gateway: { type: "kimi", base_url: "https://api.example.test", api_key: "sk-x" } },
           loop_control: { anything: { goes: true } },
         },
@@ -279,6 +288,16 @@ describe("configSafety", () => {
       expect(keys).not.toContain("profile_label");
       expect(drift.every((entry) => entry.file === "config")).toBe(true);
       expect(drift.every((entry) => entry.path === "(root)")).toBe(true);
+    });
+
+    it("warns when official account models have no active account", () => {
+      const state = createState();
+      state.mainConfig.models["kimi_gateway/kimi-k2.5"].auth_mode = "official-account";
+      state.panelSettings.active_official_account_id = "";
+
+      const report = buildConfigDoctorReport(state);
+
+      expect(report.issues.some((issue) => issue.id === "official-account.active.missing")).toBe(true);
     });
 
     it("detects unknown nested fields inside known maps", () => {

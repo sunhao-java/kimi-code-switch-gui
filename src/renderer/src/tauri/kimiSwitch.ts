@@ -35,6 +35,7 @@ import { initConfigHistory, captureSnapshot, cleanupOldSnapshots } from "./confi
 import { getPanelSettings, initPanelSettingsStore, savePanelSettings } from "./panelSettingsStore";
 import * as backup from "./backup";
 import { setupTray, teardownTray } from "./tray";
+import * as officialAccounts from "./officialAccounts";
 
 const skillFileAccess = {
   readText: (path: string) => tauriFileAccess.readText(path),
@@ -200,6 +201,7 @@ export const kimiSwitchTauri = {
     // 初始化 mcp_servers_store 表
     const { initMcpServersStore, migrateMcpFromJson } = await import("./mcpServersStore");
     await initMcpServersStore();
+    await officialAccounts.initOfficialAccountsStore();
 
     const detectedTarget = await cli.detectActiveKimiTarget();
     const effectiveTarget = "kimi-code";
@@ -236,6 +238,12 @@ export const kimiSwitchTauri = {
 
     const state = await loadAppState(tauriFileAccess, effectivePaths);
     state.kimiTargetDetection = detectedTarget;
+    try {
+      const accountStatus = await officialAccounts.getOfficialAccountCredentialsStatus();
+      state.panelSettings.active_official_account_id = accountStatus.active_account_id;
+    } catch (err) {
+      console.warn("Official account status load skipped:", err);
+    }
     currentAppState = state;
 
     const currentSettings = await getPanelSettings();
@@ -245,7 +253,8 @@ export const kimiSwitchTauri = {
         currentSettings.config_path !== state.panelSettings.config_path ||
         currentSettings.active_profile !== state.activeProfile ||
         JSON.stringify(currentSettings.profiles ?? {}) !== JSON.stringify(state.profiles ?? {}) ||
-        JSON.stringify(currentSettings.mcp_servers ?? {}) !== JSON.stringify(state.mcpConfig.mcpServers ?? {});
+        JSON.stringify(currentSettings.mcp_servers ?? {}) !== JSON.stringify(state.mcpConfig.mcpServers ?? {}) ||
+        (currentSettings.active_official_account_id ?? "") !== (state.panelSettings.active_official_account_id ?? "");
       if (needsPanelSync) {
         void savePanelSettings({
           ...currentSettings,
@@ -254,6 +263,7 @@ export const kimiSwitchTauri = {
           profiles: state.profiles,
           active_profile: state.activeProfile,
           mcp_servers: state.mcpConfig.mcpServers,
+          active_official_account_id: state.panelSettings.active_official_account_id ?? "",
           profiles_path: "",
           follow_config_profiles: true,
         }).catch((err) => console.warn("Failed to sync detected config target:", err));
@@ -442,10 +452,29 @@ export const kimiSwitchTauri = {
   runProvidersHealthCheck: (state: AppState) => cli.runProvidersHealthCheck(state),
   upgradeKimiCli: (target?: AppState["configTarget"], options?: { install?: boolean }) =>
     cli.upgradeTargetCli(target ?? "kimi-code", options),
-  startKimiOAuthLogin: (target: AppState["configTarget"], onEvent?: (event: cli.KimiOAuthLoginEvent) => void) =>
-    cli.startKimiOAuthLogin(target, onEvent),
+  startKimiOAuthLogin: (target: AppState["configTarget"], onEvent?: (event: cli.KimiOAuthLoginEvent) => void, options?: { accountId?: string; activate?: boolean }) =>
+    cli.startKimiOAuthLogin(target, onEvent, options),
   startKimiCodeOAuthLogin: (onEvent?: (event: cli.KimiOAuthLoginEvent) => void) =>
     cli.startKimiOAuthLogin("kimi-code", onEvent),
+  listOfficialAccounts: () => officialAccounts.listOfficialAccounts(),
+  getOfficialAccountCredentialsStatus: () => officialAccounts.getOfficialAccountCredentialsStatus(),
+  createOfficialAccount: (displayName: string) => officialAccounts.createOfficialAccount(displayName),
+  renameOfficialAccount: (id: string, displayName: string) => officialAccounts.renameOfficialAccount(id, displayName),
+  captureCurrentOfficialAccount: (displayName: string) => officialAccounts.captureCurrentOfficialAccount(displayName),
+  activateOfficialAccount: async (id: string) => {
+    const result = await officialAccounts.activateOfficialAccount(id);
+    currentAppState = currentAppState
+      ? {
+        ...currentAppState,
+        panelSettings: {
+          ...currentAppState.panelSettings,
+          active_official_account_id: result.active_account_id,
+        },
+      }
+      : currentAppState;
+    return result;
+  },
+  deleteOfficialAccount: (id: string) => officialAccounts.deleteOfficialAccount(id),
   testMcpServer: (name: string) => {
     const server = currentAppState?.mcpConfig.mcpServers[name];
     if (!server) throw new Error(`MCP server not found: ${name}`);

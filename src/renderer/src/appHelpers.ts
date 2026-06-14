@@ -1,5 +1,5 @@
 import { normalizeEntryName, ensureUniqueEntryName, buildModelName } from "@shared/nameRules";
-import type { AppState, Locale } from "@shared/types";
+import type { AppState, Locale, ModelConfig } from "@shared/types";
 import { t } from "./i18n";
 
 export function getApi() {
@@ -80,12 +80,7 @@ export function updateModelReferences(state: AppState, currentName: string, next
 export function renameModelInState(
   state: AppState,
   currentName: string,
-  nextModel: {
-    provider: string;
-    model: string;
-    max_context_size: number;
-    capabilities: string[];
-  },
+  nextModel: ModelConfig,
 ): string {
   const nextName = buildModelName(nextModel.provider, nextModel.model);
   if (currentName !== nextName && state.mainConfig.models[nextName]) {

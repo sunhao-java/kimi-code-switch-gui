@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS panel_settings (
   -- UI 状态对象（JSON）
   ui_state TEXT, -- {activeTab?, providerSortBy?, profileSortBy?}
   favorites TEXT, -- {providers?: string[], profiles?: string[]}
+  active_official_account_id TEXT NOT NULL DEFAULT '',
 
   -- 备份配置
   backup_strategy TEXT NOT NULL DEFAULT 'manual',

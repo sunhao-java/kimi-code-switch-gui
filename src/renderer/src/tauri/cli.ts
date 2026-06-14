@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 
 import { compareReleaseVersions, normalizeReleaseVersion } from "@shared/versionUtils";
 import type { AppState, ConfigTarget, KimiCodeInstallSource, McpServerConfig, ModelConfig, ProfileConnectivityTestResult, ProviderConfig } from "@shared/types";
+import * as officialAccounts from "./officialAccounts";
 
 const KIMI_CODE_HOMEBREW_URL = "https://formulae.brew.sh/api/formula/kimi-code.json";
 const KIMI_CODE_GITHUB_LATEST_URL = "https://api.github.com/repos/MoonshotAI/kimi-code/releases/latest";
@@ -400,13 +401,20 @@ export async function upgradeKimiCli(): Promise<{ ok: true; stdout: string; stde
 export async function startKimiOAuthLogin(
   target: ConfigTarget,
   onEvent?: (event: KimiOAuthLoginEvent) => void,
+  options?: { accountId?: string; activate?: boolean },
 ): Promise<{ ok: true; stdout: string; stderr: string }> {
   const unlisten = onEvent
     ? await listen<KimiOAuthLoginEvent>("kimi-oauth-login", (event) => onEvent(event.payload))
     : null;
   try {
+    if (options?.accountId) {
+      await officialAccounts.prepareOfficialAccountLogin(options.accountId);
+    }
     const r = await invoke<ExecResult>("start_kimi_oauth_login", { target });
     if (r.code !== 0) throw new Error(r.stderr || "kimi login failed");
+    if (options?.accountId) {
+      await officialAccounts.completeOfficialAccountLogin(options.accountId, options.activate ?? true);
+    }
     return { ok: true, stdout: r.stdout.trim(), stderr: r.stderr.trim() };
   } finally {
     unlisten?.();
@@ -539,6 +547,26 @@ export async function runKimiConnectivityTest(state: AppState, modelName: string
   if (!model) throw new Error(`Model not found: ${modelName}`);
   const provider = state.mainConfig.providers[model.provider];
   if (!provider) throw new Error(`Provider not found: ${model.provider}`);
+  if (model.auth_mode === "official-account") {
+    const accountStatus = await officialAccounts.getOfficialAccountCredentialsStatus();
+    if (!accountStatus.active_account_id || !accountStatus.credentials_present) {
+      throw new Error("Official account mode requires an active logged-in Kimi official account.");
+    }
+    return {
+      ok: true,
+      stdout: "Official account credentials are active.",
+      stderr: "",
+      profileName: state.activeProfile,
+      modelName,
+      providerName: model.provider,
+      providerType: provider.type,
+      prompt: "",
+      endpoint: accountStatus.standard_credentials_path,
+      firstTokenMs: 0,
+      totalMs: 0,
+      status: 0,
+    };
+  }
   if (!provider.base_url.trim()) throw new Error(`Provider base URL is required: ${model.provider}`);
   if (!provider.api_key.trim()) throw new Error(`Provider API key is required: ${model.provider}`);
 
@@ -590,6 +618,15 @@ function findRepresentativeModel(state: AppState, providerName: string): { model
 }
 
 async function probeProvider(providerName: string, provider: ProviderConfig, model: ModelConfig): Promise<ProviderHealthResult> {
+  if (model.auth_mode === "official-account") {
+    const accountStatus = await officialAccounts.getOfficialAccountCredentialsStatus();
+    return {
+      providerName,
+      ok: Boolean(accountStatus.active_account_id && accountStatus.credentials_present),
+      reason: accountStatus.active_account_id && accountStatus.credentials_present ? "ok" : "missing-api-key",
+      detail: accountStatus.standard_credentials_path,
+    };
+  }
   if (!provider.base_url.trim()) {
     return { providerName, ok: false, reason: "missing-base-url" };
   }

@@ -468,6 +468,20 @@ url = "https://mcp.context7.com/mcp"
     expect(document).not.toContain("  input_per_mtok = 1");
   });
 
+  it("persists official account model mode and active account setting", async () => {
+    const state = createState();
+    state.mainConfig.models["kimi_gateway/kimi-k2.5"].auth_mode = "official-account";
+    state.mainConfig.models["kimi_gateway/kimi-k2.5"].official_account_scope = "global";
+    state.panelSettings.active_official_account_id = "acct-test";
+    const files = createMemoryFs({});
+
+    await saveAppState(files, state);
+
+    expect(files.store["/tmp/config.toml"]).toContain('auth_mode = "official-account"');
+    expect(files.store["/tmp/config.toml"]).toContain('official_account_scope = "global"');
+    expect(files.store["/tmp/config.panel.toml"]).toContain('active_official_account_id = "acct-test"');
+  });
+
   it("does not persist redacted provider api keys into config.toml", async () => {
     const state = createState();
     const files = createMemoryFs({

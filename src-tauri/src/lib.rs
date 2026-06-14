@@ -6,6 +6,7 @@
 mod config_history;
 mod fs_access;
 mod mcp_servers_store;
+mod official_accounts;
 mod panel_settings_store;
 mod shortcuts;
 mod system;
@@ -75,6 +76,17 @@ pub fn run() {
             mcp_servers_store::delete_mcp_server,
             mcp_servers_store::get_enabled_mcp_servers,
             mcp_servers_store::migrate_mcp_from_json,
+            // Kimi 官方账号槽位
+            official_accounts::init_official_accounts_store,
+            official_accounts::list_official_accounts,
+            official_accounts::get_official_account_credentials_status,
+            official_accounts::create_official_account,
+            official_accounts::rename_official_account,
+            official_accounts::capture_current_official_account,
+            official_accounts::prepare_official_account_login,
+            official_accounts::complete_official_account_login,
+            official_accounts::activate_official_account,
+            official_accounts::delete_official_account,
             // 托盘
             tray::set_tray,
             tray::show_main_window,

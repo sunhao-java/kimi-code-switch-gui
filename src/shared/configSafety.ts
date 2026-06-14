@@ -117,6 +117,7 @@ export function buildConfigDoctorReport(
 
   validateManagedPaths(normalizedState, issues);
   validateModelReferences(state, issues);
+  validateOfficialAccountUsage(state, issues);
   validateMcpServers(state.mcpConfig.mcpServers, issues);
   validateBackupSettings(state, normalizedState, issues);
   validateShortcutConflicts(normalizedState, issues);
@@ -221,6 +222,26 @@ function validateModelReferences(state: AppState, issues: DoctorIssue[]): void {
         `Active profile "${state.activeProfile || "(empty)"}" does not exist.`,
         "activeProfile",
         "Pick an existing profile as the active profile.",
+      ),
+    );
+  }
+}
+
+function validateOfficialAccountUsage(state: AppState, issues: DoctorIssue[]): void {
+  const usesOfficialAccount = Object.values(state.mainConfig.models)
+    .some((model) => model.auth_mode === "official-account");
+  if (!usesOfficialAccount) {
+    return;
+  }
+  if (!state.panelSettings.active_official_account_id?.trim()) {
+    issues.push(
+      createDoctorIssue(
+        "official-account.active.missing",
+        "warning",
+        "state",
+        "One or more models use the official account mode, but no active official account is selected.",
+        "panelSettings.active_official_account_id",
+        "Sign in and activate a Kimi official account in Settings.",
       ),
     );
   }
@@ -638,7 +659,7 @@ interface FieldNode {
 
 const PROVIDER_NODE: FieldNode = { known: ["type", "base_url", "api_key"] };
 const MODEL_NODE: FieldNode = {
-  known: ["provider", "model", "max_context_size", "capabilities", "pricing"],
+  known: ["provider", "model", "max_context_size", "capabilities", "auth_mode", "official_account_scope", "pricing"],
 };
 
 const KNOWN_FIELD_SCHEMA: Partial<Record<ManagedFileId, FieldNode>> = {

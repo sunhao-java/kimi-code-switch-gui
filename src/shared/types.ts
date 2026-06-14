@@ -4,6 +4,8 @@ export type AppearanceMode = "auto" | "dark" | "light";
 export type ConfigTarget = "kimi-code";
 export type KimiTargetDetectionStatus = "detected" | "not-installed";
 export type KimiCodeInstallSource = "homebrew" | "official-script" | "npm" | "pnpm" | "unknown";
+export type ModelAuthMode = "api-key" | "official-account";
+export type OfficialAccountStatus = "empty" | "logged-in" | "invalid";
 export type AppearanceTheme = "aurora" | "ocean" | "violet" | "sunset" | "forest" | "sakura" | "mint" | "cosmos" | "amber";
 export type UiFontSize = "mini" | "compact" | "small" | "standard" | "large" | "extra-large";
 export type DisplayOpenMode = "random" | "remember-last" | "active-display";
@@ -56,7 +58,36 @@ export interface ModelConfig {
   model: string;
   max_context_size: number;
   capabilities: string[];
+  auth_mode?: ModelAuthMode;
+  official_account_scope?: "global";
   pricing?: ModelPricing;
+}
+
+export interface OfficialAccount {
+  id: string;
+  display_name: string;
+  account_hint: string;
+  status: OfficialAccountStatus;
+  is_active: boolean;
+  credentials_slot_path: string;
+  last_login_at: string;
+  last_checked_at: string;
+  last_used_at: string;
+  metadata_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OfficialAccountCredentialsStatus {
+  active_account_id: string;
+  credentials_present: boolean;
+  standard_credentials_path: string;
+}
+
+export interface OfficialAccountOperationResult {
+  account: OfficialAccount;
+  active_account_id: string;
+  credentials_present: boolean;
 }
 
 export interface MainConfig {
@@ -154,6 +185,7 @@ export interface PanelSettings {
     providers?: string[];
     profiles?: string[];
   };
+  active_official_account_id?: string;
   insights_status?: import("./usageTypes").InsightsStatus;
   insights_proxy_port?: number | "auto";
   insights_retention_days?: number;

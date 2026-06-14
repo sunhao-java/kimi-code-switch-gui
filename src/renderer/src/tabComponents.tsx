@@ -13,6 +13,7 @@ import type {
   AppearanceMode, AppearanceTheme, BackupDestinationType, BackupFrequency, BackupStrategy,
   CloseBehavior, ConfigDriftEntry, DisplayOpenMode, Locale,
   McpServerConfig, McpTransport, ModelPricing, Profile, ProfileConnectivityTestResult, UiFontSize,
+  OfficialAccount,
 } from "@shared/types";
 import { resolveModelPricing } from "@shared/pricing";
 
@@ -325,12 +326,16 @@ export function SecretField(props: {
 export function ModelForm(props: {
   locale: Locale;
   providers: string[];
+  officialAccounts: OfficialAccount[];
+  activeOfficialAccountId?: string;
   name: string;
   value: {
     provider: string;
     model: string;
     max_context_size: number;
     capabilities: string[];
+    auth_mode?: "api-key" | "official-account";
+    official_account_scope?: "global";
     pricing?: ModelPricing;
   };
   onChange: (
@@ -340,6 +345,8 @@ export function ModelForm(props: {
       model: string;
       max_context_size: number;
       capabilities: string[];
+      auth_mode?: "api-key" | "official-account";
+      official_account_scope?: "global";
       pricing?: ModelPricing;
     }>,
   ) => void;
@@ -360,11 +367,31 @@ export function ModelForm(props: {
       pricing: nextPricingFromInput(props.value.pricing, field, raw),
     });
   };
+  const authMode = props.value.auth_mode ?? "api-key";
+  const activeOfficialAccount = props.officialAccounts.find((account) => account.id === props.activeOfficialAccountId);
 
   return (
     <section className="glass-panel form-panel">
       <div className="section-title">{t(props.locale, "modelEditor")}</div>
       <ReadOnlyField label={t(props.locale, "formName")} value={props.name} />
+      <SelectField
+        label={t(props.locale, "modelAuthMode")}
+        value={authMode}
+        onChange={(value) => props.onChange(props.name, {
+          auth_mode: value === "official-account" ? "official-account" : "api-key",
+          official_account_scope: value === "official-account" ? "global" : undefined,
+        })}
+        options={[
+          { value: "api-key", label: t(props.locale, "modelAuthModeApiKey") },
+          { value: "official-account", label: t(props.locale, "modelAuthModeOfficialAccount") },
+        ]}
+      />
+      {authMode === "official-account" ? (
+        <div className="form-note">
+          <strong>{t(props.locale, "modelOfficialAccountCurrent")}</strong>
+          <span>{activeOfficialAccount?.display_name || t(props.locale, "modelOfficialAccountMissing")}</span>
+        </div>
+      ) : null}
       <SelectField
         label={t(props.locale, "formProvider")}
         value={props.value.provider}

@@ -841,7 +841,9 @@ mod tests {
     fn panel_tmp_dir_allows_terminal_launch_scripts() {
         let panel_tmp = panel_tmp_dir().expect("home dir required");
         assert!(panel_tmp.ends_with(".kimi-code/.panel/tmp"));
-        assert!(panel_tmp.join("terminal/kimi-launch.sh").starts_with(&panel_tmp));
+        assert!(panel_tmp
+            .join("terminal/kimi-launch.sh")
+            .starts_with(&panel_tmp));
     }
 
     #[test]

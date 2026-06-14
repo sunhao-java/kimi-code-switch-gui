@@ -451,6 +451,7 @@ function panelSettingsFromUnknown(data: Record<string, unknown>, fallback: Panel
     last_display_id: typeof data.last_display_id === "number" ? data.last_display_id : undefined,
     uiState: parseUiState(data.uiState),
     favorites: parseFavorites(data.favorites),
+    active_official_account_id: asString(data.active_official_account_id, fallback.active_official_account_id ?? ""),
     insights_status:
       data.insights_status === "enabled" || data.insights_status === "paused" || data.insights_status === "disabled"
         ? data.insights_status
