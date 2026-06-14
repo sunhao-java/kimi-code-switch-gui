@@ -1,5 +1,5 @@
 import type { KeyboardEvent } from "react";
-import { Check, Plus, Star, Terminal } from "lucide-react";
+import { Check, Plus, Terminal } from "lucide-react";
 import type { AppState, Locale, Profile } from "@shared/types";
 import { t } from "../i18n";
 
@@ -7,11 +7,9 @@ interface ProfileCentricViewProps {
   state: AppState;
   locale: Locale;
   selectedProfile: string;
-  favorites: string[];
   dirtyProfiles?: Set<string>;
   onSelect: (profileName: string) => void;
   onSwitch: (profileName: string) => void;
-  onToggleFavorite: (profileName: string) => void;
   onAddNew: () => void;
   onOpenTerminal: (profileName: string) => void;
 }
@@ -32,8 +30,8 @@ function formatProfileMeta(state: AppState, locale: Locale, profileName: string,
 
 export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element {
   const {
-    state, locale, selectedProfile, favorites, dirtyProfiles,
-    onSelect, onSwitch, onToggleFavorite, onAddNew, onOpenTerminal,
+    state, locale, selectedProfile, dirtyProfiles,
+    onSelect, onSwitch, onAddNew, onOpenTerminal,
   } = props;
   const entries = Object.entries(state.profiles);
   const activeEntry = entries.find(([name]) => name === state.activeProfile);
@@ -47,24 +45,6 @@ export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element 
     }
   };
 
-  const favButton = (name: string): JSX.Element => {
-    const isFav = favorites.includes(name);
-    return (
-      <button
-        type="button"
-        className={isFav ? "pcv-icon-btn active" : "pcv-icon-btn"}
-        aria-label={isFav ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
-        title={isFav ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
-        onClick={(event) => {
-          event.stopPropagation();
-          onToggleFavorite(name);
-        }}
-      >
-        <Star size={14} fill={isFav ? "currentColor" : "none"} />
-      </button>
-    );
-  };
-
   const terminalButton = (name: string): JSX.Element => (
     <button
       type="button"
@@ -76,7 +56,7 @@ export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element 
         onOpenTerminal(name);
       }}
     >
-      <Terminal size={14} />
+      <Terminal size={12} />
     </button>
   );
 
@@ -120,7 +100,6 @@ export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element 
             </span>
           </div>
           <div className="pcv-active-actions">
-            {favButton(activeEntry[0])}
             {terminalButton(activeEntry[0])}
           </div>
         </div>
@@ -153,7 +132,6 @@ export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element 
                 </span>
               </div>
               <div className="pcv-list-actions">
-                {favButton(name)}
                 {terminalButton(name)}
                 <button
                   className="pcv-switch-btn"
@@ -163,8 +141,8 @@ export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element 
                     onSwitch(name);
                   }}
                 >
-                  <Check size={13} />
-                  <span>{t(locale, "switchTo")}</span>
+                  <Check size={12} />
+                  <span>{t(locale, "activate")}</span>
                 </button>
               </div>
             </div>

@@ -34,11 +34,13 @@
 
 .content-scroll {
   display: flex;
+  gap: 18px;
   flex: 1;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   padding-right: 2px;
+  align-items: stretch;
 }
 
 .tab-panel-shell {
@@ -66,6 +68,18 @@
 
 .tab-panel-shell > .settings-grid {
   background: transparent;
+}
+
+.tab-panel-shell-split {
+  display: flex;
+  overflow: hidden;
+  border-radius: 28px;
+}
+
+.tab-panel-shell-split > .split-layout {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* Overview dashboard */
@@ -105,7 +119,7 @@
 .split-layout {
   display: grid;
   grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
-  grid-template-rows: minmax(auto, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 18px;
   min-width: 0;
   flex: 1 1 auto;
@@ -119,7 +133,10 @@
 .list-panel {
   display: flex;
   flex-direction: column;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
+  align-self: stretch;
 }
 
 .split-layout> :nth-child(2) {
@@ -128,6 +145,8 @@
   min-height: 0;
   height: 100%;
   align-self: stretch;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .split-layout-reverse>.list-panel {
@@ -145,12 +164,17 @@
 
 /* profiles tab：ProfileCentricView 作为左栏，编辑表单占右侧 */
 .content-scroll > .profile-centric-view {
-  flex: 0 0 clamp(320px, 32%, 440px);
+  flex: 0 0 clamp(300px, calc(32% - 40px), 400px);
+  box-sizing: border-box;
   min-width: 0;
   height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding: 2px 8px 2px 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
 }
 
 

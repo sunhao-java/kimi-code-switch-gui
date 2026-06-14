@@ -26,6 +26,20 @@ type CliVersionState = {
   installSource?: KimiCodeInstallSource;
 };
 
+const EMPTY_CLI_VERSION: CliVersionState = { version: "", installed: false };
+
+function cliVersionFromDetection(detection: AppState["kimiTargetDetection"] | undefined): CliVersionState {
+  if (!detection) return EMPTY_CLI_VERSION;
+  return {
+    version: detection.version,
+    installed: detection.installed,
+    latestVersion: detection.latestVersion,
+    hasUpdate: detection.hasUpdate,
+    installCommand: detection.installCommand,
+    installSource: detection.installSource,
+  };
+}
+
 export function SummaryCard(props: {
   label: string;
   value: string;
@@ -88,24 +102,24 @@ export function OverviewDashboard(props: {
   const visibleModels = modelEntries.slice(0, 3);
   const visibleProfiles = profileEntries.slice(0, 4);
 
-  const [cliVersion, setCliVersion] = useState<CliVersionState>({ version: "", installed: false });
+  const [cliVersion, setCliVersion] = useState<CliVersionState>(() => cliVersionFromDetection(state.kimiTargetDetection));
   const [isCliVersionChecking, setIsCliVersionChecking] = useState(false);
   const [isCliUpdating, setIsCliUpdating] = useState(false);
   const checkCliVersion = useCallback(async (checkLatest = false): Promise<void> => {
     setIsCliVersionChecking(true);
     try {
       const version = await window.kimiSwitch?.getCliVersion?.({ checkLatest, target: "kimi-code" });
-      setCliVersion(version ?? { version: "", installed: false });
+      setCliVersion(version ?? EMPTY_CLI_VERSION);
     } catch {
-      setCliVersion({ version: "", installed: false });
+      setCliVersion(EMPTY_CLI_VERSION);
     } finally {
       setIsCliVersionChecking(false);
     }
   }, []);
 
   useEffect(() => {
-    void checkCliVersion();
-  }, [checkCliVersion]);
+    setCliVersion(cliVersionFromDetection(state.kimiTargetDetection));
+  }, [state.kimiTargetDetection]);
 
   const upgradeCli = useCallback(async (): Promise<void> => {
     setIsCliUpdating(true);

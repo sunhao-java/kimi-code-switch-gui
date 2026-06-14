@@ -699,11 +699,13 @@ textarea:focus-visible {
 
 .content-scroll {
   display: flex;
+  gap: 18px;
   flex: 1;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   padding-right: 2px;
+  align-items: stretch;
 }
 
 .tab-panel-shell {
@@ -717,7 +719,9 @@ textarea:focus-visible {
 .tab-panel-shell > .overview-grid,
 .tab-panel-shell > .split-layout,
 .tab-panel-shell > .settings-grid,
-.tab-panel-shell > .about-page {
+.tab-panel-shell > .about-page,
+.tab-panel-shell > .insights-dashboard,
+.tab-panel-shell > .insights-dashboard-empty {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
@@ -729,6 +733,18 @@ textarea:focus-visible {
 
 .tab-panel-shell > .settings-grid {
   background: transparent;
+}
+
+.tab-panel-shell-split {
+  display: flex;
+  overflow: hidden;
+  border-radius: 28px;
+}
+
+.tab-panel-shell-split > .split-layout {
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .confirm-dialog-backdrop,
@@ -1968,6 +1984,73 @@ textarea:focus-visible {
   border-color: rgba(var(--primary-2-rgb), 0.4);
   background: rgba(255, 255, 255, 0.06);
   box-shadow: var(--focus-ring);
+}
+
+.endpoint-field-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  gap: 10px;
+  align-items: center;
+}
+
+.endpoint-health-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(124, 179, 255, 0.18);
+  border-radius: 14px;
+  background: rgba(var(--primary-rgb), 0.06);
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    border-color 180ms ease,
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+.endpoint-health-button:hover:not(:disabled) {
+  border-color: rgba(var(--primary-rgb), 0.38);
+  background: rgba(var(--primary-rgb), 0.12);
+  color: var(--text);
+}
+
+.endpoint-health-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.endpoint-health-button.is-ok {
+  border-color: rgba(46, 204, 113, 0.36);
+  background: rgba(46, 204, 113, 0.1);
+  color: #7ee2a0;
+}
+
+.endpoint-health-button.is-failed {
+  border-color: rgba(255, 112, 112, 0.38);
+  background: rgba(255, 112, 112, 0.1);
+  color: #ff9b9b;
+}
+
+.field-error,
+.field-status {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.field-error,
+.field-status.is-failed {
+  color: #ff9b9b;
+}
+
+.field-status.is-ok {
+  color: #7ee2a0;
+}
+
+.field-status.is-checking {
+  color: var(--muted);
 }
 
 :root[data-theme="light"] .field input {
@@ -3520,7 +3603,7 @@ textarea:focus-visible {
 .split-layout {
   display: grid;
   grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
-  grid-template-rows: minmax(auto, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 18px;
   min-width: 0;
   flex: 1 1 auto;
@@ -3534,7 +3617,10 @@ textarea:focus-visible {
 .list-panel {
   display: flex;
   flex-direction: column;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
+  align-self: stretch;
 }
 
 .split-layout> :nth-child(2) {
@@ -3543,6 +3629,8 @@ textarea:focus-visible {
   min-height: 0;
   height: 100%;
   align-self: stretch;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .split-layout-reverse>.list-panel {
@@ -3608,11 +3696,11 @@ textarea:focus-visible {
   flex-direction: column;
   gap: 16px;
   min-width: 0;
-  min-height: 100%;
+  min-height: 0;
 }
 
 .mcp-workspace>.form-panel {
-  flex: 1 0 auto;
+  flex: 1 1 auto;
 }
 
 .mcp-import-backdrop {
@@ -4014,7 +4102,7 @@ textarea:focus-visible {
 .list-scroll {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  flex: 1 1 auto;
   gap: 10px;
   padding-top: 2px;
   padding-bottom: 2px;
@@ -4131,10 +4219,6 @@ textarea:focus-visible {
 }
 
 .list-row-action-set.profile-actions {
-  grid-auto-columns: max-content;
-}
-
-.list-row-action-set.providers-actions {
   grid-auto-columns: max-content;
 }
 
@@ -4706,6 +4790,245 @@ textarea:focus-visible {
   line-height: 1.45;
 }
 
+.mcp-tool-workbench {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(var(--primary-rgb), 0.16);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(var(--primary-rgb), 0.08), rgba(var(--primary-rgb), 0.025)),
+    rgba(255, 255, 255, 0.035);
+}
+
+.mcp-tool-workbench-head,
+.mcp-tool-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mcp-tool-workbench-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.mcp-tool-workbench-title svg {
+  color: var(--primary);
+}
+
+.mcp-tool-workbench-head p {
+  max-width: 640px;
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.mcp-tool-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.72fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.mcp-tool-select small {
+  min-height: 34px;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.mcp-tool-args-panel,
+.mcp-tool-result-view {
+  display: grid;
+  gap: 10px;
+  border: 1px solid rgba(124, 179, 255, 0.18);
+  border-radius: 14px;
+  background: rgba(1, 6, 14, 0.34);
+  padding: 10px;
+}
+
+.mcp-tool-panel-title {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.mcp-tool-arg-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.mcp-tool-arg-field {
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 1px solid rgba(124, 179, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.mcp-tool-arg-field>span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.mcp-tool-arg-field strong {
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.mcp-tool-arg-field em,
+.mcp-tool-arg-field code {
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.055);
+  font-size: 0.68rem;
+  font-style: normal;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+}
+
+.mcp-tool-arg-field input,
+.mcp-tool-arg-field select,
+.mcp-tool-arg-field textarea {
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid rgba(124, 179, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(1, 6, 14, 0.42);
+  color: var(--text);
+  font-size: 0.82rem;
+}
+
+.mcp-tool-arg-field textarea {
+  resize: vertical;
+  font-family: "IBM Plex Mono", "SFMono-Regular", "SF Mono", Consolas, monospace;
+  line-height: 1.5;
+}
+
+.mcp-tool-arg-field small,
+.mcp-tool-empty-args {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.mcp-tool-empty-args {
+  padding: 12px;
+  border: 1px dashed rgba(124, 179, 255, 0.18);
+  border-radius: 12px;
+}
+
+.mcp-tool-schema {
+  border: 1px solid rgba(124, 179, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+
+.mcp-tool-schema summary {
+  padding: 8px 10px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.76rem;
+}
+
+.mcp-tool-schema pre,
+.mcp-tool-result {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 10px 12px;
+  color: #dce9f8;
+  font-family: "IBM Plex Mono", "SFMono-Regular", "SF Mono", Consolas, monospace;
+  font-size: 0.76rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mcp-tool-result {
+  border: 1px solid rgba(124, 179, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(1, 6, 14, 0.5);
+}
+
+.mcp-tool-result-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mcp-tool-result-toolbar>div:last-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mcp-tool-result-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid rgba(124, 179, 255, 0.16);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(var(--primary-rgb), 0.08), rgba(var(--primary-rgb), 0.025)),
+    rgba(255, 255, 255, 0.035);
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.mcp-tool-result-icon-button:hover {
+  border-color: rgba(var(--primary-rgb), 0.38);
+  background:
+    linear-gradient(180deg, rgba(var(--primary-rgb), 0.14), rgba(var(--primary-rgb), 0.05)),
+    rgba(255, 255, 255, 0.055);
+  color: var(--text);
+  transform: translateY(-1px);
+}
+
+.mcp-tool-result-icon-button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.mcp-tool-result-json {
+  width: 100%;
+  min-height: 220px;
+  max-height: 360px;
+  padding: 12px;
+  border: 1px solid rgba(124, 179, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(1, 6, 14, 0.5);
+  color: #dce9f8;
+  font-family: "IBM Plex Mono", "SFMono-Regular", "SF Mono", Consolas, monospace;
+  font-size: 0.76rem;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.mcp-tool-result-view.is-collapsed {
+  padding-bottom: 10px;
+}
+
 :root[data-theme="light"] .mcp-wizard-panel {
   background:
     radial-gradient(ellipse at 0% 0%, rgba(var(--primary-rgb), 0.11), transparent 42%),
@@ -4756,6 +5079,64 @@ textarea:focus-visible {
 :root[data-theme="light"] .mcp-code-field textarea::placeholder {
   color: rgba(19, 34, 56, 0.4);
 }
+
+:root[data-theme="light"] .mcp-tool-workbench {
+  border-color: rgba(40, 92, 160, 0.16);
+  background:
+    linear-gradient(180deg, rgba(var(--primary-rgb), 0.06), rgba(var(--primary-rgb), 0.018)),
+    rgba(255, 255, 255, 0.74);
+}
+
+:root[data-theme="light"] .mcp-tool-arg-field input,
+:root[data-theme="light"] .mcp-tool-arg-field select,
+:root[data-theme="light"] .mcp-tool-arg-field textarea,
+:root[data-theme="light"] .mcp-tool-result-json,
+:root[data-theme="light"] .mcp-tool-schema pre,
+:root[data-theme="light"] .mcp-tool-result {
+  color: #132238;
+}
+
+:root[data-theme="light"] .mcp-tool-args-panel,
+:root[data-theme="light"] .mcp-tool-result-view,
+:root[data-theme="light"] .mcp-tool-arg-field input,
+:root[data-theme="light"] .mcp-tool-arg-field select,
+:root[data-theme="light"] .mcp-tool-arg-field textarea,
+:root[data-theme="light"] .mcp-tool-result-json {
+  border-color: rgba(40, 92, 160, 0.22);
+  background:
+    linear-gradient(180deg, rgba(249, 252, 255, 0.98), rgba(238, 245, 252, 0.94)),
+    rgba(255, 255, 255, 0.95);
+}
+
+:root[data-theme="light"] .mcp-tool-schema,
+:root[data-theme="light"] .mcp-tool-result,
+:root[data-theme="light"] .mcp-tool-arg-field,
+:root[data-theme="light"] .mcp-tool-empty-args {
+  border-color: rgba(40, 92, 160, 0.14);
+  background: rgba(244, 249, 255, 0.86);
+}
+
+:root[data-theme="light"] .mcp-tool-arg-field em,
+:root[data-theme="light"] .mcp-tool-arg-field code {
+  background: rgba(40, 92, 160, 0.08);
+}
+
+:root[data-theme="light"] .mcp-tool-result-icon-button {
+  border-color: rgba(40, 92, 160, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(239, 246, 253, 0.78)),
+    rgba(255, 255, 255, 0.72);
+  color: rgba(58, 80, 110, 0.78);
+}
+
+:root[data-theme="light"] .mcp-tool-result-icon-button:hover {
+  border-color: rgba(var(--primary-rgb), 0.34);
+  background:
+    linear-gradient(180deg, rgba(var(--primary-rgb), 0.1), rgba(var(--primary-rgb), 0.035)),
+    rgba(255, 255, 255, 0.9);
+  color: #132238;
+}
+
 
 .form-hint {
   display: grid;
@@ -5063,6 +5444,16 @@ textarea:focus-visible {
   border-radius: 28px;
 }
 
+.about-page-embedded {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .about-hero {
   display: grid;
   grid-template-columns: 72px minmax(0, 1fr) auto;
@@ -5204,6 +5595,11 @@ textarea:focus-visible {
   background: rgba(255, 255, 255, 0.03);
 }
 
+.about-page-embedded .about-preview-panel,
+.about-page-embedded .about-section {
+  margin-top: 0;
+}
+
 :root[data-theme="light"] .about-section {
   background: rgba(255, 255, 255, 0.72);
 }
@@ -5228,56 +5624,87 @@ textarea:focus-visible {
   height: 16px;
 }
 
-.about-link-list,
+.about-link-grid,
 .about-history {
   display: grid;
   gap: 10px;
 }
 
+.about-link-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 .about-link-item {
-  display: grid;
-  grid-template-columns: auto 130px minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  gap: 12px;
   width: 100%;
-  padding: 12px;
+  min-height: 150px;
+  padding: 18px 14px;
   border: 1px solid transparent;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.03);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.02)),
+    rgba(255, 255, 255, 0.03);
   color: var(--text);
-  text-align: left;
+  text-align: center;
   cursor: pointer;
   transition:
     border-color 180ms ease,
     background-color 180ms ease,
+    box-shadow 180ms ease,
     transform 180ms ease;
 }
 
 .about-link-item:hover,
 .about-link-item:focus-visible {
   border-color: var(--line-strong);
-  background: rgba(87, 177, 255, 0.09);
+  background:
+    linear-gradient(135deg, rgba(var(--primary-rgb), 0.12), rgba(var(--primary-2-rgb), 0.08)),
+    rgba(255, 255, 255, 0.04);
+  box-shadow: 0 14px 28px rgba(2, 8, 18, 0.1);
   outline: none;
-  transform: translateY(-1px);
+  transform: translateY(-2px);
 }
 
 .about-link-icon {
   display: inline-grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  background: rgba(87, 177, 255, 0.12);
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  background:
+    linear-gradient(135deg, rgba(var(--primary-rgb), 0.16), rgba(var(--primary-2-rgb), 0.12)),
+    rgba(87, 177, 255, 0.08);
   color: var(--primary);
 }
 
-.about-link-item code {
+.about-link-item strong {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text);
-  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  max-width: 100%;
+  font-size: 0.92rem;
+}
+
+:root[data-theme="light"] .about-link-item {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(247, 251, 255, 0.68)),
+    rgba(255, 255, 255, 0.72);
+}
+
+:root[data-theme="light"] .about-link-item:hover,
+:root[data-theme="light"] .about-link-item:focus-visible {
+  box-shadow: 0 14px 28px rgba(41, 73, 114, 0.1);
+}
+
+@media (max-width: 1280px) {
+  .about-link-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .about-history-item span {
@@ -8331,6 +8758,12 @@ textarea:focus-visible {
   color: rgba(var(--primary-2-rgb), 1);
   background: rgba(var(--primary-2-rgb), 0.14);
   border: 1px solid rgba(var(--primary-2-rgb), 0.3);
+  transition: right 160ms ease;
+}
+
+.pcv-active:hover .pcv-active-badge,
+.pcv-active:focus-within .pcv-active-badge {
+  right: 52px;
 }
 
 .pcv-active-info {
@@ -8339,6 +8772,7 @@ textarea:focus-visible {
   gap: 6px;
   flex: 1;
   min-width: 0;
+  padding-right: 0;
 }
 
 .pcv-active-info strong {
@@ -8392,6 +8826,7 @@ textarea:focus-visible {
 }
 
 .pcv-list-item {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -8411,6 +8846,7 @@ textarea:focus-visible {
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+  padding-right: 0;
 }
 
 .pcv-list-info strong {
@@ -8422,6 +8858,29 @@ textarea:focus-visible {
   display: flex;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.pcv-active-actions,
+.pcv-list-actions {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-3px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease;
+}
+
+.pcv-active:hover .pcv-active-actions,
+.pcv-active:focus-within .pcv-active-actions,
+.pcv-list-item:hover .pcv-list-actions,
+.pcv-list-item:focus-within .pcv-list-actions {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 /* 卡片可点击选中（进入右侧编辑） */
@@ -8450,10 +8909,10 @@ textarea:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
+  width: 26px;
+  height: 26px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 8px;
   background: rgba(255, 255, 255, 0.03);
   color: var(--muted);
   cursor: pointer;
@@ -8464,12 +8923,6 @@ textarea:focus-visible {
   color: var(--text);
   border-color: var(--line-strong);
   background: var(--surface-hover);
-}
-
-.pcv-icon-btn.active {
-  color: #f5c451;
-  border-color: rgba(245, 196, 81, 0.45);
-  background: rgba(245, 196, 81, 0.12);
 }
 
 /* 未保存标记 */
@@ -8488,13 +8941,13 @@ textarea:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  height: 30px;
-  padding: 0 11px;
-  border-radius: 9px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 8px;
   border: 1px solid rgba(var(--primary-2-rgb), 0.32);
   background: linear-gradient(135deg, rgba(var(--primary-rgb), 0.2), rgba(var(--primary-2-rgb), 0.16));
   color: var(--text);
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 500;
   cursor: pointer;
   transition: filter 0.15s ease, border-color 0.15s ease;
@@ -8721,6 +9174,84 @@ textarea:focus-visible {
 .wizard-field select:focus {
   border-color: rgba(var(--primary-rgb), 0.55);
   background-color: rgba(var(--primary-rgb), 0.08);
+}
+
+.wizard-endpoint-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 40px;
+  gap: 8px;
+  align-items: center;
+}
+
+.wizard-endpoint-check-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(var(--primary-rgb), 0.06);
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.wizard-endpoint-check-button:hover:not(:disabled) {
+  border-color: rgba(var(--primary-rgb), 0.5);
+  background: rgba(var(--primary-rgb), 0.12);
+  color: var(--text);
+}
+
+.wizard-endpoint-check-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.wizard-endpoint-check-button.is-ok {
+  border-color: rgba(46, 204, 113, 0.36);
+  background: rgba(46, 204, 113, 0.1);
+  color: #7ee2a0;
+}
+
+.wizard-endpoint-check-button.is-failed {
+  border-color: rgba(255, 112, 112, 0.38);
+  background: rgba(255, 112, 112, 0.1);
+  color: #ff9b9b;
+}
+
+.wizard-endpoint-check-button .is-spinning {
+  animation: button-spin 0.8s linear infinite;
+}
+
+.wizard-field-error,
+.wizard-field-status {
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.wizard-field-error,
+.wizard-field-status.is-failed {
+  color: #ff9b9b;
+}
+
+.wizard-field-status.is-ok {
+  color: #7ee2a0;
+}
+
+.wizard-field-status.is-checking {
+  color: var(--muted);
+}
+
+.wizard-readonly-value {
+  min-height: 41px;
+  padding: 10px 12px;
+  border: 1px solid rgba(var(--primary-rgb), 0.16);
+  border-radius: 10px;
+  background: rgba(var(--primary-rgb), 0.07);
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.35;
 }
 
 .wizard-toggle {

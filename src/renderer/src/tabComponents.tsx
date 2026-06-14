@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  Boxes, Check, Copy, Eye, EyeOff, FileText, FolderOpen, LoaderCircle,
-  MoonStar, PenSquare, Play, RefreshCw, Sparkles, X,
+  Boxes, Check, ChevronDown, ChevronUp, Copy, Eye, EyeOff, FileText, FolderOpen, LoaderCircle,
+  MoonStar, PenSquare, Play, RefreshCw, Sparkles, Wrench, X,
 } from "lucide-react";
 
 import { normalizeEntryName } from "@shared/nameRules";
@@ -15,6 +15,7 @@ import type {
   McpServerConfig, McpTransport, ModelPricing, Profile, ProfileConnectivityTestResult, UiFontSize,
   OfficialAccount,
 } from "@shared/types";
+import type { McpToolInfo } from "./tauri/cli";
 import { resolveModelPricing } from "@shared/pricing";
 
 import { getApi } from "./appHelpers";
@@ -23,7 +24,8 @@ import {
   PROVIDER_TYPE_OPTIONS, UI_FONT_SIZE_OPTIONS,
 } from "./appOptions";
 import { useDialogEscape, useFocusTrap } from "./dialogs";
-import { t } from "./i18n";
+import { parseEndpointUrl } from "./endpointUtils";
+import { t, translateError } from "./i18n";
 import {
   ActionFooter, Field, MultiSelectField,
   ReadOnlyField, SelectField, Toggle,
@@ -182,6 +184,415 @@ function LineCodeField(props: {
   );
 }
 
+function formatJsonPreview(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+type McpToolArgValues = Record<string, string | boolean>;
+
+type McpToolArgumentField = {
+  name: string;
+  type: string;
+  description: string;
+  required: boolean;
+  enumValues?: string[];
+  defaultValue?: unknown;
+};
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function extractMcpToolArgumentFields(inputSchema: unknown): McpToolArgumentField[] {
+  const schema = readRecord(inputSchema);
+  const properties = readRecord(schema?.properties);
+  if (!properties) return [];
+  const required = Array.isArray(schema?.required)
+    ? new Set(schema.required.filter((item): item is string => typeof item === "string"))
+    : new Set<string>();
+
+  return Object.entries(properties).map(([name, value]) => {
+    const property = readRecord(value) ?? {};
+    const typeValue = property.type;
+    const type = Array.isArray(typeValue)
+      ? typeValue.filter((item): item is string => typeof item === "string").join(" | ")
+      : typeof typeValue === "string"
+        ? typeValue
+        : "string";
+    const enumValues = Array.isArray(property.enum)
+      ? property.enum.map((item) => String(item))
+      : undefined;
+    return {
+      name,
+      type,
+      description: typeof property.description === "string" ? property.description : "",
+      required: required.has(name),
+      enumValues,
+      defaultValue: property.default,
+    };
+  });
+}
+
+function defaultValueForMcpField(field: McpToolArgumentField): string | boolean {
+  if (typeof field.defaultValue === "boolean") return field.defaultValue;
+  if (field.defaultValue !== undefined && typeof field.defaultValue !== "object") return String(field.defaultValue);
+  if (field.type.includes("boolean")) return false;
+  if (field.type.includes("object")) return "{}";
+  if (field.type.includes("array")) return "[]";
+  return "";
+}
+
+function buildMcpToolArguments(fields: McpToolArgumentField[], values: McpToolArgValues): Record<string, unknown> {
+  const args: Record<string, unknown> = {};
+  for (const field of fields) {
+    const value = values[field.name];
+    if (value === undefined || value === "" || value === false && !field.required) continue;
+    if (field.type.includes("boolean")) {
+      args[field.name] = Boolean(value);
+      continue;
+    }
+    if (field.type.includes("number") || field.type.includes("integer")) {
+      args[field.name] = Number(value);
+      continue;
+    }
+    if (field.type.includes("object") || field.type.includes("array")) {
+      args[field.name] = JSON.parse(String(value));
+      continue;
+    }
+    args[field.name] = String(value);
+  }
+  return args;
+}
+
+function stringifyMcpToolArguments(fields: McpToolArgumentField[], values: McpToolArgValues): string {
+  return formatJsonPreview(buildMcpToolArguments(fields, values));
+}
+
+const MCP_TOOL_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const MCP_TOOL_CACHE_PREFIX = "kimi-code-switch:mcp-tools:";
+
+type McpToolCacheEntry = {
+  cachedAt: number;
+  tools: McpToolInfo[];
+};
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function buildMcpToolCacheKey(serverName: string, server: McpServerConfig): string {
+  const identity = server.transport === "stdio"
+    ? {
+        name: serverName,
+        transport: server.transport,
+        command: server.command,
+        args: server.args,
+      }
+    : {
+        name: serverName,
+        transport: server.transport,
+        url: server.url,
+      };
+  return `${MCP_TOOL_CACHE_PREFIX}${stableStringify(identity)}`;
+}
+
+function readMcpToolCache(cacheKey: string): McpToolInfo[] | null {
+  try {
+    const raw = window.localStorage.getItem(cacheKey);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<McpToolCacheEntry>;
+    if (!Array.isArray(parsed.tools) || typeof parsed.cachedAt !== "number") return null;
+    if (Date.now() - parsed.cachedAt > MCP_TOOL_CACHE_TTL_MS) {
+      window.localStorage.removeItem(cacheKey);
+      return null;
+    }
+    return parsed.tools;
+  } catch {
+    return null;
+  }
+}
+
+function writeMcpToolCache(cacheKey: string, tools: McpToolInfo[]): void {
+  try {
+    const entry: McpToolCacheEntry = {
+      cachedAt: Date.now(),
+      tools,
+    };
+    window.localStorage.setItem(cacheKey, JSON.stringify(entry));
+  } catch {
+    // Cache failures should not block MCP tool parsing.
+  }
+}
+
+function McpToolWorkbench(props: {
+  locale: Locale;
+  serverName: string;
+  server: McpServerConfig;
+}): JSX.Element {
+  const requestSeqRef = useRef(0);
+  const cacheKey = buildMcpToolCacheKey(props.serverName, props.server);
+  const [tools, setTools] = useState<McpToolInfo[]>([]);
+  const [selectedTool, setSelectedTool] = useState("");
+  const [argValues, setArgValues] = useState<McpToolArgValues>({});
+  const [result, setResult] = useState("");
+  const [resultJson, setResultJson] = useState("");
+  const [isResultCollapsed, setIsResultCollapsed] = useState(false);
+  const [isResultCopied, setIsResultCopied] = useState(false);
+  const [isParsing, setIsParsing] = useState(false);
+  const [isCalling, setIsCalling] = useState(false);
+  const [isUsingCachedTools, setIsUsingCachedTools] = useState(false);
+
+  useEffect(() => {
+    setTools([]);
+    setSelectedTool("");
+    setArgValues({});
+    setResult("");
+    setResultJson("");
+    setIsResultCollapsed(false);
+    setIsResultCopied(false);
+    setIsParsing(false);
+    setIsCalling(false);
+    setIsUsingCachedTools(false);
+    requestSeqRef.current += 1;
+    const cachedTools = readMcpToolCache(cacheKey);
+    if (cachedTools) {
+      setTools(cachedTools);
+      setSelectedTool(cachedTools[0]?.name ?? "");
+      setIsUsingCachedTools(true);
+    }
+  }, [cacheKey, props.serverName, props.server.transport]);
+
+  const selectedToolInfo = tools.find((tool) => tool.name === selectedTool);
+  const argumentFields = extractMcpToolArgumentFields(selectedToolInfo?.inputSchema);
+
+  useEffect(() => {
+    const fields = extractMcpToolArgumentFields(selectedToolInfo?.inputSchema);
+    setArgValues(Object.fromEntries(fields.map((field) => [field.name, defaultValueForMcpField(field)])));
+    setResultJson("");
+    setIsResultCollapsed(false);
+    setIsResultCopied(false);
+    setResult("");
+  }, [selectedTool, selectedToolInfo?.inputSchema]);
+
+  const parseTools = async (): Promise<void> => {
+    const api = getApi();
+    if (!api?.listMcpServerTools) {
+      setResult(t(props.locale, "mcpRuntimeOutdated"));
+      return;
+    }
+    const requestSeq = requestSeqRef.current + 1;
+    requestSeqRef.current = requestSeq;
+    setIsParsing(true);
+    try {
+      const response = await api.listMcpServerTools(props.serverName, props.server);
+      if (requestSeqRef.current !== requestSeq) return;
+      setTools(response.tools);
+      writeMcpToolCache(cacheKey, response.tools);
+      setIsUsingCachedTools(false);
+      setSelectedTool((current) => current && response.tools.some((tool) => tool.name === current)
+        ? current
+        : response.tools[0]?.name ?? "");
+      setResult(response.tools.length ? "" : t(props.locale, "mcpToolNoTools"));
+      setResultJson("");
+    } catch (error) {
+      if (requestSeqRef.current !== requestSeq) return;
+      const message = error instanceof Error ? error.message : String(error);
+      setResult(translateError(props.locale, message));
+    } finally {
+      if (requestSeqRef.current === requestSeq) {
+        setIsParsing(false);
+      }
+    }
+  };
+
+  const callTool = async (): Promise<void> => {
+    const api = getApi();
+    if (!api?.callMcpServerTool) {
+      setResult(t(props.locale, "mcpRuntimeOutdated"));
+      return;
+    }
+    if (!selectedTool) {
+      setResult(t(props.locale, "mcpToolSelectRequired"));
+      return;
+    }
+    const requestSeq = requestSeqRef.current + 1;
+    requestSeqRef.current = requestSeq;
+    setIsCalling(true);
+    try {
+      const argsJson = stringifyMcpToolArguments(argumentFields, argValues);
+      const response = await api.callMcpServerTool(props.serverName, selectedTool, argsJson, props.server);
+      if (requestSeqRef.current !== requestSeq) return;
+      setResultJson(formatJsonPreview(response.result));
+      setIsResultCollapsed(false);
+      setIsResultCopied(false);
+      setResult("");
+    } catch (error) {
+      if (requestSeqRef.current !== requestSeq) return;
+      const message = error instanceof Error ? error.message : String(error);
+      setResult(translateError(props.locale, message));
+      setResultJson("");
+    } finally {
+      if (requestSeqRef.current === requestSeq) {
+        setIsCalling(false);
+      }
+    }
+  };
+
+  const copyResult = (): void => {
+    if (!resultJson) return;
+    void navigator.clipboard?.writeText(resultJson).then(() => {
+      setIsResultCopied(true);
+      window.setTimeout(() => setIsResultCopied(false), 1400);
+    }).catch(() => setIsResultCopied(false));
+  };
+
+  return (
+    <section className="mcp-tool-workbench" aria-label={t(props.locale, "mcpToolWorkbenchTitle")}>
+      <div className="mcp-tool-workbench-head">
+        <div>
+          <div className="mcp-tool-workbench-title">
+            <Wrench size={15} />
+            <span>{t(props.locale, "mcpToolWorkbenchTitle")}</span>
+          </div>
+          <p>{t(props.locale, "mcpToolWorkbenchHint")}</p>
+        </div>
+        <button
+          className={isParsing ? "action-button compact is-loading" : "action-button compact"}
+          type="button"
+          disabled={isParsing || isCalling}
+          onClick={() => void parseTools()}
+        >
+          {isParsing ? <LoaderCircle size={15} className="button-spinner" /> : <RefreshCw size={15} />}
+          <span>{isParsing
+            ? t(props.locale, "mcpToolParsing")
+            : t(props.locale, isUsingCachedTools ? "mcpToolReparse" : "mcpToolParse")}</span>
+        </button>
+      </div>
+      <div className="mcp-tool-grid">
+        <label className="field mcp-tool-select">
+          <span>{t(props.locale, "mcpToolSelect")}</span>
+          <select value={selectedTool} onChange={(event) => setSelectedTool(event.target.value)} disabled={!tools.length}>
+            {tools.length ? null : <option value="">{t(props.locale, "mcpToolEmpty")}</option>}
+            {tools.map((tool) => (
+              <option key={tool.name} value={tool.name}>{tool.name}</option>
+            ))}
+          </select>
+          <small>{selectedToolInfo?.description || t(props.locale, "mcpToolDescriptionFallback")}</small>
+        </label>
+        <div className="mcp-tool-args-panel">
+          <div className="mcp-tool-panel-title">{t(props.locale, "mcpToolArguments")}</div>
+          {argumentFields.length ? (
+            <div className="mcp-tool-arg-grid">
+              {argumentFields.map((field) => (
+                <label key={field.name} className="mcp-tool-arg-field">
+                  <span>
+                    <strong>{field.name}</strong>
+                    <em>{field.required ? t(props.locale, "required") : t(props.locale, "optional")}</em>
+                    <code>{field.type}</code>
+                  </span>
+                  {field.enumValues?.length ? (
+                    <select
+                      value={String(argValues[field.name] ?? "")}
+                      onChange={(event) => setArgValues((current) => ({ ...current, [field.name]: event.target.value }))}
+                    >
+                      <option value="">{t(props.locale, "selectPlaceholder")}</option>
+                      {field.enumValues.map((item) => <option key={item} value={item}>{item}</option>)}
+                    </select>
+                  ) : field.type.includes("boolean") ? (
+                    <Toggle
+                      checked={Boolean(argValues[field.name])}
+                      onChange={(checked) => setArgValues((current) => ({ ...current, [field.name]: checked }))}
+                    />
+                  ) : field.type.includes("object") || field.type.includes("array") ? (
+                    <textarea
+                      rows={3}
+                      spellCheck={false}
+                      value={String(argValues[field.name] ?? "")}
+                      onChange={(event) => setArgValues((current) => ({ ...current, [field.name]: event.target.value }))}
+                    />
+                  ) : (
+                    <input
+                      inputMode={field.type.includes("number") || field.type.includes("integer") ? "decimal" : "text"}
+                      value={String(argValues[field.name] ?? "")}
+                      onChange={(event) => setArgValues((current) => ({ ...current, [field.name]: event.target.value }))}
+                    />
+                  )}
+                  {field.description ? <small>{field.description}</small> : null}
+                </label>
+              ))}
+            </div>
+          ) : (
+            <div className="mcp-tool-empty-args">{selectedTool ? t(props.locale, "mcpToolNoArguments") : t(props.locale, "mcpToolEmpty")}</div>
+          )}
+        </div>
+      </div>
+      {selectedToolInfo?.inputSchema ? (
+        <details className="mcp-tool-schema">
+          <summary>{t(props.locale, "mcpToolSchema")}</summary>
+          <pre>{formatJsonPreview(selectedToolInfo.inputSchema)}</pre>
+        </details>
+      ) : null}
+      <div className="mcp-tool-actions">
+        <button
+          className={isCalling ? "action-button compact is-loading" : "action-button compact"}
+          type="button"
+          disabled={isParsing || isCalling || !selectedTool}
+          onClick={() => void callTool()}
+        >
+          {isCalling ? <LoaderCircle size={15} className="button-spinner" /> : <Play size={15} />}
+          <span>{isCalling ? t(props.locale, "mcpToolTesting") : t(props.locale, "mcpToolTest")}</span>
+        </button>
+      </div>
+      {result ? (
+        <pre className="mcp-tool-result">{result}</pre>
+      ) : null}
+      {resultJson ? (
+        <div className={isResultCollapsed ? "mcp-tool-result-view is-collapsed" : "mcp-tool-result-view"}>
+          <div className="mcp-tool-result-toolbar">
+            <div className="mcp-tool-panel-title">{t(props.locale, "mcpToolResult")}</div>
+            <div>
+              <button
+                className="mcp-tool-result-icon-button"
+                type="button"
+                aria-label={isResultCopied ? t(props.locale, "copied") : t(props.locale, "copyContent")}
+                title={isResultCopied ? t(props.locale, "copied") : t(props.locale, "copyContent")}
+                onClick={copyResult}
+              >
+                {isResultCopied ? <Check size={14} /> : <Copy size={14} />}
+              </button>
+              <button
+                className="mcp-tool-result-icon-button"
+                type="button"
+                aria-label={isResultCollapsed ? t(props.locale, "expand") : t(props.locale, "collapse")}
+                title={isResultCollapsed ? t(props.locale, "expand") : t(props.locale, "collapse")}
+                onClick={() => setIsResultCollapsed((current) => !current)}
+              >
+                {isResultCollapsed ? <ChevronDown size={15} /> : <ChevronUp size={15} />}
+              </button>
+            </div>
+          </div>
+          {isResultCollapsed ? null : (
+            <textarea className="mcp-tool-result-json" readOnly spellCheck={false} rows={10} value={resultJson} />
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function McpTransportRadioGroup(props: {
   locale: Locale;
   value: McpTransport;
@@ -247,6 +658,8 @@ export function ProviderForm(props: {
   onDelete: () => void;
 }): JSX.Element {
   const [isApiKeyVisible, setIsApiKeyVisible] = useState(false);
+  const [endpointCheckState, setEndpointCheckState] = useState<"idle" | "checking" | "ok" | "failed">("idle");
+  const [endpointCheckMessage, setEndpointCheckMessage] = useState("");
   const providerTypeOptions = ensureEnumOptions(
     PROVIDER_TYPE_OPTIONS.map((option) => ({
       value: option.value,
@@ -255,6 +668,50 @@ export function ProviderForm(props: {
     props.value.type,
     props.locale,
   );
+  const endpointValue = props.value.base_url.trim();
+  const endpointUrl = endpointValue.length > 0 ? parseEndpointUrl(endpointValue) : null;
+  const hasEndpointFormatError = endpointValue.length > 0 && endpointUrl === null;
+
+  const updateEndpoint = (value: string): void => {
+    props.onChange(props.name, { base_url: value });
+    setEndpointCheckState("idle");
+    setEndpointCheckMessage("");
+  };
+
+  const testEndpoint = async (): Promise<void> => {
+    if (endpointUrl === null || endpointCheckState === "checking") return;
+    const api = getApi();
+    if (!api?.testEndpointReachability) {
+      setEndpointCheckState("failed");
+      setEndpointCheckMessage(t(props.locale, "endpointHealthUnavailable"));
+      return;
+    }
+    setEndpointCheckState("checking");
+    setEndpointCheckMessage("");
+    try {
+      const result = await api.testEndpointReachability(endpointUrl.toString());
+      if (result.ok) {
+        setEndpointCheckState("ok");
+        setEndpointCheckMessage(t(props.locale, "endpointHealthOk").replace("{status}", String(result.status)));
+      } else {
+        setEndpointCheckState("failed");
+        setEndpointCheckMessage(t(props.locale, "endpointHealthFail").replace("{message}", result.message));
+      }
+    } catch (err) {
+      setEndpointCheckState("failed");
+      setEndpointCheckMessage(
+        t(props.locale, "endpointHealthFail").replace("{message}", err instanceof Error ? err.message : String(err)),
+      );
+    }
+  };
+
+  const EndpointStatusIcon = endpointCheckState === "checking"
+    ? LoaderCircle
+    : endpointCheckState === "ok"
+      ? Check
+      : endpointCheckState === "failed"
+        ? X
+        : Play;
 
   return (
     <section className="glass-panel form-panel">
@@ -271,7 +728,33 @@ export function ProviderForm(props: {
         options={providerTypeOptions}
         popoverClassName="field-select-popover-full"
       />
-      <Field label={t(props.locale, "formBaseUrl")} value={props.value.base_url} onChange={(value) => props.onChange(props.name, { base_url: value })} />
+      <label className="field">
+        <span>{t(props.locale, "formBaseUrl")}</span>
+        <div className="endpoint-field-input">
+          <input
+            value={props.value.base_url}
+            onChange={(event) => updateEndpoint(event.target.value)}
+            aria-invalid={hasEndpointFormatError}
+          />
+          <button
+            className={`endpoint-health-button is-${endpointCheckState}`}
+            type="button"
+            onClick={() => void testEndpoint()}
+            disabled={endpointUrl === null || endpointCheckState === "checking"}
+            title={t(props.locale, endpointCheckState === "checking" ? "endpointHealthChecking" : "endpointHealthCheck")}
+            aria-label={t(props.locale, endpointCheckState === "checking" ? "endpointHealthChecking" : "endpointHealthCheck")}
+          >
+            <EndpointStatusIcon size={16} className={endpointCheckState === "checking" ? "button-spinner" : undefined} />
+          </button>
+        </div>
+        {hasEndpointFormatError ? (
+          <span className="field-error">{t(props.locale, "endpointInvalidUrl")}</span>
+        ) : endpointCheckState !== "idle" || endpointCheckMessage ? (
+          <span className={`field-status is-${endpointCheckState}`}>
+            {endpointCheckState === "checking" ? t(props.locale, "endpointHealthChecking") : endpointCheckMessage}
+          </span>
+        ) : null}
+      </label>
       <SecretField
         label={t(props.locale, "formApiKey")}
         value={props.value.api_key}
@@ -282,7 +765,14 @@ export function ProviderForm(props: {
         hideLabel={t(props.locale, "hideSecret")}
       />
       <ActionFooter
-        onSave={props.onSave}
+        onSave={() => {
+          if (endpointUrl === null) {
+            setEndpointCheckState("failed");
+            setEndpointCheckMessage(t(props.locale, "endpointInvalidUrl"));
+            return;
+          }
+          props.onSave();
+        }}
         onDelete={props.onDelete}
         saveLabel={t(props.locale, "saveProvider")}
         deleteLabel={t(props.locale, "delete")}
@@ -640,6 +1130,7 @@ export function McpServerForm(props: {
           />
         </>
       )}
+      <McpToolWorkbench key={props.name} locale={props.locale} serverName={props.name} server={props.value} />
       <ActionFooter
         onSave={props.onSave}
         onDelete={props.onDelete}

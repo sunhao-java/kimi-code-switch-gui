@@ -760,6 +760,7 @@ function useChangelogForCurrentVersion(locale: Locale): string {
 
 export function AboutPage(props: {
   locale: Locale;
+  embedded?: boolean;
 }): JSX.Element {
   const isDev = import.meta.env.DEV;
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
@@ -912,9 +913,10 @@ export function AboutPage(props: {
     setCopiedReleaseUrl(false);
     setUpdateDialog(createPreviewUpdateResult(props.locale, kind));
   };
+  const className = props.embedded ? "about-page about-page-embedded" : "glass-panel about-page";
 
   return (
-    <section className="glass-panel about-page">
+    <section className={className}>
       <div className="about-hero">
         <div className="about-logo">
           <img className="brand-logo brand-logo-light" src={logoLight} alt="Kimi Code Switch" />
@@ -986,17 +988,18 @@ export function AboutPage(props: {
           <ExternalLink size={16} />
           <span>{aboutText(props.locale, "projectLinks")}</span>
         </div>
-        <div className="about-link-list">
-          {links.map(({ icon: Icon, label, value, displayValue }) => (
+        <div className="about-link-grid">
+          {links.map(({ icon: Icon, label, value }) => (
             <button
               key={label}
               className="about-link-item"
               type="button"
+              title={label}
+              aria-label={label}
               onClick={() => openRelease(value)}
             >
-              <span className="about-link-icon"><Icon size={16} /></span>
-              <span>{label}</span>
-              <code>{displayValue ?? value}</code>
+              <span className="about-link-icon"><Icon size={28} /></span>
+              <strong>{label}</strong>
             </button>
           ))}
         </div>

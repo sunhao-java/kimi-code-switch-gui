@@ -14,7 +14,7 @@ import type {
   UiFontSize,
 } from "@shared/types";
 import {
-  Boxes, Cherry, Droplets, FileText, Flame, Globe, Info, Layers3, Leaf, MonitorCog, MoonStar,
+  Boxes, Cherry, Droplets, FileText, Flame, Globe, Layers3, Leaf, MonitorCog, MoonStar,
   Palette, Settings2, Snowflake, Sparkles, Star, SunMedium, TreePine, TrendingUp, Zap,
 } from "lucide-react";
 
@@ -34,12 +34,6 @@ export const ASSISTANT_SUB_ITEMS: Array<{ id: TabId; icon: typeof Layers3; label
   { id: "providers", icon: Globe, labelKey: "providers" },
   { id: "models", icon: Boxes, labelKey: "models" },
 ];
-
-export const ABOUT_TAB: { id: TabId; icon: typeof Info; labelKey: string } = {
-  id: "about",
-  icon: Info,
-  labelKey: "about",
-};
 
 export const emptyPreview: PreviewBundle = {
   configDocument: "",

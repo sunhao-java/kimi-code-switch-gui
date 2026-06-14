@@ -139,7 +139,7 @@ type TabPanelsProps = Pick<
   onRequestCascadeDelete: (type: "provider" | "model", name: string) => void;
 };
 
-type SettingsSubTab = "general" | "config-target" | "shortcuts" | "backup" | "doctor" | "insights" | "history";
+type SettingsSubTab = "general" | "config-target" | "shortcuts" | "backup" | "doctor" | "insights" | "history" | "about";
 
 type KimiOAuthLoginState = {
   status: "idle" | "running" | "success" | "failed" | "account-required";
@@ -350,7 +350,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   const hasProviders = Object.keys(state.mainConfig.providers).length > 0;
   const hasModels = Object.keys(state.mainConfig.models).length > 0;
 
-  const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>("config-target");
+  const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>(activeTab === "about" ? "about" : "config-target");
   const [importDialog, setImportDialog] = useState<{ open: boolean; preview: ImportPreview | null; data: ExportBundle | null; strategy: ImportConflictStrategy }>({ open: false, preview: null, data: null, strategy: "skip" });
   const [isMcpJsonViewerOpen, setIsMcpJsonViewerOpen] = useState(false);
   const [providerHealthResults, setProviderHealthResults] = useState<ProviderHealthResult[] | null>(null);
@@ -528,11 +528,23 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
       label: t(locale, "historyTitle"),
       description: t(locale, "historyTitle"),
     },
+    {
+      id: "about",
+      label: t(locale, "about"),
+      description: t(locale, "settingsTabAboutDescription"),
+    },
   ];
+  const isSplitLayoutTab = activeTab === "providers"
+    || activeTab === "models"
+    || activeTab === "profiles"
+    || activeTab === "mcp"
+    || activeTab === "skills"
+    || activeTab === "settings"
+    || activeTab === "about";
 
   return (
     <ErrorBoundary locale={locale}>
-      <div className="tab-panel-shell">
+      <div className={isSplitLayoutTab ? "tab-panel-shell tab-panel-shell-split" : "tab-panel-shell"}>
         {activeTab === "overview" ? (
           <OverviewDashboard
             state={state}
@@ -617,29 +629,6 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                 historySummary: formatMessage(t(locale, "historyNewProvider"), { name }),
               })
             }
-            renderItemAction={(name) => (
-              <span className="list-row-action-set providers-actions">
-                <button
-                  className={state.panelSettings.favorites?.providers?.includes(name) ? "list-toggle-button active" : "list-toggle-button"}
-                  type="button"
-                  aria-label={state.panelSettings.favorites?.providers?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
-                  title={state.panelSettings.favorites?.providers?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    const isFavorite = state.panelSettings.favorites?.providers?.includes(name) ?? false;
-                    updateImmediateState((draft) => { toggleFavorite(draft, "provider", name); }, {
-                      recordHistory: true,
-                      historySummary: formatMessage(
-                        t(locale, isFavorite ? "historyUnfavoriteProvider" : "historyFavoriteProvider"),
-                        { name },
-                      ),
-                    });
-                  }}
-                >
-                  <Star size={14} fill={state.panelSettings.favorites?.providers?.includes(name) ? "currentColor" : "none"} />
-                </button>
-              </span>
-            )}
           >
             {selectedProviderData ? (
               <ProviderForm
@@ -1296,7 +1285,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
           />
         ) : null}
 
-        {activeTab === "settings" ? (
+        {activeTab === "settings" || activeTab === "about" ? (
           <SplitLayout
             listTitle={t(locale, "settings")}
             listItems={settingsSubTabs.map((tab) => tab.id)}
@@ -1950,12 +1939,11 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             {activeSettingsSubTab === "insights" ? (
               <InsightsSettingsPanel locale={locale} onStateChange={() => void loadState()} />
             ) : null}
+            {activeSettingsSubTab === "about" ? (
+              <AboutPage locale={locale} embedded />
+            ) : null}
           </section>
           </SplitLayout>
-        ) : null}
-
-        {activeTab === "about" ? (
-          <AboutPage locale={locale} />
         ) : null}
         {importDialog.open && importDialog.preview && importDialog.data ? (
           <ImportPreviewDialog

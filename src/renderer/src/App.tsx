@@ -3,7 +3,7 @@ import type { KeyboardEvent } from "react";
 import { AlertTriangle, ChevronDown, ChevronsLeft, ChevronsRight, RefreshCw, Terminal, X } from "lucide-react";
 
 import type { McpServerConfig, ShortcutAction, ShortcutBinding } from "@shared/types";
-import { applyProfile, toggleFavorite } from "@shared/configStore";
+import { applyProfile } from "@shared/configStore";
 import type { SearchResult } from "@shared/configStore";
 import { parseMcpConfigStrict } from "@shared/mcpStore";
 import { formatAcceleratorForPlatform, getBrowserShortcutPlatform, normalizeShortcuts } from "@shared/shortcutStore";
@@ -20,7 +20,7 @@ import { deleteProvider, deleteModel, deleteProfile } from "@shared/configStore"
 import { useAppHandlers } from "./useAppHandlers";
 import { maybeRunScheduledBackup } from "./backupAuto";
 import { useShortcuts } from "./useShortcuts";
-import { TAB_ITEMS, ABOUT_TAB, LOCALE_OPTIONS, THEME_OPTIONS, ASSISTANT_SUB_ITEMS } from "./appOptions";
+import { TAB_ITEMS, LOCALE_OPTIONS, THEME_OPTIONS, ASSISTANT_SUB_ITEMS } from "./appOptions";
 import type { TabId } from "./appOptions";
 import {
   BackupRecordsDialog,
@@ -199,6 +199,12 @@ export function App(): JSX.Element {
     }
   }, [activeTab]);
 
+  useEffect(() => {
+    if (activeTab === "about") {
+      setActiveTab("settings");
+    }
+  }, [activeTab, setActiveTab]);
+
   const tabListRef = useRef<HTMLDivElement>(null);
   const visibleTabItems = TAB_ITEMS;
   const profilesIdx = TAB_ITEMS.findIndex((i) => i.id === "profiles");
@@ -255,21 +261,6 @@ export function App(): JSX.Element {
       }
     },
     [activeTab, mainTabIds, runAfterUnsavedHandled, setActiveTab, focusTab],
-  );
-
-  const handleAboutTabKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLDivElement>): void => {
-      if (event.key === "ArrowDown" || event.key === "ArrowUp"
-        || event.key === "ArrowLeft" || event.key === "ArrowRight"
-        || event.key === "Home" || event.key === "End") {
-        event.preventDefault();
-        runAfterUnsavedHandled(() => {
-          setActiveTab(ABOUT_TAB.id);
-          focusTab(ABOUT_TAB.id);
-        });
-      }
-    },
-    [runAfterUnsavedHandled, setActiveTab, focusTab],
   );
 
   return (
@@ -416,24 +407,6 @@ export function App(): JSX.Element {
             );
           })}
         </nav>
-        <nav className="nav nav-bottom" role="tablist" onKeyDown={handleAboutTabKeyDown}>
-          <button
-            id={`tab-${ABOUT_TAB.id}`}
-            role="tab"
-            aria-selected={activeTab === ABOUT_TAB.id}
-            className={ABOUT_TAB.id === activeTab ? "nav-item active" : "nav-item"}
-            title={t(locale, ABOUT_TAB.labelKey)}
-            aria-label={t(locale, ABOUT_TAB.labelKey)}
-            tabIndex={activeTab === ABOUT_TAB.id ? 0 : -1}
-            onClick={() => {
-              if (ABOUT_TAB.id === activeTab) return;
-              runAfterUnsavedHandled(() => setActiveTab(ABOUT_TAB.id));
-            }}
-          >
-            <ABOUT_TAB.icon size={18} />
-            <span>{t(locale, ABOUT_TAB.labelKey)}</span>
-          </button>
-        </nav>
       </aside>
 
       <main className="main">
@@ -549,16 +522,8 @@ export function App(): JSX.Element {
               state={state}
               locale={locale}
               selectedProfile={selectedProfileName}
-              favorites={state.panelSettings.favorites?.profiles ?? []}
               dirtyProfiles={dirtyProfiles}
               onSelect={(name) => runAfterUnsavedHandled(() => setSelectedProfile(name))}
-              onToggleFavorite={(name) => {
-                const isFav = state.panelSettings.favorites?.profiles?.includes(name) ?? false;
-                updateImmediateState((draft) => { toggleFavorite(draft, "profile", name); }, {
-                  recordHistory: true,
-                  historySummary: formatMessage(t(locale, isFav ? "historyUnfavoriteProfile" : "historyFavoriteProfile"), { name }),
-                });
-              }}
               onSwitch={(profileName) =>
                 updateState((draft) => {
                   applyProfile(draft, profileName);
