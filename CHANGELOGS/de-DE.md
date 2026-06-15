@@ -2,6 +2,17 @@
 
 Diese Datei dokumentiert die wesentlichen Änderungen des Projekts. Das Format folgt Keep a Changelog; verwendet wird das `major.minor.patch`-Versionsschema.
 
+## [2.2.3] - 2026-06-15
+
+### Geändert
+
+- **Schnellerer Erststart**: Das Laden der Konfiguration wartet vor dem ersten nutzbaren Bildschirm nicht mehr auf Kimi-Code-Erkennung, Remote-Latest-Prüfung, Config Doctor, Skills-Scan, Backup-Baseline oder nichtkritische Migrationen.
+- **Kimi-Code-Erkennung im Hintergrund**: Übersicht und Einstellungen zeigen zunächst einen Erkennungsstatus und füllen Version, Installationsquelle und Status nach Abschluss automatisch nach; manuelle Update-Prüfungen laden weiterhin die neueste Remote-Version.
+
+### Behoben
+
+- Behoben, dass der erste Start bei langsamem Netzwerk oder teuren Homebrew-Abfragen lange durch die Versionserkennung blockiert werden konnte.
+
 
 ## [2.2.2] - 2026-06-15
 

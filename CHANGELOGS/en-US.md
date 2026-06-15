@@ -2,6 +2,17 @@
 
 This file records the project's notable changes. Format follows Keep a Changelog; the project uses `major.minor.patch` versioning.
 
+## [2.2.3] - 2026-06-15
+
+### Changed
+
+- **Faster first startup**: loading configuration no longer waits for Kimi Code detection, remote latest-version checks, config doctor, Skills scanning, backup baseline setup, or noncritical migrations before the first usable screen.
+- **Background Kimi Code detection**: the overview and settings pages show a detecting state first, then automatically fill in version, install source, and status after detection completes; manual update checks still fetch the latest remote version.
+
+### Fixed
+
+- Fixed first launch being blocked for a long time by version detection when the network is slow or Homebrew queries are expensive.
+
 ## [2.2.2] - 2026-06-15
 
 ### Added

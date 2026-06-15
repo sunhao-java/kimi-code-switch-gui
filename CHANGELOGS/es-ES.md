@@ -2,6 +2,17 @@
 
 Este archivo recoge los cambios relevantes del proyecto. El formato sigue Keep a Changelog y el proyecto adopta el esquema de versiones `major.minor.patch`.
 
+## [2.2.3] - 2026-06-15
+
+### Cambiado
+
+- **Inicio inicial más rápido**: la carga de configuración ya no espera a la detección de Kimi Code, comprobaciones remotas de versión, config doctor, escaneo de Skills, línea base de backup ni migraciones no críticas antes de mostrar la primera pantalla utilizable.
+- **Detección de Kimi Code en segundo plano**: las páginas de resumen y ajustes muestran primero el estado de detección y después rellenan automáticamente versión, origen de instalación y estado; la comprobación manual de actualizaciones sigue consultando la última versión remota.
+
+### Corregido
+
+- Corregido que el primer arranque quedara bloqueado durante mucho tiempo por la detección de versión cuando la red era lenta o las consultas de Homebrew eran costosas.
+
 
 ## [2.2.2] - 2026-06-15
 
