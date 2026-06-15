@@ -116,6 +116,7 @@ describe("getCliVersion", () => {
       args: ["list", "--versions", "kimi-code"],
       timeoutMs: 3000,
     });
+    expect(mockedInvoke.mock.calls.some((call) => call[0] === "http_request")).toBe(false);
   });
 
   it("reports not installed when the command fails", async () => {
@@ -154,6 +155,17 @@ describe("getCliVersion", () => {
       .mockResolvedValueOnce(exec(0, "kimi-code 1.0.0") as unknown as never)
       .mockResolvedValueOnce(http(500) as unknown as never);
     const result = await getCliVersion({ checkLatest: true });
+    expect(result).toMatchObject({ version: "1.0.0", installed: true });
+    expect(result.latestVersion).toBeUndefined();
+  });
+
+  it("bounds manual latest-version checks with a renderer timeout", async () => {
+    mockedInvoke
+      .mockResolvedValueOnce(exec(0, "kimi-code 1.0.0") as unknown as never)
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        setTimeout(() => resolve(http(200, JSON.stringify({ versions: { stable: "2.0.0" } })) as never), 50);
+      }));
+    const result = await getCliVersion({ checkLatest: true, latestTimeoutMs: 1 });
     expect(result).toMatchObject({ version: "1.0.0", installed: true });
     expect(result.latestVersion).toBeUndefined();
   });

@@ -1,7 +1,15 @@
 import { act, renderHook } from "@testing-library/react";
 import type { AppState, FileSnapshotBundle } from "@shared/types";
 import { createDefaultShortcuts } from "@shared/shortcutStore";
+
+vi.mock("./backupAuto", () => ({
+  initBackupBaseline: vi.fn(async () => undefined),
+  maybeBackupAfterSave: vi.fn(async () => undefined),
+  maybeRunScheduledBackup: vi.fn(() => undefined),
+}));
+
 import { useAppPersistence } from "./useAppPersistence";
+import { initBackupBaseline } from "./backupAuto";
 
 function createState(): AppState {
   return {
@@ -101,6 +109,75 @@ function createSnapshot(label: string): FileSnapshotBundle {
 describe("useAppPersistence", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it("loads state and preview without waiting for deferred startup work", async () => {
+    const state = createState();
+    let resolveSnapshot: ((value: FileSnapshotBundle) => void) | undefined;
+    const captureSnapshot = vi.fn(() => new Promise<FileSnapshotBundle>((resolve) => {
+      resolveSnapshot = resolve;
+    }));
+    const runDoctor = vi.fn().mockResolvedValue({
+      ok: true,
+      generatedAt: "",
+      issues: [],
+      errorCount: 0,
+      warningCount: 0,
+      infoCount: 0,
+    });
+    const loadStateApi = vi.fn().mockResolvedValue(state);
+    const previewState = vi.fn().mockResolvedValue({ config: "preview" });
+    const refreshSkills = vi.fn(() => new Promise<void>(() => undefined));
+    vi.stubGlobal("kimiSwitch", {
+      loadState: loadStateApi,
+      previewState,
+      captureSnapshot,
+      runDoctor,
+    });
+    const setState = vi.fn();
+    const setSavedState = vi.fn();
+    const setPreview = vi.fn();
+    const setDiagnostics = vi.fn();
+    const setFileSnapshot = vi.fn();
+
+    const { result } = renderHook(() => useAppPersistence({
+      state,
+      savedState: null,
+      locale: "zh-CN",
+      setState,
+      setSavedState,
+      setPreview,
+      setError: vi.fn(),
+      setNotice: vi.fn(),
+      setDiagnostics,
+      fileSnapshot: null,
+      setFileSnapshot,
+      setDoctorReport: vi.fn(),
+      confirmExternalOverwrite: vi.fn(),
+      refreshPreview: vi.fn(),
+      refreshSkills,
+      currentSelections: { provider: "", model: "", profile: "", mcpServer: "" },
+      setSelectedProvider: vi.fn(),
+      setSelectedModel: vi.fn(),
+      setSelectedProfile: vi.fn(),
+      setSelectedMcpServer: vi.fn(),
+    }));
+
+    await act(async () => {
+      await result.current.loadState();
+    });
+
+    expect(loadStateApi).toHaveBeenCalled();
+    expect(previewState).toHaveBeenCalledWith(expect.objectContaining({ configPath: "/tmp/config.toml" }));
+    expect(setPreview).toHaveBeenCalledWith({ config: "preview" });
+    expect(captureSnapshot).toHaveBeenCalled();
+    expect(runDoctor).toHaveBeenCalled();
+    expect(refreshSkills).not.toHaveBeenCalled();
+    expect(initBackupBaseline).not.toHaveBeenCalled();
+    expect(setFileSnapshot).not.toHaveBeenCalled();
+
+    resolveSnapshot?.(createSnapshot("deferred"));
   });
 
   it("uses the latest snapshot ref when saving after another internal write", async () => {

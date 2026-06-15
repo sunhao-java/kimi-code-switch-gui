@@ -20,6 +20,7 @@ type OverviewTabId = "profiles" | "providers" | "models";
 type CliVersionState = {
   version: string;
   installed: boolean;
+  checking?: boolean;
   latestVersion?: string;
   hasUpdate?: boolean;
   installCommand?: string;
@@ -29,10 +30,11 @@ type CliVersionState = {
 const EMPTY_CLI_VERSION: CliVersionState = { version: "", installed: false };
 
 function cliVersionFromDetection(detection: AppState["kimiTargetDetection"] | undefined): CliVersionState {
-  if (!detection) return EMPTY_CLI_VERSION;
+  if (!detection) return { ...EMPTY_CLI_VERSION, checking: true };
   return {
     version: detection.version,
     installed: detection.installed,
+    checking: detection.status === "checking",
     latestVersion: detection.latestVersion,
     hasUpdate: detection.hasUpdate,
     installCommand: detection.installCommand,
@@ -131,7 +133,9 @@ export function OverviewDashboard(props: {
     }
   }, [checkCliVersion, cliVersion.installed]);
 
-  const cliVersionText = cliVersion.installed
+  const cliVersionText = cliVersion.checking
+    ? t(locale, "configTargetDetecting")
+    : cliVersion.installed
     ? cliVersion.hasUpdate && cliVersion.latestVersion
       ? `${cliVersion.version} -> ${cliVersion.latestVersion}`
       : cliVersion.version
@@ -196,7 +200,7 @@ export function OverviewDashboard(props: {
         <div className="overview-hero-body">
           <div className="overview-hero-col">
             <div className="overview-hero-col-title">{t(locale, "overviewAppVersion")}</div>
-            <div className="overview-hero-kv"><span className="overview-hero-kv-label">{versionLabel}</span><span className={cliVersion.installed ? "overview-hero-kv-value overview-cli-version-value" : "overview-hero-kv-value overview-cli-version-value text-warn"}><span>{cliVersionText}</span><button className="overview-cli-check-button" type="button" title={checkVersionLabel} aria-label={checkVersionLabel} disabled={isCliVersionChecking || isCliUpdating} onClick={() => void checkCliVersion(true)}>{isCliVersionChecking ? <LoaderCircle size={13} className="button-spinner" /> : <RefreshCw size={13} />}</button>{cliVersion.hasUpdate || !cliVersion.installed ? <button className="overview-cli-check-button" type="button" title={cliVersion.installed ? updateVersionLabel : `${updateVersionLabel}: ${cliVersion.installCommand ?? ""}`} aria-label={updateVersionLabel} disabled={isCliUpdating || isCliVersionChecking} onClick={() => void upgradeCli()}>{isCliUpdating ? <LoaderCircle size={13} className="button-spinner" /> : <Download size={13} />}</button> : null}</span></div>
+            <div className="overview-hero-kv"><span className="overview-hero-kv-label">{versionLabel}</span><span className={cliVersion.installed || cliVersion.checking ? "overview-hero-kv-value overview-cli-version-value" : "overview-hero-kv-value overview-cli-version-value text-warn"}><span>{cliVersionText}</span><button className="overview-cli-check-button" type="button" title={checkVersionLabel} aria-label={checkVersionLabel} disabled={isCliVersionChecking || isCliUpdating} onClick={() => void checkCliVersion(true)}>{isCliVersionChecking ? <LoaderCircle size={13} className="button-spinner" /> : <RefreshCw size={13} />}</button>{!cliVersion.checking && (cliVersion.hasUpdate || !cliVersion.installed) ? <button className="overview-cli-check-button" type="button" title={cliVersion.installed ? updateVersionLabel : `${updateVersionLabel}: ${cliVersion.installCommand ?? ""}`} aria-label={updateVersionLabel} disabled={isCliUpdating || isCliVersionChecking} onClick={() => void upgradeCli()}>{isCliUpdating ? <LoaderCircle size={13} className="button-spinner" /> : <Download size={13} />}</button> : null}</span></div>
             <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewKimiCodeInstallSource")}</span><span className="overview-hero-kv-value">{installSourceLabel(cliVersion.installSource)}</span></div>
             <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewDefaultModel")}</span><span className="overview-hero-kv-value">{activeProfileModelName || "-"}</span></div>
             <div className="overview-hero-kv"><span className="overview-hero-kv-label">{t(locale, "overviewTheme")}</span><span className="overview-hero-kv-value">{themeLabel(state.panelSettings.appearance_theme)}</span></div>

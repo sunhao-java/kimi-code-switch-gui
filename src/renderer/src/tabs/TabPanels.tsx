@@ -297,12 +297,16 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   const currentConfigTarget = "kimi-code" as const;
   const currentConfigTargetLabel = "Kimi Code";
   const targetDetection = state.kimiTargetDetection;
-  const targetDetectionStatusLabel = targetDetection?.status === "detected"
-    ? t(locale, "configTargetDetected")
-    : t(locale, "configTargetNotDetected");
-  const targetDetectionStatusClass = targetDetection?.status === "detected"
-    ? "is-ok"
-    : "is-danger";
+  const targetDetectionStatusLabel = targetDetection?.status === "checking"
+    ? t(locale, "configTargetDetecting")
+    : targetDetection?.status === "detected"
+      ? t(locale, "configTargetDetected")
+      : t(locale, "configTargetNotDetected");
+  const targetDetectionStatusClass = targetDetection?.status === "checking"
+    ? "is-pending"
+    : targetDetection?.status === "detected"
+      ? "is-ok"
+      : "is-danger";
   const installSourceLabel = (source?: KimiCodeInstallSource): string => {
     switch (source) {
       case "homebrew":

@@ -6,12 +6,14 @@ import { listen } from "@tauri-apps/api/event";
 import { compareReleaseVersions, normalizeReleaseVersion } from "@shared/versionUtils";
 import type { AppState, ConfigTarget, KimiCodeInstallSource, McpServerConfig, ModelConfig, ProfileConnectivityTestResult, ProviderConfig } from "@shared/types";
 import * as officialAccounts from "./officialAccounts";
+import { recordStartupTiming, startupTimingNow } from "../startupTiming";
 
 const KIMI_CODE_HOMEBREW_URL = "https://formulae.brew.sh/api/formula/kimi-code.json";
 const KIMI_CODE_GITHUB_LATEST_URL = "https://api.github.com/repos/MoonshotAI/kimi-code/releases/latest";
 const KIMI_CODE_INSTALL_SCRIPT_SH = "https://code.kimi.com/kimi-code/install.sh";
 const KIMI_CODE_INSTALL_SCRIPT_URL = "https://code.kimi.com/kimi-code/install.ps1";
 const MCP_PROTOCOL_VERSION = "2025-03-26";
+const LATEST_VERSION_TIMEOUT_MS = 3500;
 
 interface ExecResult {
   code: number;
@@ -64,6 +66,18 @@ function exec(program: string, args: string[], timeoutMs?: number): Promise<Exec
 
 function http(method: string, url: string, headers?: Record<string, string>, body?: string): Promise<HttpResponse> {
   return invoke<HttpResponse>("http_request", { method, url, headers: headers ?? null, body: body ?? null });
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<T>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  });
 }
 
 function mcpStdioSession(
@@ -294,12 +308,18 @@ async function detectActiveKimiTargetOnPosix(): Promise<KimiTargetDetectionResul
 }
 
 export async function detectActiveKimiTarget(): Promise<KimiTargetDetectionResult> {
-  return currentPlatform() === "windows"
-    ? detectActiveKimiTargetOnWindows()
-    : detectActiveKimiTargetOnPosix();
+  const startedAt = startupTimingNow();
+  try {
+    return currentPlatform() === "windows"
+      ? await detectActiveKimiTargetOnWindows()
+      : await detectActiveKimiTargetOnPosix();
+  } finally {
+    recordStartupTiming("cli.detectActiveKimiTarget", startedAt);
+  }
 }
 
 async function detectKimiCodeHomebrewVersion(): Promise<CliVersionResult> {
+  const startedAt = startupTimingNow();
   const base = versionResultBase("kimi-code");
   try {
     const r = await exec("brew", ["list", "--versions", "kimi-code"], 3000);
@@ -309,10 +329,13 @@ async function detectKimiCodeHomebrewVersion(): Promise<CliVersionResult> {
     return withInstallSource({ ...base, version, installed: true }, "homebrew");
   } catch {
     return withInstallSource({ ...base, version: "", installed: false }, "unknown");
+  } finally {
+    recordStartupTiming("cli.detectKimiCodeHomebrewVersion", startedAt);
   }
 }
 
 async function detectKimiCodeScriptVersion(): Promise<CliVersionResult> {
+  const startedAt = startupTimingNow();
   const installCommand = `curl -fsSL ${KIMI_CODE_INSTALL_SCRIPT_SH} | bash`;
   const base = {
     ...versionResultBase("kimi-code"),
@@ -328,6 +351,8 @@ async function detectKimiCodeScriptVersion(): Promise<CliVersionResult> {
     return withInstallSource({ ...base, version, installed: true }, "official-script");
   } catch {
     return withInstallSource({ ...versionResultBase("kimi-code"), version: "", installed: false }, "unknown");
+  } finally {
+    recordStartupTiming("cli.detectKimiCodeScriptVersion", startedAt);
   }
 }
 
@@ -377,20 +402,29 @@ async function detectKimiCodeWindowsVersion(): Promise<CliVersionResult> {
 }
 
 async function detectKimiCodeVersion(): Promise<CliVersionResult> {
+  const startedAt = startupTimingNow();
   if (currentPlatform() === "windows") {
-    return detectKimiCodeWindowsVersion();
+    try {
+      return await detectKimiCodeWindowsVersion();
+    } finally {
+      recordStartupTiming("cli.detectKimiCodeVersion", startedAt);
+    }
   }
-  const homebrew = await detectKimiCodeHomebrewVersion();
-  if (homebrew.installed) return homebrew;
-  const scriptInstall = await detectKimiCodeScriptVersion();
-  if (scriptInstall.installed) return scriptInstall;
-  const base = versionResultBase("kimi-code");
   try {
-    const target = await detectActiveKimiTarget();
-    if (!target.installed) throw new Error("kimi-code command not found");
-    return withInstallSource({ ...base, version: target.version, installed: true }, target.installSource);
-  } catch {
-    return withInstallSource({ ...base, version: "", installed: false }, "unknown");
+    const homebrew = await detectKimiCodeHomebrewVersion();
+    if (homebrew.installed) return homebrew;
+    const scriptInstall = await detectKimiCodeScriptVersion();
+    if (scriptInstall.installed) return scriptInstall;
+    const base = versionResultBase("kimi-code");
+    try {
+      const target = await detectActiveKimiTarget();
+      if (!target.installed) throw new Error("kimi-code command not found");
+      return withInstallSource({ ...base, version: target.version, installed: true }, target.installSource);
+    } catch {
+      return withInstallSource({ ...base, version: "", installed: false }, "unknown");
+    }
+  } finally {
+    recordStartupTiming("cli.detectKimiCodeVersion", startedAt);
   }
 }
 
@@ -406,9 +440,14 @@ async function getKimiCodeLatestVersion(): Promise<string | null> {
   return extractSemver(rawVersion) || null;
 }
 
-async function attachLatestVersion(result: CliVersionResult): Promise<CliVersionResult> {
+async function attachLatestVersion(result: CliVersionResult, timeoutMs = LATEST_VERSION_TIMEOUT_MS): Promise<CliVersionResult> {
+  const startedAt = startupTimingNow();
   try {
-    const latestVersion = await getKimiCodeLatestVersion();
+    const latestVersion = await withTimeout(
+      getKimiCodeLatestVersion(),
+      timeoutMs,
+      `Kimi Code latest version request timed out after ${timeoutMs}ms`,
+    );
     if (!latestVersion) return result;
     return {
       ...result,
@@ -417,18 +456,28 @@ async function attachLatestVersion(result: CliVersionResult): Promise<CliVersion
     };
   } catch {
     return result;
+  } finally {
+    recordStartupTiming("cli.attachLatestVersion", startedAt);
   }
 }
 
-export async function getCliVersion(options: { checkLatest?: boolean } = {}): Promise<CliVersionResult> {
+export async function getCliVersion(options: { checkLatest?: boolean; latestTimeoutMs?: number } = {}): Promise<CliVersionResult> {
   return getTargetCliVersion("kimi-code", options);
 }
 
-export async function getTargetCliVersion(target: ConfigTarget = "kimi-code", options: { checkLatest?: boolean } = {}): Promise<CliVersionResult> {
+export async function getTargetCliVersion(
+  target: ConfigTarget = "kimi-code",
+  options: { checkLatest?: boolean; latestTimeoutMs?: number } = {},
+): Promise<CliVersionResult> {
+  const startedAt = startupTimingNow();
   void target;
-  const result = await detectKimiCodeVersion();
-  if (!options.checkLatest) return result;
-  return attachLatestVersion(result);
+  try {
+    const result = await detectKimiCodeVersion();
+    if (!options.checkLatest) return result;
+    return await attachLatestVersion(result, options.latestTimeoutMs);
+  } finally {
+    recordStartupTiming("cli.getTargetCliVersion", startedAt);
+  }
 }
 
 export async function upgradeTargetCli(

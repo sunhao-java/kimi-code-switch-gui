@@ -36,6 +36,7 @@ import { getPanelSettings, initPanelSettingsStore, savePanelSettings } from "./p
 import * as backup from "./backup";
 import { setupTray, teardownTray } from "./tray";
 import * as officialAccounts from "./officialAccounts";
+import { recordStartupTiming, startupTimingNow } from "../startupTiming";
 
 const skillFileAccess = {
   readText: (path: string) => tauriFileAccess.readText(path),
@@ -52,6 +53,7 @@ let usageOpen = false;
 let currentAppState: AppState | null = null;
 let shortcutSyncTask: Promise<void> = Promise.resolve();
 let startupKimiCodeDetection: AppState["kimiTargetDetection"] | null = null;
+let startupKimiCodeDetectionTask: Promise<AppState["kimiTargetDetection"]> | null = null;
 
 type LoadStatePaths = {
   configTarget?: AppState["configTarget"];
@@ -73,21 +75,130 @@ function activeProfile(): string {
 
 async function getStartupKimiCodeDetection(): Promise<AppState["kimiTargetDetection"]> {
   if (startupKimiCodeDetection) return startupKimiCodeDetection;
-  const detection = await cli.detectActiveKimiTarget();
-  const version = await cli.getTargetCliVersion("kimi-code", { checkLatest: true });
-  startupKimiCodeDetection = {
-    ...detection,
-    installed: version.installed,
-    status: version.installed ? "detected" : "not-installed",
-    version: version.version,
-    latestVersion: version.latestVersion,
-    hasUpdate: version.hasUpdate,
-    packageName: version.packageName,
-    installCommand: version.installCommand,
-    updateCommand: version.updateCommand,
-    installSource: version.installSource ?? detection.installSource,
+  if (startupKimiCodeDetectionTask) return startupKimiCodeDetectionTask;
+  const startedAt = startupTimingNow();
+  startupKimiCodeDetectionTask = Promise.all([
+    cli.detectActiveKimiTarget(),
+    cli.getTargetCliVersion("kimi-code"),
+  ]).then(([detection, version]) => {
+    startupKimiCodeDetection = {
+      ...detection,
+      installed: version.installed,
+      status: version.installed ? "detected" : "not-installed",
+      version: version.version,
+      latestVersion: version.latestVersion,
+      hasUpdate: version.hasUpdate,
+      packageName: version.packageName,
+      installCommand: version.installCommand,
+      updateCommand: version.updateCommand,
+      installSource: version.installSource ?? detection.installSource,
+    };
+    return startupKimiCodeDetection;
+  }).finally(() => {
+    startupKimiCodeDetectionTask = null;
+    recordStartupTiming("kimiSwitch.getStartupKimiCodeDetection", startedAt);
+  });
+  return startupKimiCodeDetectionTask;
+}
+
+function createPendingKimiCodeDetection(): NonNullable<AppState["kimiTargetDetection"]> {
+  return {
+    target: "kimi-code",
+    installed: false,
+    status: "checking",
+    version: "",
+    executablePath: "",
+    resolvedPath: "",
+    candidates: [],
+    reason: "startup-detection-pending",
+    installSource: "unknown",
+    packageName: "Kimi Code",
+    installCommand: "brew install kimi-code",
+    updateCommand: "brew upgrade kimi-code",
   };
-  return startupKimiCodeDetection;
+}
+
+function syncDetectedKimiTargetToState(detection: AppState["kimiTargetDetection"]): void {
+  if (!detection || !currentAppState) return;
+  currentAppState = {
+    ...currentAppState,
+    kimiTargetDetection: detection,
+  };
+  window.dispatchEvent(new CustomEvent("kimi-target-detection", { detail: detection }));
+}
+
+function refreshStartupKimiCodeDetection(): Promise<AppState["kimiTargetDetection"]> {
+  return getStartupKimiCodeDetection().then((detection) => {
+    syncDetectedKimiTargetToState(detection);
+    return detection;
+  });
+}
+
+async function runPostLoadMaintenance(
+  state: AppState,
+  effectivePaths: LoadStatePaths,
+  migrateMcpFromJson: (path: string) => Promise<unknown>,
+): Promise<void> {
+  const startedAt = startupTimingNow();
+  try {
+    try {
+      const result = await invoke<string>("migrate_legacy_database");
+      if (result.includes("Migrated")) {
+        console.log("Legacy database migration:", result);
+      }
+    } catch (err) {
+      console.warn("Legacy database migration skipped:", err);
+    }
+
+    try {
+      const migration = await migrateLegacyKimiCliConfigToKimiCode(tauriFileAccess);
+      if (migration.migrated) {
+        console.log("Legacy Kimi CLI config migrated to Kimi Code:", migration);
+      }
+    } catch (err) {
+      console.warn("Legacy Kimi CLI config migration skipped:", err);
+    }
+
+    try {
+      const migrationPaths = new Set([
+        effectivePaths.mcpConfigPath,
+        getDefaultMcpConfigPath("kimi-code"),
+        "~/.kimi-code/mcp.json",
+        "~/.kimi/mcp.json",
+        "~/.kimi/config.mcp.json",
+      ].filter((path): path is string => Boolean(path)));
+      for (const path of migrationPaths) {
+        await migrateMcpFromJson(path);
+      }
+    } catch (err) {
+      console.warn("MCP migration skipped:", err);
+    }
+
+    const currentSettings = await getPanelSettings();
+    if (!currentSettings) return;
+    const needsPanelSync =
+      currentSettings.config_target !== state.panelSettings.config_target ||
+      currentSettings.config_path !== state.panelSettings.config_path ||
+      currentSettings.active_profile !== state.activeProfile ||
+      JSON.stringify(currentSettings.profiles ?? {}) !== JSON.stringify(state.profiles ?? {}) ||
+      JSON.stringify(currentSettings.mcp_servers ?? {}) !== JSON.stringify(state.mcpConfig.mcpServers ?? {}) ||
+      (currentSettings.active_official_account_id ?? "") !== (state.panelSettings.active_official_account_id ?? "");
+    if (needsPanelSync) {
+      await savePanelSettings({
+        ...currentSettings,
+        config_target: state.panelSettings.config_target,
+        config_path: state.panelSettings.config_path,
+        profiles: state.profiles,
+        active_profile: state.activeProfile,
+        mcp_servers: state.mcpConfig.mcpServers,
+        active_official_account_id: state.panelSettings.active_official_account_id ?? "",
+        profiles_path: "",
+        follow_config_profiles: true,
+      });
+    }
+  } finally {
+    recordStartupTiming("kimiSwitch.runPostLoadMaintenance", startedAt);
+  }
 }
 
 /**
@@ -180,8 +291,10 @@ function notImplemented(name: string): never {
 export const kimiSwitchTauri = {
   // ── 核心状态链路 ──
   loadState: async (paths?: LoadStatePaths): Promise<AppState> => {
+    const loadStartedAt = startupTimingNow();
     // 确保数据库打开（panel_settings 依赖数据库连接）
     if (!usageOpen) {
+      const dbStartedAt = startupTimingNow();
       // 迁移数据库文件到 .panel 目录（如果还在根目录）
       const oldDbPath = "~/.kimi/app.db";
       const newDbPath = USAGE_DB_PATH; // ~/.kimi-code/.panel/app.db
@@ -208,93 +321,44 @@ export const kimiSwitchTauri = {
       await usageDb.open(USAGE_DB_PATH);
       await initConfigHistory();
 
-      // 自动迁移旧数据库（如果存在）
-      try {
-        const result = await invoke<string>("migrate_legacy_database");
-        if (result.includes("Migrated")) {
-          console.log("Legacy database migration:", result);
-        }
-      } catch (err) {
-        console.warn("Legacy database migration skipped:", err);
-      }
-
       usageOpen = true;
+      recordStartupTiming("kimiSwitch.loadState.database", dbStartedAt);
     }
 
     // 初始化 panel_settings_store 表
+    const storeStartedAt = startupTimingNow();
     await initPanelSettingsStore();
 
     // 初始化 mcp_servers_store 表
     const { initMcpServersStore, migrateMcpFromJson } = await import("./mcpServersStore");
     await initMcpServersStore();
     await officialAccounts.initOfficialAccountsStore();
+    recordStartupTiming("kimiSwitch.loadState.stores", storeStartedAt);
 
-    const detectedTarget = await getStartupKimiCodeDetection();
     const effectiveTarget = "kimi-code";
     const effectivePaths: LoadStatePaths = {
       ...paths,
       configTarget: effectiveTarget,
     };
 
-    try {
-      const migration = await migrateLegacyKimiCliConfigToKimiCode(tauriFileAccess);
-      if (migration.migrated) {
-        console.log("Legacy Kimi CLI config migrated to Kimi Code:", migration);
-      }
-    } catch (err) {
-      console.warn("Legacy Kimi CLI config migration skipped:", err);
-    }
-
-    // 自动迁移 mcp.json 到数据库（如果存在）
-    try {
-      const migrationTarget = effectiveTarget;
-      const migrationPaths = new Set([
-        effectivePaths.mcpConfigPath,
-        getDefaultMcpConfigPath(migrationTarget),
-        "~/.kimi-code/mcp.json",
-        "~/.kimi/mcp.json",
-        "~/.kimi/config.mcp.json",
-      ].filter((path): path is string => Boolean(path)));
-      for (const path of migrationPaths) {
-        await migrateMcpFromJson(path);
-      }
-    } catch (err) {
-      console.warn("MCP migration skipped:", err);
-    }
-
+    const stateStartedAt = startupTimingNow();
     const state = await loadAppState(tauriFileAccess, effectivePaths);
-    state.kimiTargetDetection = detectedTarget;
+    recordStartupTiming("kimiSwitch.loadState.loadAppState", stateStartedAt);
+    state.kimiTargetDetection = startupKimiCodeDetection ?? createPendingKimiCodeDetection();
     try {
+      const accountStartedAt = startupTimingNow();
       const accountStatus = await officialAccounts.getOfficialAccountCredentialsStatus();
       state.panelSettings.active_official_account_id = accountStatus.active_account_id;
+      recordStartupTiming("kimiSwitch.loadState.accountStatus", accountStartedAt);
     } catch (err) {
       console.warn("Official account status load skipped:", err);
     }
     currentAppState = state;
 
-    const currentSettings = await getPanelSettings();
-    if (currentSettings) {
-      const needsPanelSync =
-        currentSettings.config_target !== state.panelSettings.config_target ||
-        currentSettings.config_path !== state.panelSettings.config_path ||
-        currentSettings.active_profile !== state.activeProfile ||
-        JSON.stringify(currentSettings.profiles ?? {}) !== JSON.stringify(state.profiles ?? {}) ||
-        JSON.stringify(currentSettings.mcp_servers ?? {}) !== JSON.stringify(state.mcpConfig.mcpServers ?? {}) ||
-        (currentSettings.active_official_account_id ?? "") !== (state.panelSettings.active_official_account_id ?? "");
-      if (needsPanelSync) {
-        void savePanelSettings({
-          ...currentSettings,
-          config_target: state.panelSettings.config_target,
-          config_path: state.panelSettings.config_path,
-          profiles: state.profiles,
-          active_profile: state.activeProfile,
-          mcp_servers: state.mcpConfig.mcpServers,
-          active_official_account_id: state.panelSettings.active_official_account_id ?? "",
-          profiles_path: "",
-          follow_config_profiles: true,
-        }).catch((err) => console.warn("Failed to sync detected config target:", err));
-      }
-    }
+    void runPostLoadMaintenance(state, effectivePaths, migrateMcpFromJson)
+      .catch((err) => console.warn("Post-load maintenance skipped:", err));
+    void refreshStartupKimiCodeDetection()
+      .catch((err) => console.warn("Kimi Code detection skipped:", err));
 
     if (state.panelSettings.insights_status === "enabled") {
       void ensureUsageRuntime().catch((e) => console.error("usage runtime", e));
@@ -302,7 +366,8 @@ export const kimiSwitchTauri = {
     if (state.panelSettings.tray_icon) {
       void setupTray(() => currentAppState, () => window.dispatchEvent(new Event("kimi-tray-reload"))).catch((e) => console.error("tray", e));
     }
-    await syncWindowToggleShortcut();
+    void syncWindowToggleShortcut().catch((e) => console.error("shortcut", e));
+    recordStartupTiming("kimiSwitch.loadState.total", loadStartedAt);
     return state;
   },
   saveState: async (state: AppState): Promise<SaveStateResult> => {
@@ -473,8 +538,12 @@ export const kimiSwitchTauri = {
 
   // ── CLI / MCP / 连通性 ──
   getInstallSource: (): Promise<"homebrew" | "manual" | "development"> => Promise.resolve("manual"),
-  getCliVersion: (options?: { checkLatest?: boolean; target?: AppState["configTarget"] }) =>
-    cli.getTargetCliVersion(options?.target ?? "kimi-code", { checkLatest: options?.checkLatest }),
+  getCliVersion: (options?: { checkLatest?: boolean; latestTimeoutMs?: number; target?: AppState["configTarget"] }) =>
+    cli.getTargetCliVersion(options?.target ?? "kimi-code", {
+      checkLatest: options?.checkLatest,
+      latestTimeoutMs: options?.latestTimeoutMs,
+    }),
+  refreshKimiTargetDetection: () => refreshStartupKimiCodeDetection(),
   runProvidersHealthCheck: (state: AppState) => cli.runProvidersHealthCheck(state),
   upgradeKimiCli: (target?: AppState["configTarget"], options?: { install?: boolean }) =>
     cli.upgradeTargetCli(target ?? "kimi-code", options),

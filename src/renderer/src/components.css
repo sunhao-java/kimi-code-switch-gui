@@ -6664,6 +6664,12 @@ textarea:focus-visible {
   color: #ffd27d;
 }
 
+.config-target-status.is-pending {
+  border-color: rgba(var(--primary-rgb), 0.36);
+  background: rgba(var(--primary-rgb), 0.1);
+  color: rgb(var(--primary-rgb));
+}
+
 .config-target-status.is-danger {
   border-color: rgba(255, 112, 112, 0.38);
   background: rgba(255, 112, 112, 0.1);

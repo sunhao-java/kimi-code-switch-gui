@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { MutableRefObject } from "react";
 
@@ -11,6 +11,7 @@ import { applyPrimarySelections, getDefaultPrimarySelections, getRetainedPrimary
 import { applyAppearanceMode, applyAppearanceTheme, applyUiFontSize, createFallbackState } from "./tabComponents";
 import { isExternalChangeConflict } from "./useSafetyActions";
 import { initBackupBaseline, maybeBackupAfterSave, maybeRunScheduledBackup } from "./backupAuto";
+import { recordStartupTiming, startupTimingNow } from "./startupTiming";
 
 interface AppPersistenceContext {
   state: AppState;
@@ -66,7 +67,75 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     setSelectedMcpServer,
   } = ctx;
 
+  useEffect(() => {
+    const onKimiTargetDetection = (event: Event): void => {
+      const detection = (event as CustomEvent<AppState["kimiTargetDetection"]>).detail;
+      if (!detection) return;
+      setState((current) => ({
+        ...current,
+        kimiTargetDetection: detection,
+      }));
+      setSavedState((current) => current
+        ? {
+          ...current,
+          kimiTargetDetection: detection,
+        }
+        : current);
+    };
+    window.addEventListener("kimi-target-detection", onKimiTargetDetection);
+    return () => window.removeEventListener("kimi-target-detection", onKimiTargetDetection);
+  }, [setSavedState, setState]);
+
+  const runPostLoadTasks = useCallback((normalized: AppState, api: NonNullable<ReturnType<typeof getApi>>): void => {
+    void (async () => {
+      const startedAt = startupTimingNow();
+      try {
+        if (api.captureSnapshot && api.runDoctor) {
+          const snapshotStartedAt = startupTimingNow();
+          const [snapshot, doctor] = await Promise.all([
+            api.captureSnapshot(normalized),
+            api.runDoctor(normalized),
+          ]);
+          recordStartupTiming("useAppPersistence.captureSnapshotAndDoctor", snapshotStartedAt);
+          setFileSnapshot(snapshot);
+          setDoctorReport(doctor);
+        }
+      } catch (err) {
+        setDiagnostics((current) => ({
+          ...current,
+          lastError: err instanceof Error ? err.message : String(err),
+        }));
+      }
+
+      try {
+        const skillsStartedAt = startupTimingNow();
+        await refreshSkills(normalized, { silent: true });
+        recordStartupTiming("useAppPersistence.refreshSkills", skillsStartedAt);
+      } catch (err) {
+        setDiagnostics((current) => ({
+          ...current,
+          lastError: err instanceof Error ? err.message : String(err),
+        }));
+      }
+
+      try {
+        const backupStartedAt = startupTimingNow();
+        await initBackupBaseline(normalized);
+        recordStartupTiming("useAppPersistence.initBackupBaseline", backupStartedAt);
+        void maybeRunScheduledBackup(normalized);
+      } catch (err) {
+        setDiagnostics((current) => ({
+          ...current,
+          lastError: err instanceof Error ? err.message : String(err),
+        }));
+      } finally {
+        recordStartupTiming("useAppPersistence.postLoadTasks", startedAt);
+      }
+    })();
+  }, [refreshSkills, setDiagnostics, setDoctorReport, setFileSnapshot]);
+
   const loadState = useCallback(async (): Promise<void> => {
+    const loadStartedAt = startupTimingNow();
     const api = getApi();
     if (!api) {
       setState(createFallbackState());
@@ -86,7 +155,9 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
         preload: "ok",
         loadState: "pending",
       }));
+      const apiLoadStartedAt = startupTimingNow();
       const next = await api.loadState();
+      recordStartupTiming("useAppPersistence.api.loadState", apiLoadStartedAt);
       const normalized = normalizeStatePaths(next);
       setState(normalized);
       setSavedState(normalized);
@@ -99,17 +170,10 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
         setSelectedProfile,
         setSelectedMcpServer,
       });
+      const previewStartedAt = startupTimingNow();
       const nextPreview = await api.previewState(normalized);
-      if (api.captureSnapshot && api.runDoctor) {
-        const [snapshot, doctor] = await Promise.all([
-          api.captureSnapshot(normalized),
-          api.runDoctor(normalized),
-        ]);
-        setFileSnapshot(snapshot);
-        setDoctorReport(doctor);
-      }
+      recordStartupTiming("useAppPersistence.api.previewState", previewStartedAt);
       setPreview(nextPreview);
-      await refreshSkills(normalized, { silent: true });
       setError("");
       setNotice("");
       setDiagnostics({
@@ -118,9 +182,8 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
         previewState: "ok",
         lastError: "",
       });
-      // 设置自动备份会话基线，并在定时备份到期时补做一次。
-      await initBackupBaseline(normalized);
-      void maybeRunScheduledBackup(normalized);
+      runPostLoadTasks(normalized, api);
+      recordStartupTiming("useAppPersistence.loadState.total", loadStartedAt);
     } catch (loadError) {
       const fallback = createFallbackState();
       setState(fallback);
@@ -138,11 +201,9 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
       }));
     }
   }, [
-    refreshSkills,
+    runPostLoadTasks,
     setDiagnostics,
-    setDoctorReport,
     setError,
-    setFileSnapshot,
     setNotice,
     setPreview,
     setSavedState,
