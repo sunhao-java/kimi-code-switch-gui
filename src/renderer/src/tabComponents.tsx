@@ -27,7 +27,7 @@ import { useDialogEscape, useFocusTrap } from "./dialogs";
 import { parseEndpointUrl } from "./endpointUtils";
 import { t, translateError } from "./i18n";
 import {
-  ActionFooter, Field, MultiSelectField,
+  ActionFooter, CompactSelect, Field, MultiSelectField,
   ReadOnlyField, SelectField, Toggle,
 } from "./formControls";
 
@@ -484,12 +484,15 @@ function McpToolWorkbench(props: {
       <div className="mcp-tool-grid">
         <label className="field mcp-tool-select">
           <span>{t(props.locale, "mcpToolSelect")}</span>
-          <select value={selectedTool} onChange={(event) => setSelectedTool(event.target.value)} disabled={!tools.length}>
-            {tools.length ? null : <option value="">{t(props.locale, "mcpToolEmpty")}</option>}
-            {tools.map((tool) => (
-              <option key={tool.name} value={tool.name}>{tool.name}</option>
-            ))}
-          </select>
+          <CompactSelect
+            ariaLabel={t(props.locale, "mcpToolSelect")}
+            value={selectedTool}
+            disabled={!tools.length}
+            options={tools.length
+              ? tools.map((tool) => ({ value: tool.name, label: tool.name }))
+              : [{ value: "", label: t(props.locale, "mcpToolEmpty") }]}
+            onChange={setSelectedTool}
+          />
           <small>{selectedToolInfo?.description || t(props.locale, "mcpToolDescriptionFallback")}</small>
         </label>
         <div className="mcp-tool-args-panel">
@@ -504,13 +507,15 @@ function McpToolWorkbench(props: {
                     <code>{field.type}</code>
                   </span>
                   {field.enumValues?.length ? (
-                    <select
+                    <CompactSelect
+                      ariaLabel={field.name}
                       value={String(argValues[field.name] ?? "")}
-                      onChange={(event) => setArgValues((current) => ({ ...current, [field.name]: event.target.value }))}
-                    >
-                      <option value="">{t(props.locale, "selectPlaceholder")}</option>
-                      {field.enumValues.map((item) => <option key={item} value={item}>{item}</option>)}
-                    </select>
+                      options={[
+                        { value: "", label: t(props.locale, "selectPlaceholder") },
+                        ...field.enumValues.map((item) => ({ value: item, label: item })),
+                      ]}
+                      onChange={(value) => setArgValues((current) => ({ ...current, [field.name]: value }))}
+                    />
                   ) : field.type.includes("boolean") ? (
                     <Toggle
                       checked={Boolean(argValues[field.name])}
@@ -1608,7 +1613,7 @@ export function createFallbackState(): AppState {
     backup_frequency: "daily" as BackupFrequency,
     backup_retention_count: 10,
     backup_destination_type: "local" as BackupDestinationType,
-    backup_local_path: "~/.kimi-code/.panel/backups",
+    backup_local_path: "~/.kimi-code-switch-gui/backups",
     backup_webdav_url: "",
     backup_webdav_username: "",
     backup_webdav_password: "",
@@ -1621,7 +1626,7 @@ export function createFallbackState(): AppState {
     configPath: panelSettings.config_path,
     configTarget: "kimi-code",
     profilesPath: "",
-    panelSettingsPath: "~/.kimi-code/.panel/config.panel.toml",
+    panelSettingsPath: "~/.kimi-code-switch-gui/config.panel.toml",
     mcpConfigPath: "~/.kimi-code/mcp.json",
     mainConfig: {
       default_model: "",

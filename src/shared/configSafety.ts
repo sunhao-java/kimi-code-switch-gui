@@ -213,7 +213,7 @@ function validateModelReferences(state: AppState, issues: DoctorIssue[]): void {
     );
   }
 
-  if (!state.profiles[state.activeProfile]) {
+  if (Object.keys(state.profiles).length > 0 && !state.profiles[state.activeProfile]) {
     issues.push(
       createDoctorIssue(
         "profiles.active-profile.missing",

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Activity, Braces, Bug, Copy, Download, ExternalLink, FileInput, FolderOpen, History, LoaderCircle, LogIn, Plus, Power, RefreshCw, RotateCcw, Star, Terminal, Trash2, Upload, X } from "lucide-react";
-import { applyProfile, cloneProfile, deleteModel, deleteProfile, deleteProvider, exportConfig, getImportPreview, importConfig, toggleFavorite, validateImportData, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
+import { Activity, Braces, Bug, CircleCheckBig, Copy, Download, ExternalLink, FileInput, FolderOpen, History, LoaderCircle, LogIn, Plus, Power, RefreshCw, RotateCcw, Save, Star, Terminal, Trash2, Upload, X } from "lucide-react";
+import { applyProfile, cloneProfile, createDefaultKimiCodeEnvironment, deleteModel, deleteProfile, deleteProvider, exportConfig, getImportPreview, getKimiCodeConfigPath, getKimiCodeMcpConfigPath, getKimiCodeSkillsPath, getKimiCodeEnvironmentHomePath, importConfig, normalizeKimiCodeEnvironments, toggleFavorite, validateImportData, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
 import { buildMcpConfigDocument } from "@shared/mcpStore";
 import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
 import { getCascadePreview } from "@shared/configRelations";
@@ -25,6 +25,7 @@ import type {
   ImportConflictStrategy,
   ImportPreview,
   KimiCodeInstallSource,
+  KimiCodeEnvironment,
   Locale,
   OfficialAccount,
   ShortcutAction,
@@ -43,7 +44,7 @@ import {
 } from "../appOptions";
 import { useDialogEscape, useFocusTrap } from "../dialogs";
 import { ErrorBoundary } from "../ErrorBoundary";
-import { Field, FontSizeSliderField, SelectField, SettingsGroup, ShortcutRecorderField } from "../formControls";
+import { CompactSelect, Field, FontSizeSliderField, SelectField, SettingsGroup, ShortcutRecorderField } from "../formControls";
 import { t, translateError } from "../i18n";
 import { InsightsSettingsPanel, InsightsDashboard } from "../insightsComponents";
 import { EmptyState, SplitLayout } from "../layoutComponents";
@@ -123,6 +124,7 @@ type TabPanelsProps = Pick<
   | "onSave"
   | "persistState"
   | "confirmDeleteResource"
+  | "requestConfirm"
   | "refreshSkills"
   | "openDocumentViewer"
   | "runManualBackup"
@@ -132,6 +134,8 @@ type TabPanelsProps = Pick<
   | "setActiveTab"
   | "setError"
   | "setNotice"
+  | "setExternalChange"
+  | "setFileSnapshot"
   | "openKimiInTerminal"
   | "loadState"
 > & {
@@ -139,7 +143,14 @@ type TabPanelsProps = Pick<
   onRequestCascadeDelete: (type: "provider" | "model", name: string) => void;
 };
 
-type SettingsSubTab = "general" | "config-target" | "shortcuts" | "backup" | "doctor" | "insights" | "history" | "about";
+type SettingsSubTab = "general" | "config-target" | "kimi-environment" | "official-accounts" | "shortcuts" | "backup" | "doctor" | "insights" | "history";
+
+type CreateEnvironmentDraft = {
+  id: string;
+  name: string;
+  description: string;
+  sourceEnvironmentId: string;
+};
 
 type KimiOAuthLoginState = {
   status: "idle" | "running" | "success" | "failed" | "account-required";
@@ -199,6 +210,21 @@ function oauthMessageKeyForEvent(event: KimiOAuthLoginEvent): string {
     default:
       return "kimiOauthWaiting";
   }
+}
+
+const ENVIRONMENT_ID_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+function buildKimiCodeEnvironmentId(environments: KimiCodeEnvironment[]): string {
+  const usedIds = new Set(environments.map((environment) => environment.id));
+  let attempts = 0;
+  while (attempts < 100) {
+    const id = Array.from({ length: 5 }, () => ENVIRONMENT_ID_ALPHABET[Math.floor(Math.random() * ENVIRONMENT_ID_ALPHABET.length)]).join("");
+    if (!usedIds.has(id)) {
+      return id;
+    }
+    attempts += 1;
+  }
+  throw new Error("Unable to generate a unique Kimi Code environment identifier.");
 }
 
 export function TabPanels(props: TabPanelsProps): JSX.Element {
@@ -267,6 +293,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     onSave,
     persistState,
     confirmDeleteResource,
+    requestConfirm,
     refreshSkills,
     openDocumentViewer,
     runManualBackup,
@@ -276,6 +303,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     setActiveTab,
     setError,
     setNotice,
+    setExternalChange,
+    setFileSnapshot,
     openKimiInTerminal,
     loadState,
     shortcuts,
@@ -322,6 +351,182 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
         return targetDetection?.installed ? t(locale, "configTargetInstallSourceUnknown") : t(locale, "overviewCliNotFound");
     }
   };
+  const [environmentDrafts, setEnvironmentDrafts] = useState<Record<string, Pick<KimiCodeEnvironment, "name" | "homePath" | "description">>>({});
+  const [createEnvironmentDraft, setCreateEnvironmentDraft] = useState<CreateEnvironmentDraft | null>(null);
+  const [selectedKimiCodeEnvironmentId, setSelectedKimiCodeEnvironmentId] = useState<string | null>(null);
+  const kimiCodeEnvironments = normalizeKimiCodeEnvironments(state.panelSettings.kimi_code_environments);
+  const activeKimiCodeEnvironment = kimiCodeEnvironments.find((environment) => environment.id === state.panelSettings.active_kimi_code_environment_id)
+    ?? kimiCodeEnvironments[0]
+    ?? createDefaultKimiCodeEnvironment();
+  const selectedKimiCodeEnvironment = kimiCodeEnvironments.find((environment) => environment.id === selectedKimiCodeEnvironmentId)
+    ?? activeKimiCodeEnvironment;
+  const saveKimiCodeEnvironments = async (
+    environments: KimiCodeEnvironment[],
+    activeEnvironmentId = activeKimiCodeEnvironment.id,
+  ): Promise<void> => {
+    const api = getApi();
+    if (!api?.saveKimiCodeEnvironmentPreference) {
+      throw new Error("Kimi Switch API does not support Kimi Code environment management.");
+    }
+    const normalized = normalizeKimiCodeEnvironments(environments);
+    setExternalChange(null);
+    setFileSnapshot(null);
+    const result = await api.saveKimiCodeEnvironmentPreference(normalized, activeEnvironmentId);
+    setFileSnapshot(result.snapshot);
+    await loadState();
+  };
+  const buildNextEnvironmentSeed = (): CreateEnvironmentDraft => {
+    const nextIndex = kimiCodeEnvironments.length + 1;
+    let suffix = nextIndex;
+    const usedIds = new Set(kimiCodeEnvironments.map((environment) => environment.id));
+    while (usedIds.has(`env-${suffix}`)) {
+      suffix += 1;
+    }
+    return {
+      id: buildKimiCodeEnvironmentId(kimiCodeEnvironments),
+      name: formatMessage(t(locale, "kimiCodeEnvironmentDefaultName"), { index: suffix }),
+      description: "",
+      sourceEnvironmentId: "",
+    };
+  };
+  const addKimiCodeEnvironment = (): void => {
+    setCreateEnvironmentDraft(buildNextEnvironmentSeed());
+  };
+  const createKimiCodeEnvironment = (draft: CreateEnvironmentDraft): void => {
+    void (async () => {
+      if (!draft.name.trim()) {
+        setError(t(locale, "kimiCodeEnvironmentRequired"));
+        return;
+      }
+      const timestamp = new Date().toISOString();
+      const id = draft.id;
+      if (!id || kimiCodeEnvironments.some((environment) => environment.id === id)) {
+        setError(t(locale, "kimiCodeEnvironmentIdentifierConflict"));
+        return;
+      }
+      const homePath = getKimiCodeEnvironmentHomePath(id);
+      const sourceEnvironment = draft.sourceEnvironmentId
+        ? kimiCodeEnvironments.find((environment) => environment.id === draft.sourceEnvironmentId)
+        : undefined;
+      if (sourceEnvironment) {
+        const { copyDir } = await import("../tauri/fileAccess");
+        await copyDir(sourceEnvironment.homePath, homePath);
+      }
+      const sourceSnapshot = sourceEnvironment?.id === activeKimiCodeEnvironment.id
+        ? {
+            mainConfig: state.mainConfig,
+            profiles: state.profiles,
+            activeProfile: state.activeProfile,
+            mcpServers: state.mcpConfig.mcpServers,
+          }
+        : sourceEnvironment;
+      const nextEnvironment: KimiCodeEnvironment = {
+        id,
+        name: draft.name.trim(),
+        homePath,
+        description: draft.description.trim(),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        sourceEnvironmentId: sourceEnvironment?.id,
+        mainConfig: sourceSnapshot?.mainConfig ? structuredClone(sourceSnapshot.mainConfig) : undefined,
+        profiles: sourceSnapshot?.profiles ? structuredClone(sourceSnapshot.profiles) : {},
+        activeProfile: sourceSnapshot?.activeProfile ?? "",
+        mcpServers: sourceSnapshot?.mcpServers ? structuredClone(sourceSnapshot.mcpServers) : {},
+      };
+      await saveKimiCodeEnvironments([...kimiCodeEnvironments, nextEnvironment], nextEnvironment.id);
+      setCreateEnvironmentDraft(null);
+      setNotice(t(locale, "kimiCodeEnvironmentSaved"));
+    })().catch((error) => setError(error instanceof Error ? error.message : String(error)));
+  };
+  const environmentDraftFor = (environment: KimiCodeEnvironment): Pick<KimiCodeEnvironment, "name" | "homePath" | "description"> => (
+    environmentDrafts[environment.id] ?? {
+      name: environment.name,
+      homePath: environment.homePath,
+      description: environment.description ?? "",
+    }
+  );
+  const updateEnvironmentDraft = (id: string, patch: Partial<Pick<KimiCodeEnvironment, "name" | "homePath" | "description">>): void => {
+    setEnvironmentDrafts((current) => {
+      const environment = kimiCodeEnvironments.find((item) => item.id === id);
+      if (!environment) {
+        return current;
+      }
+      return {
+        ...current,
+        [id]: {
+          name: environment.name,
+          homePath: environment.homePath,
+          description: environment.description ?? "",
+          ...current[id],
+          ...patch,
+        },
+      };
+    });
+  };
+  const saveKimiCodeEnvironment = (id: string): void => {
+    void (async () => {
+      const draft = environmentDrafts[id];
+      if (!draft) {
+        return;
+      }
+      if (!draft.name.trim() || !draft.homePath.trim()) {
+        setError(t(locale, "kimiCodeEnvironmentRequired"));
+        return;
+      }
+      const next = kimiCodeEnvironments.map((environment) => environment.id === id
+        ? {
+          ...environment,
+          name: draft.name.trim(),
+          description: draft.description?.trim() ?? "",
+          updatedAt: new Date().toISOString(),
+        }
+        : environment);
+      await saveKimiCodeEnvironments(next, activeKimiCodeEnvironment.id);
+      setEnvironmentDrafts((current) => {
+        const { [id]: _removed, ...rest } = current;
+        void _removed;
+        return rest;
+      });
+      setNotice(t(locale, "kimiCodeEnvironmentSaved"));
+    })().catch((error) => setError(error instanceof Error ? error.message : String(error)));
+  };
+  const activateKimiCodeEnvironment = (id: string): void => {
+    void (async () => {
+      await saveKimiCodeEnvironments(kimiCodeEnvironments, id);
+      setNotice(t(locale, "kimiCodeEnvironmentActivated"));
+    })().catch((error) => setError(error instanceof Error ? error.message : String(error)));
+  };
+  const deleteKimiCodeEnvironment = (environment: KimiCodeEnvironment): void => {
+    void (async () => {
+      if (environment.id === "default" || kimiCodeEnvironments.length <= 1) {
+        setError(t(locale, "kimiCodeEnvironmentCannotDelete"));
+        return;
+      }
+      const shouldDelete = await requestConfirm({
+        title: formatMessage(t(locale, "kimiCodeEnvironmentDeleteTitle"), {
+          name: environment.name || environment.id,
+        }),
+        description: formatMessage(t(locale, "kimiCodeEnvironmentDeleteDescription"), {
+          path: environment.homePath,
+        }),
+        confirmLabel: t(locale, "delete"),
+        cancelLabel: t(locale, "cancel"),
+        tone: "danger",
+        kind: "delete",
+      });
+      if (!shouldDelete) {
+        return;
+      }
+      const next = kimiCodeEnvironments.filter((item) => item.id !== environment.id);
+      const nextActiveId = activeKimiCodeEnvironment.id === environment.id
+        ? (next[0]?.id ?? "default")
+        : activeKimiCodeEnvironment.id;
+      await saveKimiCodeEnvironments(next, nextActiveId);
+      const { removeDir } = await import("../tauri/fileAccess");
+      await removeDir(environment.homePath);
+      setNotice(t(locale, "kimiCodeEnvironmentDeleted"));
+    })().catch((error) => setError(error instanceof Error ? error.message : String(error)));
+  };
   const renderInlineCodeMessage = (template: string, values: Record<string, string | number> = {}): JSX.Element => {
     const message = formatMessage(template, values);
     const parts = message.split(/(`[^`]+`)/g).filter(Boolean);
@@ -354,7 +559,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   const hasProviders = Object.keys(state.mainConfig.providers).length > 0;
   const hasModels = Object.keys(state.mainConfig.models).length > 0;
 
-  const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>(activeTab === "about" ? "about" : "config-target");
+  const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>("config-target");
   const [importDialog, setImportDialog] = useState<{ open: boolean; preview: ImportPreview | null; data: ExportBundle | null; strategy: ImportConflictStrategy }>({ open: false, preview: null, data: null, strategy: "skip" });
   const [isMcpJsonViewerOpen, setIsMcpJsonViewerOpen] = useState(false);
   const [providerHealthResults, setProviderHealthResults] = useState<ProviderHealthResult[] | null>(null);
@@ -503,6 +708,16 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
       description: t(locale, "settingsTabConfigTargetDescription"),
     },
     {
+      id: "kimi-environment",
+      label: t(locale, "settingsTabKimiEnvironment"),
+      description: t(locale, "settingsTabKimiEnvironmentDescription"),
+    },
+    {
+      id: "official-accounts",
+      label: t(locale, "settingsTabOfficialAccounts"),
+      description: t(locale, "settingsTabOfficialAccountsDescription"),
+    },
+    {
       id: "general",
       label: t(locale, "settingsTabGeneral"),
       description: t(locale, "settingsTabGeneralDescription"),
@@ -532,23 +747,18 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
       label: t(locale, "historyTitle"),
       description: t(locale, "historyTitle"),
     },
-    {
-      id: "about",
-      label: t(locale, "about"),
-      description: t(locale, "settingsTabAboutDescription"),
-    },
   ];
   const isSplitLayoutTab = activeTab === "providers"
     || activeTab === "models"
     || activeTab === "profiles"
     || activeTab === "mcp"
     || activeTab === "skills"
-    || activeTab === "settings"
-    || activeTab === "about";
+    || activeTab === "settings";
 
   return (
     <ErrorBoundary locale={locale}>
-      <div className={isSplitLayoutTab ? "tab-panel-shell tab-panel-shell-split" : "tab-panel-shell"}>
+      <>
+        <div className={isSplitLayoutTab ? "tab-panel-shell tab-panel-shell-split" : "tab-panel-shell"}>
         {activeTab === "overview" ? (
           <OverviewDashboard
             state={state}
@@ -1289,7 +1499,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
           />
         ) : null}
 
-        {activeTab === "settings" || activeTab === "about" ? (
+        {activeTab === "settings" ? (
           <SplitLayout
             listTitle={t(locale, "settings")}
             listItems={settingsSubTabs.map((tab) => tab.id)}
@@ -1312,6 +1522,52 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               {settingsSubTabs.find((tab) => tab.id === activeSettingsSubTab)?.label ?? t(locale, "settings")}
             </div>
             {activeSettingsSubTab === "config-target" ? (
+              <div className="settings-tab-panel">
+                <SettingsGroup title={t(locale, "settingsGroupConfigTarget")}>
+                  <div className="config-target-detection">
+                    <div className="config-target-detection-main">
+                      <div>
+                        <span>{t(locale, "configTargetLabel")}</span>
+                        <strong>{currentConfigTargetLabel}</strong>
+                      </div>
+                      <span className={`config-target-status ${targetDetectionStatusClass}`}>
+                        {targetDetectionStatusLabel}
+                      </span>
+                    </div>
+                    <div className="config-target-detection-grid">
+                      <div className="config-target-metric">
+                        <span>{t(locale, "configTargetVersion")}</span>
+                        <code>{targetDetection?.version || t(locale, "overviewCliNotFound")}</code>
+                      </div>
+                      <div className="config-target-metric">
+                        <span>{t(locale, "configTargetInstallSource")}</span>
+                        <code>{installSourceLabel(targetDetection?.installSource)}</code>
+                      </div>
+                      <div className="config-target-path">
+                        <span>{t(locale, "configTargetExecutable")}</span>
+                        <code>{targetDetection?.executablePath || "-"}</code>
+                      </div>
+                      <div className="config-target-path config-target-resolved-path">
+                        <span>{t(locale, "configTargetResolvedPath")}</span>
+                        <code>{targetDetection?.resolvedPath || "-"}</code>
+                      </div>
+                    </div>
+                    <p className="config-target-detection-note">
+                      {renderInlineCodeMessage(t(locale, "configTargetAutoDescription"))}
+                    </p>
+                    {targetDetection?.installed === false ? (
+                      <p className="config-target-install-warning">
+                        {formatMessage(t(locale, "configTargetInstallRequired"), {
+                          name: currentConfigTargetLabel,
+                          command: "brew install kimi-code",
+                        })}
+                      </p>
+                    ) : null}
+                  </div>
+                </SettingsGroup>
+              </div>
+            ) : null}
+            {activeSettingsSubTab === "official-accounts" ? (
               <div className="settings-tab-panel">
                 <div className={`oauth-login-panel oauth-login-${kimiCodeOAuthLogin.status}`}>
                   <div className="oauth-login-copy">
@@ -1414,66 +1670,172 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                     </div>
                   </div>
                 </SettingsGroup>
-                <SettingsGroup title={t(locale, "settingsGroupConfigTarget")}>
-                  <div className="config-target-detection">
-                    <div className="config-target-detection-main">
+              </div>
+            ) : null}
+            {activeSettingsSubTab === "kimi-environment" ? (
+              <div className="settings-tab-panel">
+                <SettingsGroup title={t(locale, "kimiCodeEnvironmentTitle")}>
+                  <div className="kimi-environment-panel">
+                    <div className="kimi-environment-summary">
                       <div>
-                        <span>{t(locale, "configTargetLabel")}</span>
-                        <strong>{currentConfigTargetLabel}</strong>
+                        <span>{t(locale, "kimiCodeEnvironmentActive")}</span>
+                        <strong>{activeKimiCodeEnvironment.name || activeKimiCodeEnvironment.id}</strong>
                       </div>
-                      <span className={`config-target-status ${targetDetectionStatusClass}`}>
-                        {targetDetectionStatusLabel}
-                      </span>
+                      <button className="action-button compact" type="button" onClick={addKimiCodeEnvironment}>
+                        <Plus size={13} />
+                        <span>{t(locale, "kimiCodeEnvironmentAdd")}</span>
+                      </button>
                     </div>
-                    <div className="config-target-detection-grid">
-                      <div className="config-target-metric">
-                        <span>{t(locale, "configTargetVersion")}</span>
-                        <code>{targetDetection?.version || t(locale, "overviewCliNotFound")}</code>
-                      </div>
-                      <div className="config-target-metric">
-                        <span>{t(locale, "configTargetInstallSource")}</span>
-                        <code>{installSourceLabel(targetDetection?.installSource)}</code>
-                      </div>
-                      <div className="config-target-path">
-                        <span>{t(locale, "configTargetExecutable")}</span>
-                        <code>{targetDetection?.executablePath || "-"}</code>
-                      </div>
-                      <div className="config-target-path config-target-resolved-path">
-                        <span>{t(locale, "configTargetResolvedPath")}</span>
-                        <code>{targetDetection?.resolvedPath || "-"}</code>
-                      </div>
+                    <div className="kimi-environment-table-wrap">
+                      <table className="kimi-environment-table">
+                        <thead>
+                          <tr>
+                            <th>{t(locale, "kimiCodeEnvironmentIdentifier")}</th>
+                            <th>{t(locale, "kimiCodeEnvironmentName")}</th>
+                            <th>{t(locale, "actions")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {kimiCodeEnvironments.map((environment) => {
+                            const draft = environmentDraftFor(environment);
+                            const isActive = environment.id === activeKimiCodeEnvironment.id;
+                            const isSelected = environment.id === selectedKimiCodeEnvironment.id;
+                            const isDirty = draft.name !== environment.name
+                              || (draft.description ?? "") !== (environment.description ?? "");
+                            return (
+                              <tr
+                                className={`${isActive ? "active" : ""} ${isSelected ? "selected" : ""}`.trim()}
+                                key={environment.id}
+                                onClick={() => setSelectedKimiCodeEnvironmentId(environment.id)}
+                              >
+                                <td>
+                                  <code className="kimi-environment-identifier" title={environment.id}>{environment.id}</code>
+                                </td>
+                                <td>
+                                  <div className="kimi-environment-name-cell">
+                                    <div className="kimi-environment-name-line">
+                                      <span className={isActive ? "status-dot active" : "status-dot"} />
+                                      <strong>{draft.name || environment.id}</strong>
+                                      {isDirty ? <span className="kimi-environment-dirty-dot" title={t(locale, "unsavedChanges")} /> : null}
+                                    </div>
+                                    <div className="kimi-environment-meta-line">
+                                      <span>{draft.description || t(locale, "kimiCodeEnvironmentDescription")}</span>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td>
+                                  <div className="kimi-environment-row-actions">
+                                    {isDirty ? (
+                                      <button
+                                        className="icon-button is-dirty"
+                                        type="button"
+                                        aria-label={t(locale, "saveProvider")}
+                                        title={t(locale, "saveProvider")}
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          saveKimiCodeEnvironment(environment.id);
+                                        }}
+                                      >
+                                        <Save size={15} />
+                                      </button>
+                                    ) : null}
+                                    <button
+                                      className={isActive ? "icon-button is-active" : "icon-button"}
+                                      type="button"
+                                      disabled={isActive}
+                                      aria-label={t(locale, "activate")}
+                                      title={t(locale, "activate")}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        activateKimiCodeEnvironment(environment.id);
+                                      }}
+                                    >
+                                      <CircleCheckBig size={15} />
+                                    </button>
+                                    <button
+                                      className="icon-button danger"
+                                      type="button"
+                                      disabled={environment.id === "default" || kimiCodeEnvironments.length <= 1}
+                                      aria-label={t(locale, "delete")}
+                                      title={t(locale, "delete")}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        deleteKimiCodeEnvironment(environment);
+                                      }}
+                                    >
+                                      <Trash2 size={15} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
-                    <p className="config-target-detection-note">
-                      {renderInlineCodeMessage(t(locale, "configTargetAutoDescription"))}
-                    </p>
-                    {targetDetection?.installed === false ? (
-                      <p className="config-target-install-warning">
-                        {formatMessage(t(locale, "configTargetInstallRequired"), {
-                          name: currentConfigTargetLabel,
-                          command: "brew install kimi-code",
-                        })}
-                      </p>
-                    ) : null}
+                    <div className="kimi-environment-editor">
+                      <div className="kimi-environment-editor-head">
+                        <div>
+                          <span>{selectedKimiCodeEnvironment.id === activeKimiCodeEnvironment.id ? t(locale, "kimiCodeEnvironmentActive") : t(locale, "kimiCodeEnvironment")}</span>
+                          <strong>{selectedKimiCodeEnvironment.name || selectedKimiCodeEnvironment.id}</strong>
+                        </div>
+                        {(() => {
+                          const draft = environmentDraftFor(selectedKimiCodeEnvironment);
+                          const isActiveSelected = selectedKimiCodeEnvironment.id === activeKimiCodeEnvironment.id;
+                          const isDirty = draft.name !== selectedKimiCodeEnvironment.name
+                            || (draft.description ?? "") !== (selectedKimiCodeEnvironment.description ?? "");
+                          return isDirty && !isActiveSelected ? (
+                            <button className="action-button compact" type="button" onClick={() => saveKimiCodeEnvironment(selectedKimiCodeEnvironment.id)}>
+                              <Save size={13} />
+                              <span>{t(locale, "saveProvider")}</span>
+                            </button>
+                          ) : null;
+                        })()}
+                      </div>
+                      {(() => {
+                        const draft = environmentDraftFor(selectedKimiCodeEnvironment);
+                        const isActiveSelected = selectedKimiCodeEnvironment.id === activeKimiCodeEnvironment.id;
+                        return (
+                          <>
+                            <div className="settings-inline-fields">
+                              <Field
+                                label={t(locale, "kimiCodeEnvironmentName")}
+                                value={draft.name}
+                                readOnly={isActiveSelected}
+                                onChange={(value) => updateEnvironmentDraft(selectedKimiCodeEnvironment.id, { name: value })}
+                              />
+                              <Field
+                                label={t(locale, "kimiCodeEnvironmentHomePath")}
+                                value={draft.homePath}
+                                readOnly
+                                onChange={() => {}}
+                              />
+                            </div>
+                            <Field
+                              label={t(locale, "kimiCodeEnvironmentDescription")}
+                              value={draft.description ?? ""}
+                              readOnly={isActiveSelected}
+                              onChange={(value) => updateEnvironmentDraft(selectedKimiCodeEnvironment.id, { description: value })}
+                            />
+                            <div className="kimi-environment-path-grid">
+                              <div>
+                                <span>{t(locale, "configPath")}</span>
+                                <code title={getKimiCodeConfigPath(draft.homePath)}>{getKimiCodeConfigPath(draft.homePath)}</code>
+                              </div>
+                              <div>
+                                <span>{t(locale, "mcpConfigPathLabel")}</span>
+                                <code title={getKimiCodeMcpConfigPath(draft.homePath)}>{getKimiCodeMcpConfigPath(draft.homePath)}</code>
+                              </div>
+                              <div>
+                                <span>{t(locale, "kimiCodeEnvironmentSkillsPath")}</span>
+                                <code title={getKimiCodeSkillsPath(draft.homePath)}>{getKimiCodeSkillsPath(draft.homePath)}</code>
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
                   </div>
-                </SettingsGroup>
-                <SettingsGroup title={t(locale, "settingsGroupPaths")}>
-                  <PathField
-                    locale={locale}
-                    label={t(locale, "configPath")}
-                    value={state.configPath}
-                    readOnly
-                    onView={() => openDocumentViewer("config")}
-                    onChange={() => {}}
-                  />
-                  <PathField
-                    locale={locale}
-                    label={t(locale, "mcpConfigPathLabel")}
-                    value={state.mcpConfigPath}
-                    readOnly
-                    fileType="json"
-                    onView={() => openDocumentViewer("mcp")}
-                    onChange={() => {}}
-                  />
                 </SettingsGroup>
               </div>
             ) : null}
@@ -1943,12 +2305,10 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             {activeSettingsSubTab === "insights" ? (
               <InsightsSettingsPanel locale={locale} onStateChange={() => void loadState()} />
             ) : null}
-            {activeSettingsSubTab === "about" ? (
-              <AboutPage locale={locale} embedded />
-            ) : null}
           </section>
           </SplitLayout>
         ) : null}
+        {activeTab === "about" ? <AboutPage locale={locale} /> : null}
         {importDialog.open && importDialog.preview && importDialog.data ? (
           <ImportPreviewDialog
             locale={locale}
@@ -1985,7 +2345,18 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             onCancel={() => setImportDialog({ open: false, preview: null, data: null, strategy: "skip" })}
           />
         ) : null}
-      </div>
+        </div>
+        {createEnvironmentDraft ? (
+          <CreateKimiCodeEnvironmentDialog
+            locale={locale}
+            environments={kimiCodeEnvironments}
+            draft={createEnvironmentDraft}
+            onChange={setCreateEnvironmentDraft}
+            onCancel={() => setCreateEnvironmentDraft(null)}
+            onCreate={createKimiCodeEnvironment}
+          />
+        ) : null}
+      </>
     </ErrorBoundary>
   );
 }
@@ -2073,14 +2444,16 @@ function ImportPreviewDialog(props: {
                 <h4>{t(locale, "importConflict")} ({preview.conflicts.length})</h4>
                 <div className="import-preview-strategy-inline">
                   <label>{t(locale, "importStrategy")}</label>
-                  <select
+                  <CompactSelect
+                    ariaLabel={t(locale, "importStrategy")}
                     value={strategy}
-                    onChange={(e) => onStrategyChange(e.target.value as ImportConflictStrategy)}
-                  >
-                    <option value="skip">{t(locale, "importStrategySkip")}</option>
-                    <option value="overwrite">{t(locale, "importStrategyOverwrite")}</option>
-                    <option value="rename">{t(locale, "importStrategyRename")}</option>
-                  </select>
+                    onChange={(value) => onStrategyChange(value as ImportConflictStrategy)}
+                    options={[
+                      { value: "skip", label: t(locale, "importStrategySkip") },
+                      { value: "overwrite", label: t(locale, "importStrategyOverwrite") },
+                      { value: "rename", label: t(locale, "importStrategyRename") },
+                    ]}
+                  />
                 </div>
               </div>
               <div className="import-preview-list">
@@ -2117,6 +2490,76 @@ function ImportPreviewDialog(props: {
         </div>
       </div>
     </div>
+  );
+}
+
+function CreateKimiCodeEnvironmentDialog(props: {
+  locale: Locale;
+  environments: KimiCodeEnvironment[];
+  draft: CreateEnvironmentDraft;
+  onChange: (draft: CreateEnvironmentDraft) => void;
+  onCancel: () => void;
+  onCreate: (draft: CreateEnvironmentDraft) => void;
+}): JSX.Element {
+  const { locale, environments, draft, onChange, onCancel, onCreate } = props;
+  const titleId = "create-kimi-environment-title";
+  const generatedId = draft.id;
+  const copyOptions = [
+    { value: "", label: t(locale, "kimiCodeEnvironmentCopyNone") },
+    ...environments.map((environment) => ({
+      value: environment.id,
+      label: environment.name || environment.id,
+    })),
+  ];
+  return createPortal(
+    <div className="dialog-overlay" role="presentation" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onCancel();
+    }}>
+      <div className="dialog create-environment-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <div className="dialog-header">
+          <h3 id={titleId}>{t(locale, "kimiCodeEnvironmentCreateTitle")}</h3>
+          <button className="icon-button" type="button" aria-label={t(locale, "close")} title={t(locale, "close")} onClick={onCancel}>
+            <X size={16} />
+          </button>
+        </div>
+        <div className="dialog-body create-environment-body">
+          <p>{t(locale, "kimiCodeEnvironmentCreateDescription")}</p>
+          <div className="field">
+            <span>{t(locale, "kimiCodeEnvironmentIdentifier")}</span>
+            <code className="environment-id-preview">{generatedId}</code>
+          </div>
+          <Field
+            label={t(locale, "kimiCodeEnvironmentName")}
+            value={draft.name}
+            onChange={(value) => onChange({ ...draft, name: value })}
+          />
+          <div className="field">
+            <span>{t(locale, "kimiCodeEnvironmentCopyFrom")}</span>
+            <CompactSelect
+              ariaLabel={t(locale, "kimiCodeEnvironmentCopyFrom")}
+              value={draft.sourceEnvironmentId}
+              options={copyOptions}
+              onChange={(value) => onChange({ ...draft, sourceEnvironmentId: value })}
+            />
+          </div>
+          <Field
+            label={t(locale, "kimiCodeEnvironmentDescription")}
+            value={draft.description}
+            onChange={(value) => onChange({ ...draft, description: value })}
+          />
+        </div>
+        <div className="dialog-footer">
+          <button className="action-button compact secondary" type="button" onClick={onCancel}>
+            {t(locale, "cancel")}
+          </button>
+          <button className="action-button compact" type="button" onClick={() => onCreate(draft)}>
+            <Plus size={13} />
+            <span>{t(locale, "kimiCodeEnvironmentCreate")}</span>
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

@@ -103,7 +103,7 @@ export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element 
             {terminalButton(activeEntry[0])}
           </div>
         </div>
-      ) : (
+      ) : entries.length > 0 ? (
         <div className="pcv-empty glass-panel">
           <p>{t(locale, "noActiveProfile")}</p>
           <button className="action-button" type="button" onClick={onAddNew}>
@@ -111,7 +111,7 @@ export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element 
             <span>{t(locale, "configureNew")}</span>
           </button>
         </div>
-      )}
+      ) : null}
 
       {otherEntries.length > 0 ? (
         <div className="pcv-list">
@@ -152,7 +152,7 @@ export function ProfileCentricView(props: ProfileCentricViewProps): JSX.Element 
 
       {entries.length === 0 ? (
         <div className="pcv-empty-all glass-panel">
-          <p>{t(locale, "noProfiles")}</p>
+          <p>{t(locale, "noActiveProfile")}</p>
           <button className="action-button primary" type="button" onClick={onAddNew}>
             <Plus size={15} />
             <span>{t(locale, "configureNew")}</span>

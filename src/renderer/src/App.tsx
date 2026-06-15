@@ -2,8 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { AlertTriangle, ChevronDown, ChevronsLeft, ChevronsRight, RefreshCw, Terminal, X } from "lucide-react";
 
-import type { McpServerConfig, ShortcutAction, ShortcutBinding } from "@shared/types";
-import { applyProfile } from "@shared/configStore";
+import type { KimiCodeEnvironment, McpServerConfig, ShortcutAction, ShortcutBinding } from "@shared/types";
+import { applyProfile, normalizeKimiCodeEnvironments } from "@shared/configStore";
 import type { SearchResult } from "@shared/configStore";
 import { parseMcpConfigStrict } from "@shared/mcpStore";
 import { formatAcceleratorForPlatform, getBrowserShortcutPlatform, normalizeShortcuts } from "@shared/shortcutStore";
@@ -33,6 +33,7 @@ import { SummaryCard } from "./overviewDashboard";
 import { TopbarControls } from "./topbarControls";
 import { ToastContainer } from "./Toast";
 import { useToast } from "./useToast";
+import { getApi } from "./appHelpers";
 import logoLight from "./assets/logo-light.png";
 import logoDark from "./assets/logo-dark.png";
 
@@ -57,6 +58,7 @@ export function App(): JSX.Element {
     documentViewer, setDocumentViewer,
     backupRecordsDialog, setBackupRecordsDialog,
     doctorReport,
+    setFileSnapshot,
     error, setError, notice, setNotice, externalChange, setExternalChange,
     isMcpImportOpen, setIsMcpImportOpen,
     mcpImportDraft, setMcpImportDraft,
@@ -79,7 +81,7 @@ export function App(): JSX.Element {
     isProviderNameEditable, isProfileNameEditable, isMcpServerNameEditable,
     updateState, updateImmediateState,
     runAfterUnsavedHandled, onSave, persistState,
-    confirmDeleteResource,
+    confirmDeleteResource, requestConfirm,
     closeMcpImportDialog, requestCloseMcpImportDialog,
     refreshSkills, openDocumentViewer,
     runManualBackup, runWebDavTest, openKimiInTerminal,
@@ -90,11 +92,54 @@ export function App(): JSX.Element {
   const shortcutPlatform = getBrowserShortcutPlatform();
   const tabShortcutLabels = createTabShortcutLabels(shortcuts, shortcutPlatform);
   const isSidebarCollapsed = state.panelSettings.sidebar_collapsed;
+  const kimiCodeEnvironments = normalizeKimiCodeEnvironments(state.panelSettings.kimi_code_environments);
+  const activeKimiCodeEnvironmentId = state.panelSettings.active_kimi_code_environment_id
+    ?? kimiCodeEnvironments[0]?.id
+    ?? "default";
+  const environmentOptions = kimiCodeEnvironments.map((environment: KimiCodeEnvironment) => ({
+    value: environment.id,
+    label: environment.name || environment.id,
+    description: environment.description || environment.id,
+  }));
   const toggleSidebar = useCallback(() => {
     updateImmediateState((draft) => {
       draft.panelSettings.sidebar_collapsed = !draft.panelSettings.sidebar_collapsed;
     });
   }, [updateImmediateState]);
+  const switchKimiCodeEnvironment = useCallback((environmentId: string): void => {
+    if (!environmentId || environmentId === activeKimiCodeEnvironmentId) {
+      return;
+    }
+    runAfterUnsavedHandled(() => {
+      void (async () => {
+        const api = getApi();
+        if (!api?.saveKimiCodeEnvironmentPreference) {
+          setError("Kimi Switch API does not support Kimi Code environment management.");
+          return;
+        }
+        try {
+          setExternalChange(null);
+          setFileSnapshot(null);
+          const result = await api.saveKimiCodeEnvironmentPreference(kimiCodeEnvironments, environmentId);
+          setFileSnapshot(result.snapshot);
+          await loadState();
+          setNotice(t(locale, "kimiCodeEnvironmentActivated"));
+        } catch (switchError) {
+          setError(switchError instanceof Error ? switchError.message : String(switchError));
+        }
+      })();
+    });
+  }, [
+    activeKimiCodeEnvironmentId,
+    kimiCodeEnvironments,
+    loadState,
+    locale,
+    runAfterUnsavedHandled,
+    setError,
+    setExternalChange,
+    setFileSnapshot,
+    setNotice,
+  ]);
 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false);
@@ -199,19 +244,15 @@ export function App(): JSX.Element {
     }
   }, [activeTab]);
 
-  useEffect(() => {
-    if (activeTab === "about") {
-      setActiveTab("settings");
-    }
-  }, [activeTab, setActiveTab]);
-
   const tabListRef = useRef<HTMLDivElement>(null);
-  const visibleTabItems = TAB_ITEMS;
+  const visibleTabItems = TAB_ITEMS.filter((item) => item.id !== "about");
+  const bottomTabItems = TAB_ITEMS.filter((item) => item.id === "about");
   const profilesIdx = TAB_ITEMS.findIndex((i) => i.id === "profiles");
   const mainTabIds = [
-    ...TAB_ITEMS.slice(0, profilesIdx + 1).map((i) => i.id),
+    ...visibleTabItems.slice(0, profilesIdx + 1).map((i) => i.id),
     ...ASSISTANT_SUB_ITEMS.map((i) => i.id),
-    ...TAB_ITEMS.slice(profilesIdx + 1).map((i) => i.id),
+    ...visibleTabItems.slice(profilesIdx + 1).map((i) => i.id),
+    ...bottomTabItems.map((i) => i.id),
   ];
 
   const focusTab = useCallback((tabId: string): void => {
@@ -407,6 +448,28 @@ export function App(): JSX.Element {
             );
           })}
         </nav>
+        <nav className="nav nav-bottom" role="tablist" aria-label={t(locale, "about")}>
+          {bottomTabItems.map(({ id, icon: Icon, labelKey }) => (
+            <button
+              key={id}
+              id={`tab-${id}`}
+              role="tab"
+              aria-selected={activeTab === id}
+              className={id === activeTab ? "nav-item active" : "nav-item"}
+              title={t(locale, labelKey)}
+              aria-label={t(locale, labelKey)}
+              tabIndex={id === activeTab ? 0 : -1}
+              onClick={() => {
+                if (id === activeTab) return;
+                runAfterUnsavedHandled(() => setActiveTab(id));
+              }}
+            >
+              <Icon size={18} />
+              <span>{t(locale, labelKey)}</span>
+              {tabShortcutLabels[id] ? <kbd className="nav-shortcut">{tabShortcutLabels[id]}</kbd> : null}
+            </button>
+          ))}
+        </nav>
       </aside>
 
       <main className="main">
@@ -502,6 +565,9 @@ export function App(): JSX.Element {
               theme={state.panelSettings.theme}
               localeOptions={LOCALE_OPTIONS}
               themeOptions={THEME_OPTIONS}
+              environmentId={activeKimiCodeEnvironmentId}
+              environmentOptions={environmentOptions}
+              onEnvironmentChange={switchKimiCodeEnvironment}
               onLocaleChange={(value) =>
                 updateImmediateState((draft) => {
                   draft.panelSettings.locale = value;
@@ -601,6 +667,7 @@ export function App(): JSX.Element {
             onSave={onSave}
             persistState={persistState}
             confirmDeleteResource={confirmDeleteResource}
+            requestConfirm={requestConfirm}
             refreshSkills={refreshSkills}
             openDocumentViewer={openDocumentViewer}
             runManualBackup={runManualBackup}
@@ -611,6 +678,8 @@ export function App(): JSX.Element {
             setActiveTab={setActiveTab}
             setError={setError}
             setNotice={setNotice}
+            setExternalChange={setExternalChange}
+            setFileSnapshot={setFileSnapshot}
             loadState={loadState}
           />
         </div>

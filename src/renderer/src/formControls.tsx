@@ -28,11 +28,23 @@ export function Field(props: {
   value: string;
   onChange: (value: string) => void;
   inputMode?: HTMLAttributes<HTMLInputElement>["inputMode"];
+  readOnly?: boolean;
 }): JSX.Element {
   return (
     <label className="field">
       <span>{props.label}</span>
-      <input inputMode={props.inputMode} value={props.value} onChange={(event) => props.onChange(event.target.value)} />
+      <input
+        inputMode={props.inputMode}
+        value={props.value}
+        readOnly={props.readOnly}
+        disabled={props.readOnly}
+        className={props.readOnly ? "field-input-disabled" : undefined}
+        onChange={(event) => {
+          if (!props.readOnly) {
+            props.onChange(event.target.value);
+          }
+        }}
+      />
     </label>
   );
 }
@@ -297,6 +309,114 @@ export function SelectField(props: {
             </button>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+export function CompactSelect(props: {
+  ariaLabel: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string; icon?: typeof Globe; badge?: string; badgeClassName?: string }>;
+  disabled?: boolean;
+  className?: string;
+  popoverClassName?: string;
+}): JSX.Element {
+  const [isOpen, setIsOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const selectedOption = props.options.find((option) => option.value === props.value) ?? props.options[0];
+  const SelectedIcon = selectedOption?.icon;
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent): void {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape") {
+        setIsOpen(false);
+      }
+    }
+
+    window.addEventListener("pointerdown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
+  return (
+    <div
+      className={[
+        "field-select-shell",
+        "compact-select",
+        isOpen ? "is-open" : "",
+        props.disabled ? "is-disabled" : "",
+        props.className,
+      ].filter(Boolean).join(" ")}
+      ref={rootRef}
+    >
+      <button
+        className="field-select-trigger"
+        type="button"
+        aria-label={props.ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        disabled={props.disabled}
+        onClick={() => {
+          if (!props.disabled) {
+            setIsOpen((current) => !current);
+          }
+        }}
+      >
+        {selectedOption?.badge ? (
+          <span className={["field-select-leading", "badge", selectedOption.badgeClassName].filter(Boolean).join(" ")} aria-hidden="true">
+            {selectedOption.badge}
+          </span>
+        ) : SelectedIcon ? (
+          <span className="field-select-leading icon" aria-hidden="true">
+            <SelectedIcon size={15} />
+          </span>
+        ) : null}
+        <span className="field-select-value">{selectedOption?.label ?? props.value}</span>
+        <span className="field-select-icon" aria-hidden="true">
+          <ChevronDown size={16} />
+        </span>
+      </button>
+      <div
+        className={["field-select-popover", props.popoverClassName].filter(Boolean).join(" ")}
+        role="listbox"
+        aria-label={props.ariaLabel}
+      >
+        {props.options.map((option) => (
+          <button
+            key={option.value}
+            className={option.value === props.value ? "field-select-option active" : "field-select-option"}
+            type="button"
+            role="option"
+            aria-selected={option.value === props.value}
+            onClick={() => {
+              props.onChange(option.value);
+              setIsOpen(false);
+            }}
+          >
+            {option.icon ? (
+              <span className="field-select-option-leading icon" aria-hidden="true">
+                <option.icon size={15} />
+              </span>
+            ) : option.badge ? (
+              <span className={["field-select-option-leading", "badge", option.badgeClassName].filter(Boolean).join(" ")} aria-hidden="true">
+                {option.badge}
+              </span>
+            ) : null}
+            <span className="field-select-option-copy">{option.label}</span>
+            {option.value === props.value ? <Check size={16} /> : null}
+          </button>
+        ))}
       </div>
     </div>
   );

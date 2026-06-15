@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import type { AppState, BackupRecord, ConfigDoctorReport, FileSnapshotBundle, Locale, McpServerConfig, ModelConfig, PreviewBundle, Profile, ProviderConfig } from "@shared/types";
+import type { AppState, BackupRecord, ConfigDoctorReport, ExternalChangeNotifyPayload, FileSnapshotBundle, Locale, McpServerConfig, ModelConfig, PreviewBundle, Profile, ProviderConfig } from "@shared/types";
 import type { SkillDiscoveryPath, SkillEntry, SkillsScanReport } from "@shared/skillsStore";
 import type { SkillsViewMode } from "../skillsWorkspace";
 import type { TabId, PreviewFileId } from "../appOptions";
@@ -76,6 +76,8 @@ export interface AppContext {
   setError: Dispatch<SetStateAction<string>>;
   notice: string;
   setNotice: Dispatch<SetStateAction<string>>;
+  externalChange: ExternalChangeNotifyPayload | null;
+  setExternalChange: Dispatch<SetStateAction<ExternalChangeNotifyPayload | null>>;
   isMcpImportOpen: boolean;
   setIsMcpImportOpen: Dispatch<SetStateAction<boolean>>;
   mcpImportDraft: string;

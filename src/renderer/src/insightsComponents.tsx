@@ -5,7 +5,7 @@ import type { InsightsSettings } from "@shared/usageTypes";
 import { formatCostWithCurrency, DEFAULT_CURRENCY_RATES, SUPPORTED_CURRENCIES } from "@shared/currency";
 import { estimateMonthlyCost } from "@shared/costEstimate";
 import { t } from "./i18n";
-import { SettingsGroup, SelectField } from "./formControls";
+import { CompactSelect, SettingsGroup, SelectField } from "./formControls";
 import { ToastContainer } from "./Toast";
 import { useToast } from "./useToast";
 import { TrendChart, type TrendChartType } from "./insightsChart";
@@ -657,16 +657,31 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
         </div>
         <div className="insights-dashboard-actions">
           {timeRangeMode === "preset" ? (
-            <select value={timeRangeKey} onChange={(e) => { if (e.target.value === "__custom__") { setTimeRangeMode("custom"); const now = new Date(); setCustomTo(now.toISOString().slice(0, 10)); setCustomFrom(new Date(now.getTime() - 7 * 86400000).toISOString().slice(0, 10)); } else { setTimeRangeKey(e.target.value); } }} className="insights-select">
-              <option value="today">{t(locale, "insightsTimeRangeToday")}</option>
-              <option value="3d">{t(locale, "insightsTimeRange3d")}</option>
-              <option value="7d">{t(locale, "insightsTimeRange7d")}</option>
-              <option value="14d">{t(locale, "insightsTimeRange14d")}</option>
-              <option value="30d">{t(locale, "insightsTimeRange30d")}</option>
-              <option value="90d">{t(locale, "insightsTimeRange90d")}</option>
-              <option value="mtd">{t(locale, "insightsTimeRangeMonth")}</option>
-              <option value="__custom__">{t(locale, "insightsTimeRangeCustomOption")}</option>
-            </select>
+            <CompactSelect
+              ariaLabel={t(locale, "insightsTimeRangeLabel")}
+              value={timeRangeKey}
+              className="insights-compact-select"
+              onChange={(value) => {
+                if (value === "__custom__") {
+                  setTimeRangeMode("custom");
+                  const now = new Date();
+                  setCustomTo(now.toISOString().slice(0, 10));
+                  setCustomFrom(new Date(now.getTime() - 7 * 86400000).toISOString().slice(0, 10));
+                } else {
+                  setTimeRangeKey(value);
+                }
+              }}
+              options={[
+                { value: "today", label: t(locale, "insightsTimeRangeToday") },
+                { value: "3d", label: t(locale, "insightsTimeRange3d") },
+                { value: "7d", label: t(locale, "insightsTimeRange7d") },
+                { value: "14d", label: t(locale, "insightsTimeRange14d") },
+                { value: "30d", label: t(locale, "insightsTimeRange30d") },
+                { value: "90d", label: t(locale, "insightsTimeRange90d") },
+                { value: "mtd", label: t(locale, "insightsTimeRangeMonth") },
+                { value: "__custom__", label: t(locale, "insightsTimeRangeCustomOption") },
+              ]}
+            />
           ) : (
             <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)} className="insights-select" />
@@ -711,10 +726,16 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
           <div className="insights-trend-panel">
             <p className="insights-tab-desc">{t(locale, "insightsTrendDesc")}</p>
             <div className="insights-trend-controls">
-              <select value={trendMetric} onChange={(e) => setTrendMetric(e.target.value as TrendMetric)} className="insights-select">
-                <option value="tokens">{t(locale, "insightsTrendMetricTokens")}</option>
-                <option value="calls">{t(locale, "insightsTrendMetricCalls")}</option>
-              </select>
+              <CompactSelect
+                ariaLabel={t(locale, "insightsTrendMetricLabel")}
+                value={trendMetric}
+                className="insights-compact-select"
+                onChange={(value) => setTrendMetric(value as TrendMetric)}
+                options={[
+                  { value: "tokens", label: t(locale, "insightsTrendMetricTokens") },
+                  { value: "calls", label: t(locale, "insightsTrendMetricCalls") },
+                ]}
+              />
               <div className="insights-chart-type-toggle" role="tablist" aria-label={t(locale, "insightsChartTypeLabel")}>
                 <button
                   type="button"

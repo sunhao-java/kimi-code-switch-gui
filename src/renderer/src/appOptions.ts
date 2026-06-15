@@ -28,6 +28,7 @@ export const TAB_ITEMS: Array<{ id: TabId; icon: typeof Layers3; labelKey: strin
   { id: "skills", icon: FileText, labelKey: "skillsNav" },
   { id: "insights", icon: TrendingUp, labelKey: "insights" },
   { id: "settings", icon: Settings2, labelKey: "settings" },
+  { id: "about", icon: Star, labelKey: "about" },
 ];
 
 export const ASSISTANT_SUB_ITEMS: Array<{ id: TabId; icon: typeof Layers3; labelKey: string }> = [

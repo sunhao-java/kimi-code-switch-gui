@@ -169,7 +169,9 @@ describe("useAppPersistence", () => {
     });
 
     expect(loadStateApi).toHaveBeenCalled();
-    expect(previewState).toHaveBeenCalledWith(expect.objectContaining({ configPath: "/tmp/config.toml" }));
+    expect(previewState).toHaveBeenCalledWith(expect.objectContaining({
+      configPath: "~/.kimi-code-switch-gui/.env/default/config.toml",
+    }));
     expect(setPreview).toHaveBeenCalledWith({ config: "preview" });
     expect(captureSnapshot).toHaveBeenCalled();
     expect(runDoctor).toHaveBeenCalled();

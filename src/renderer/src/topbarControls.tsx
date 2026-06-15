@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { CheckCheck } from "lucide-react";
+import { CheckCheck, Layers3 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import type { AppearanceMode, Locale, LocalizedText } from "@shared/types";
@@ -17,10 +17,13 @@ export function TopbarControls(props: {
     shortLabel: string;
     label: LocalizedText;
   }>;
+  environmentId: string;
+  environmentOptions: Array<{ value: string; label: string; description?: string }>;
   onLocaleChange: (locale: Locale) => void;
   onThemeChange: (theme: AppearanceMode) => void;
+  onEnvironmentChange: (environmentId: string) => void;
 }): JSX.Element {
-  const [openPanel, setOpenPanel] = useState<"locale" | "theme" | null>(null);
+  const [openPanel, setOpenPanel] = useState<"environment" | "locale" | "theme" | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -36,10 +39,53 @@ export function TopbarControls(props: {
 
   const activeLocale = props.localeOptions.find((option) => option.value === props.locale) ?? props.localeOptions[0];
   const activeTheme = props.themeOptions.find((option) => option.value === props.theme) ?? props.themeOptions[0];
+  const activeEnvironment = props.environmentOptions.find((option) => option.value === props.environmentId) ?? props.environmentOptions[0];
   const ActiveThemeIcon = activeTheme.icon;
 
   return (
     <div className="toolbar-control-group" ref={rootRef}>
+      <div className={openPanel === "environment" ? "toolbar-menu is-open toolbar-menu-environment" : "toolbar-menu toolbar-menu-environment"}>
+        <button
+          className={openPanel === "environment" ? "toolbar-icon-button active toolbar-environment-button" : "toolbar-icon-button toolbar-environment-button"}
+          type="button"
+          aria-label={t(props.locale, "kimiCodeEnvironment")}
+          aria-expanded={openPanel === "environment"}
+          onClick={() => setOpenPanel((current) => (current === "environment" ? null : "environment"))}
+        >
+          <span className="toolbar-icon-badge">
+            <Layers3 size={16} />
+          </span>
+          <span className="toolbar-icon-copy">
+            <strong>{activeEnvironment?.label ?? props.environmentId}</strong>
+            <small>{t(props.locale, "kimiCodeEnvironment")}</small>
+          </span>
+        </button>
+        <div className="toolbar-popover toolbar-popover-wide" role="menu" aria-label={t(props.locale, "kimiCodeEnvironment")}>
+          {props.environmentOptions.map((option) => (
+            <button
+              key={option.value}
+              className={option.value === props.environmentId ? "toolbar-option active" : "toolbar-option"}
+              type="button"
+              onClick={() => {
+                if (option.value !== props.environmentId) {
+                  props.onEnvironmentChange(option.value);
+                }
+                setOpenPanel(null);
+              }}
+            >
+              <span className="toolbar-option-leading icon">
+                <Layers3 size={15} />
+              </span>
+              <span className="toolbar-option-copy">
+                <strong>{option.label}</strong>
+                <small>{option.description || option.value}</small>
+              </span>
+              {option.value === props.environmentId ? <CheckCheck size={16} /> : null}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className={openPanel === "locale" ? "toolbar-menu is-open" : "toolbar-menu"}>
         <button
           className={openPanel === "locale" ? "toolbar-icon-button active" : "toolbar-icon-button"}

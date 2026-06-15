@@ -4,6 +4,7 @@ import type { Locale } from "@shared/types";
 import type { SourcePreset } from "./sourcePresets";
 import { getApi } from "../appHelpers";
 import { parseEndpointUrl } from "../endpointUtils";
+import { CompactSelect } from "../formControls";
 import { t } from "../i18n";
 
 export interface ConnectionFormData {
@@ -166,24 +167,24 @@ export function WizardStep2Connect(props: Step2Props): JSX.Element {
               placeholder="model-id"
             />
           ) : (
-            <select
+            <CompactSelect
+              ariaLabel={t(locale, "modelLabel")}
               value={customModel ? "__custom__" : form.modelId}
-              onChange={(e) => {
-                if (e.target.value === "__custom__") {
+              options={[
+                { value: "", label: t(locale, "selectModel") },
+                ...source.commonModels.map((model) => ({ value: model, label: model })),
+                { value: "__custom__", label: t(locale, "customModelOption") },
+              ]}
+              onChange={(value) => {
+                if (value === "__custom__") {
                   setCustomModel(true);
                   updateForm({ modelId: "" });
                 } else {
                   setCustomModel(false);
-                  updateForm({ modelId: e.target.value });
+                  updateForm({ modelId: value });
                 }
               }}
-            >
-              <option value="">{t(locale, "selectModel")}</option>
-              {source.commonModels.map((m) => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-              <option value="__custom__">{t(locale, "customModelOption")}</option>
-            </select>
+            />
           )}
         </label>
 

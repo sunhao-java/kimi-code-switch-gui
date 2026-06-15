@@ -468,7 +468,7 @@ export function useAppHandlers() {
     fileSnapshot,
     setBackupRecordsDialog,
     setDoctorReport,
-    setFileSnapshot,
+    setFileSnapshot: updateFileSnapshot,
     error,
     setError,
     notice,
