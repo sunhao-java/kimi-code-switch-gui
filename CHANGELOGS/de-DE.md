@@ -2,6 +2,27 @@
 
 Diese Datei dokumentiert die wesentlichen Änderungen des Projekts. Das Format folgt Keep a Changelog; verwendet wird das `major.minor.patch`-Versionsschema.
 
+## [2.2.4] - 2026-06-16
+
+### Hinzugefügt
+
+- **Verwaltete Kimi-Code-Umgebungen**: Mehrere Kimi-Code-Umgebungen können unter `~/.kimi-code-switch-gui/.env` erstellt, kopiert, aktiviert und gelöscht werden; `~/.kimi-code` wird per Symlink umgeschaltet, damit CLI und GUI dieselbe aktive Umgebung nutzen.
+- **Umgebungswechsel in der Topbar**: Die Haupt-Topbar enthält jetzt einen schnellen Selektor für Kimi-Code-Umgebungen.
+
+### Geändert
+
+- **Bessere Einstellungsseite**: Eigene Kimi-Code-Umgebungstabelle und Erstellungsdialog, automatisch generierte Umgebungs-IDs, gesperrte Bearbeitung der aktiven Umgebung und ein umbenannter Standard-Eintrag „默认环境“.
+- **Daten pro Umgebung getrennt**: Profile, Provider, Modelle, MCP-Server, Konfigurationshistorie und Usage Insights sind nach Kimi-Code-Umgebung getrennt; neue leere Umgebungen übernehmen keine alten Daten anderer Umgebungen mehr.
+- **Panel-Daten isoliert**: GUI-eigene Daten liegen nun unter `~/.kimi-code-switch-gui` und greifen weniger in das Kimi-Code-Konfigurationsverzeichnis ein.
+- **Einheitliche Select-Komponenten**: Modell-Assistent, Importstrategie, MCP-Tool-Auswahl und Insights-Filter nutzen nun die gemeinsame Custom-Select-Komponente statt nativer Selects.
+
+### Behoben
+
+- Behoben, dass nach dem Wechsel der Kimi-Code-Umgebung fälschlich vor extern geänderten Konfigurationsdateien gewarnt wurde.
+- Behoben, dass Terminal-`kimi`-Befehle nicht der in der GUI aktiven Umgebung folgten.
+- Behoben, dass der redundante Block „Pfade und Dateien“ auf der Kimi-Code-Instanzseite weiterhin angezeigt wurde.
+- Behoben, dass der Speichern-Button in der Kimi-Code-Umgebungstabelle standardmäßig als Platzhalter sichtbar war; er erscheint jetzt nur bei ungespeicherten Änderungen in der jeweiligen Zeile.
+
 ## [2.2.3] - 2026-06-15
 
 ### Geändert

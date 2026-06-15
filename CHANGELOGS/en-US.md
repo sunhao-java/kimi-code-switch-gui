@@ -2,6 +2,27 @@
 
 This file records the project's notable changes. Format follows Keep a Changelog; the project uses `major.minor.patch` versioning.
 
+## [2.2.4] - 2026-06-16
+
+### Added
+
+- **Managed Kimi Code environments**: create, copy, activate, and delete multiple Kimi Code environments under `~/.kimi-code-switch-gui/.env`, with `~/.kimi-code` switched by symlink so the CLI and GUI share the same active environment.
+- **Topbar environment switcher**: the main topbar now includes a quick Kimi Code environment selector.
+
+### Changed
+
+- **Improved settings experience**: added a dedicated Kimi Code environment table and creation dialog, auto-generated environment IDs, locked editing for the active environment, and renamed the default environment to “默认环境”.
+- **Environment-scoped data**: profiles, providers, models, MCP servers, config history, and usage insights are scoped by Kimi Code environment; new empty environments no longer inherit stale data from another environment.
+- **Panel data isolation**: GUI-owned data now lives under `~/.kimi-code-switch-gui`, reducing interference with Kimi Code's own configuration directory.
+- **Unified select controls**: model setup, import strategy, MCP tool selection, and insights filters now use the shared custom select control instead of native selects.
+
+### Fixed
+
+- Fixed false “external config changed” warnings after switching Kimi Code environments.
+- Fixed terminal `kimi` commands not following the active environment selected in the GUI.
+- Fixed the redundant “Paths and Files” block still appearing on the Kimi Code instance settings page.
+- Fixed the Kimi Code environment table save button showing as a placeholder by default; it now appears only when that row has unsaved edits.
+
 ## [2.2.3] - 2026-06-15
 
 ### Changed

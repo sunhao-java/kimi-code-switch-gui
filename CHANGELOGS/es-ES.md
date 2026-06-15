@@ -2,6 +2,27 @@
 
 Este archivo recoge los cambios relevantes del proyecto. El formato sigue Keep a Changelog y el proyecto adopta el esquema de versiones `major.minor.patch`.
 
+## [2.2.4] - 2026-06-16
+
+### Añadido
+
+- **Entornos Kimi Code gestionados**: permite crear, copiar, activar y eliminar varios entornos Kimi Code bajo `~/.kimi-code-switch-gui/.env`; `~/.kimi-code` se cambia mediante symlink para que CLI y GUI compartan el mismo entorno activo.
+- **Selector de entorno en la barra superior**: la barra superior principal incluye ahora un selector rápido de entorno Kimi Code.
+
+### Cambiado
+
+- **Mejor experiencia en Ajustes**: nueva tabla dedicada de entornos Kimi Code y diálogo de creación, IDs de entorno autogenerados, edición bloqueada para el entorno activo y entorno predeterminado renombrado a «默认环境».
+- **Datos aislados por entorno**: Profile, Provider, Model, MCP, historial de configuración y Usage Insights quedan separados por entorno Kimi Code; los entornos vacíos nuevos ya no heredan datos residuales de otro entorno.
+- **Datos del panel aislados**: los datos propios de la GUI pasan a `~/.kimi-code-switch-gui`, reduciendo interferencias con el directorio de configuración de Kimi Code.
+- **Selectores unificados**: el asistente de modelos, estrategia de importación, selección de herramientas MCP y filtros de insights usan ahora el selector personalizado compartido en vez de selects nativos.
+
+### Corregido
+
+- Corregidas advertencias falsas de “configuración modificada externamente” tras cambiar de entorno Kimi Code.
+- Corregido que los comandos `kimi` en terminal no siguieran el entorno activo seleccionado en la GUI.
+- Corregido que el bloque redundante «Rutas y archivos» siguiera apareciendo en la página de instancia Kimi Code.
+- Corregido que el botón Guardar de la tabla de entornos Kimi Code apareciera por defecto como marcador; ahora solo aparece cuando esa fila tiene cambios sin guardar.
+
 ## [2.2.3] - 2026-06-15
 
 ### Cambiado

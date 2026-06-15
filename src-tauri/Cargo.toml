@@ -1,6 +1,6 @@
 [package]
 name = "kimi-code-switch-gui"
-version = "2.2.3"
+version = "2.2.4"
 description = "Kimi Code Switch GUI"
 authors = ["Hulk Sun"]
 edition = "2021"
