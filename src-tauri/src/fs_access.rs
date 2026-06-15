@@ -3,6 +3,11 @@
 
 use std::path::{Path, PathBuf};
 
+const KIMI_CODE_HOME: &str = ".kimi-code";
+const PANEL_APP_DIR: &str = ".kimi-code-switch-gui";
+const ENV_DIR: &str = ".kimi-code-switch-gui/.env";
+const DEFAULT_ENV_DIR: &str = ".kimi-code-switch-gui/.env/default";
+
 /// 解析 `~/` 前缀为用户主目录绝对路径。
 pub(crate) fn resolve_home(path: &str) -> PathBuf {
     if let Some(stripped) = path.strip_prefix("~/") {
@@ -19,7 +24,7 @@ pub(crate) fn resolve_home(path: &str) -> PathBuf {
 }
 
 /// 验证路径是否在允许的目录范围内。
-/// 允许的路径：~/.kimi、~/.kimi-code、以及显式选择的导入/导出路径。
+/// 允许的路径：~/.kimi、~/.kimi-code、~/.kimi-code-switch-gui，以及显式选择的导入/导出路径。
 /// 注意：这是防御性检查，主要防止前端代码错误或供应链攻击。
 pub(crate) fn validate_path_scope(path: &Path) -> Result<(), String> {
     let path_str = path.to_string_lossy();
@@ -28,6 +33,7 @@ pub(crate) fn validate_path_scope(path: &Path) -> Result<(), String> {
     let allowed_bases = [
         dirs::home_dir().map(|h| h.join(".kimi")),
         dirs::home_dir().map(|h| h.join(".kimi-code")),
+        dirs::home_dir().map(|h| h.join(".kimi-code-switch-gui")),
     ];
 
     // 检查是否在允许的基础路径下
@@ -45,9 +51,186 @@ pub(crate) fn validate_path_scope(path: &Path) -> Result<(), String> {
     }
 
     Err(format!(
-        "Path '{}' is outside allowed directories (~/.kimi, ~/.kimi-code, or explicitly selected paths)",
+        "Path '{}' is outside allowed directories (~/.kimi, ~/.kimi-code, ~/.kimi-code-switch-gui, or explicitly selected paths)",
         path_str
     ))
+}
+
+fn home_child(relative: &str) -> Result<PathBuf, String> {
+    dirs::home_dir()
+        .map(|home| home.join(relative))
+        .ok_or_else(|| "Unable to resolve home directory".to_string())
+}
+
+fn copy_dir_recursive(from: &Path, to: &Path) -> Result<(), String> {
+    if !from.exists() {
+        std::fs::create_dir_all(to).map_err(|e| format!("create {}: {}", to.display(), e))?;
+        return Ok(());
+    }
+    if !from.is_dir() {
+        return Err(format!("Source is not a directory: {}", from.display()));
+    }
+    std::fs::create_dir_all(to).map_err(|e| format!("create {}: {}", to.display(), e))?;
+    for entry in
+        std::fs::read_dir(from).map_err(|e| format!("read_dir {}: {}", from.display(), e))?
+    {
+        let entry = entry.map_err(|e| format!("read_dir entry {}: {}", from.display(), e))?;
+        let file_name = entry.file_name();
+        let source = entry.path();
+        let target = to.join(file_name);
+        let file_type = entry
+            .file_type()
+            .map_err(|e| format!("file_type {}: {}", source.display(), e))?;
+        if file_type.is_symlink() {
+            let link_target = std::fs::read_link(&source)
+                .map_err(|e| format!("read_link {}: {}", source.display(), e))?;
+            create_symlink_path(&link_target, &target)?;
+        } else if file_type.is_dir() {
+            copy_dir_recursive(&source, &target)?;
+        } else if file_type.is_file() {
+            std::fs::copy(&source, &target)
+                .map_err(|e| format!("copy {} to {}: {}", source.display(), target.display(), e))?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn create_symlink_path(target: &Path, link: &Path) -> Result<(), String> {
+    std::os::unix::fs::symlink(target, link)
+        .map_err(|e| format!("symlink {} -> {}: {}", link.display(), target.display(), e))
+}
+
+#[cfg(windows)]
+fn create_symlink_path(target: &Path, link: &Path) -> Result<(), String> {
+    if target.is_dir() {
+        std::os::windows::fs::symlink_dir(target, link)
+    } else {
+        std::os::windows::fs::symlink_file(target, link)
+    }
+    .map_err(|e| format!("symlink {} -> {}: {}", link.display(), target.display(), e))
+}
+
+fn remove_link_or_empty_dir(path: &Path) -> Result<(), String> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => return Err(format!("stat {}: {}", path.display(), err)),
+    };
+    if metadata.file_type().is_symlink() || metadata.is_file() {
+        std::fs::remove_file(path).map_err(|e| format!("remove {}: {}", path.display(), e))
+    } else if metadata.is_dir() {
+        let mut entries =
+            std::fs::read_dir(path).map_err(|e| format!("read_dir {}: {}", path.display(), e))?;
+        if entries.next().is_none() {
+            std::fs::remove_dir(path).map_err(|e| format!("remove_dir {}: {}", path.display(), e))
+        } else {
+            Err(format!(
+                "{} is a real directory and is not empty; run environment layout migration first",
+                path.display()
+            ))
+        }
+    } else {
+        Err(format!("Unsupported file type at {}", path.display()))
+    }
+}
+
+fn sanitize_environment_id(value: &str) -> Result<String, String> {
+    let id = value.trim();
+    if id.is_empty() {
+        return Err("Environment id cannot be empty".to_string());
+    }
+    if id.contains('/') || id.contains('\\') || id == "." || id == ".." || id.contains("..") {
+        return Err(format!("Invalid environment id: {}", value));
+    }
+    Ok(id.to_string())
+}
+
+#[derive(serde::Serialize)]
+pub struct KimiCodeEnvironmentLayout {
+    #[serde(rename = "defaultHomePath")]
+    pub default_home_path: String,
+    #[serde(rename = "managedDefaultPath")]
+    pub managed_default_path: String,
+    #[serde(rename = "environmentsPath")]
+    pub environments_path: String,
+    #[serde(rename = "defaultWasMigrated")]
+    pub default_was_migrated: bool,
+    #[serde(rename = "linkWasUpdated")]
+    pub link_was_updated: bool,
+}
+
+/// 确保 Kimi Code 多环境目录采用 GUI 托管布局：
+/// ~/.kimi-code -> ~/.kimi-code-switch-gui/.env/<active>
+/// 首次迁移会把真实 ~/.kimi-code 目录复制到托管 default。
+#[tauri::command]
+pub fn ensure_kimi_code_environment_layout(
+    active_environment_id: String,
+) -> Result<KimiCodeEnvironmentLayout, String> {
+    let kimi_home = home_child(KIMI_CODE_HOME)?;
+    let panel_dir = home_child(PANEL_APP_DIR)?;
+    let env_dir = home_child(ENV_DIR)?;
+    let managed_default = home_child(DEFAULT_ENV_DIR)?;
+    std::fs::create_dir_all(&panel_dir)
+        .map_err(|e| format!("create {}: {}", panel_dir.display(), e))?;
+    std::fs::create_dir_all(&env_dir)
+        .map_err(|e| format!("create {}: {}", env_dir.display(), e))?;
+
+    let mut default_was_migrated = false;
+    match std::fs::symlink_metadata(&kimi_home) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            std::fs::create_dir_all(&managed_default)
+                .map_err(|e| format!("create {}: {}", managed_default.display(), e))?;
+        }
+        Ok(metadata) if metadata.is_dir() => {
+            copy_dir_recursive(&kimi_home, &managed_default)?;
+            default_was_migrated = true;
+            std::fs::remove_dir_all(&kimi_home)
+                .map_err(|e| format!("remove_dir_all {}: {}", kimi_home.display(), e))?;
+        }
+        Ok(metadata) if metadata.is_file() => {
+            return Err(format!(
+                "{} is a file, expected a directory",
+                kimi_home.display()
+            ));
+        }
+        Ok(_) => {
+            return Err(format!("Unsupported file type at {}", kimi_home.display()));
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::create_dir_all(&managed_default)
+                .map_err(|e| format!("create {}: {}", managed_default.display(), e))?;
+        }
+        Err(err) => return Err(format!("stat {}: {}", kimi_home.display(), err)),
+    }
+
+    let link_was_updated = activate_kimi_code_environment_link(active_environment_id)?;
+    Ok(KimiCodeEnvironmentLayout {
+        default_home_path: "~/.kimi-code".to_string(),
+        managed_default_path: "~/.kimi-code-switch-gui/.env/default".to_string(),
+        environments_path: "~/.kimi-code-switch-gui/.env".to_string(),
+        default_was_migrated,
+        link_was_updated,
+    })
+}
+
+/// 将 ~/.kimi-code 软链切换到指定托管环境目录。
+#[tauri::command]
+pub fn activate_kimi_code_environment_link(environment_id: String) -> Result<bool, String> {
+    let kimi_home = home_child(KIMI_CODE_HOME)?;
+    let env_dir = home_child(ENV_DIR)?;
+    let target = env_dir.join(sanitize_environment_id(&environment_id)?);
+    validate_path_scope(&target)?;
+    std::fs::create_dir_all(&target).map_err(|e| format!("create {}: {}", target.display(), e))?;
+
+    if let Ok(current_target) = std::fs::read_link(&kimi_home) {
+        if current_target == target {
+            return Ok(false);
+        }
+    }
+    remove_link_or_empty_dir(&kimi_home)?;
+    create_symlink_path(&target, &kimi_home)?;
+    Ok(true)
 }
 
 /// 读取文本文件。文件不存在时返回 None（对应 TS 的 null），而非报错。
@@ -136,6 +319,16 @@ pub fn move_file(from: String, to: String) -> Result<(), String> {
             e
         )
     })
+}
+
+/// 递归复制目录。目标目录不存在时创建，已存在时覆盖同名文件。
+#[tauri::command]
+pub fn copy_dir(from: String, to: String) -> Result<(), String> {
+    let from_resolved = resolve_home(&from);
+    let to_resolved = resolve_home(&to);
+    validate_path_scope(&from_resolved)?;
+    validate_path_scope(&to_resolved)?;
+    copy_dir_recursive(&from_resolved, &to_resolved)
 }
 
 /// 主机名（备份元信息用）。

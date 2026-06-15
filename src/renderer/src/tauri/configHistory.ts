@@ -42,12 +42,14 @@ export async function captureSnapshot(
   fileId: ManagedFileId,
   filePath: string,
   description?: string,
+  kimiCodeEnvironmentId?: string,
 ): Promise<number | null> {
   try {
     const result = await invoke<number | null>("capture_snapshot", {
       fileId,
       filePath,
       description: description ?? null,
+      kimiCodeEnvironmentId: kimiCodeEnvironmentId ?? null,
     });
     return result;
   } catch (err) {
@@ -133,5 +135,4 @@ export async function cleanupOldSnapshots(): Promise<number> {
     return 0;
   }
 }
-
 

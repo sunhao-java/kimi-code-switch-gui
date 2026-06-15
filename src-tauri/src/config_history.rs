@@ -1,8 +1,8 @@
 //! 配置历史版本管理。
 //!
 //! 功能：自动快照、版本查询、回滚、自动清理。
-//! 存储：SQLite 元数据（~/.kimi-code/.panel/app.db 的 config_history 表）
-//!       + 文件系统快照内容（~/.kimi-code/.panel/history/{id}.toml.gz）
+//! 存储：SQLite 元数据（~/.kimi-code-switch-gui/app.db 的 config_history 表）
+//!       + 文件系统快照内容（~/.kimi-code-switch-gui/history/{id}.toml.gz）
 
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
@@ -33,6 +33,7 @@ pub const SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS config_history (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   snapshot_at TEXT NOT NULL,
+  kimi_code_environment_id TEXT NOT NULL DEFAULT '',
   file_id TEXT NOT NULL,
   sha256 TEXT NOT NULL,
   size_bytes INTEGER NOT NULL,
@@ -51,34 +52,38 @@ CREATE INDEX IF NOT EXISTS idx_history_file
 fn history_dir() -> Result<PathBuf, String> {
     Ok(dirs::home_dir()
         .ok_or("cannot resolve home dir")?
-        .join(".kimi-code/.panel/history"))
+        .join(".kimi-code-switch-gui/history"))
 }
 
-fn legacy_history_dir() -> Result<PathBuf, String> {
-    Ok(dirs::home_dir()
-        .ok_or("cannot resolve home dir")?
-        .join(".kimi/.panel/history"))
+fn legacy_history_dirs() -> Result<Vec<PathBuf>, String> {
+    let home = dirs::home_dir().ok_or("cannot resolve home dir")?;
+    Ok(vec![
+        home.join(".kimi-code/.panel/history"),
+        home.join(".kimi/.panel/history"),
+    ])
 }
 
 fn ensure_history_dir() -> Result<PathBuf, String> {
     let target = history_dir()?;
     std::fs::create_dir_all(&target).map_err(|e| format!("create history dir: {e}"))?;
 
-    if let Ok(legacy) = legacy_history_dir() {
-        if legacy.exists() && legacy != target {
-            if let Ok(entries) = std::fs::read_dir(&legacy) {
-                for entry in entries.flatten() {
-                    let source = entry.path();
-                    if !source.is_file() {
-                        continue;
-                    }
-                    let Some(file_name) = source.file_name() else {
-                        continue;
-                    };
-                    let destination = target.join(file_name);
-                    if !destination.exists() {
-                        let _ = std::fs::rename(&source, &destination)
-                            .or_else(|_| std::fs::copy(&source, &destination).map(|_| ()));
+    if let Ok(legacy_dirs) = legacy_history_dirs() {
+        for legacy in legacy_dirs {
+            if legacy.exists() && legacy != target {
+                if let Ok(entries) = std::fs::read_dir(&legacy) {
+                    for entry in entries.flatten() {
+                        let source = entry.path();
+                        if !source.is_file() {
+                            continue;
+                        }
+                        let Some(file_name) = source.file_name() else {
+                            continue;
+                        };
+                        let destination = target.join(file_name);
+                        if !destination.exists() {
+                            let _ = std::fs::rename(&source, &destination)
+                                .or_else(|_| std::fs::copy(&source, &destination).map(|_| ()));
+                        }
                     }
                 }
             }
@@ -123,6 +128,28 @@ fn migrate_history_snapshot_paths(
     Ok(())
 }
 
+fn ensure_config_history_environment_column(conn: &rusqlite::Connection) -> Result<(), String> {
+    conn.execute(
+        "ALTER TABLE config_history ADD COLUMN kimi_code_environment_id TEXT NOT NULL DEFAULT ''",
+        [],
+    )
+    .or_else(|e| {
+        if e.to_string().contains("duplicate column name") {
+            Ok(0)
+        } else {
+            Err(e)
+        }
+    })
+    .map_err(|e| format!("add config_history environment column: {e}"))?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_history_environment_time ON config_history(kimi_code_environment_id, snapshot_at DESC)",
+        [],
+    )
+    .map_err(|e| format!("create config_history environment index: {e}"))?;
+
+    Ok(())
+}
+
 /// 初始化配置历史表。
 ///
 /// 调用时机：应用启动时，在 usage_open 之后执行。
@@ -134,11 +161,14 @@ pub fn init_config_history(state: tauri::State<crate::usage::UsageState>) -> Res
 
     conn.execute_batch(SCHEMA_SQL)
         .map_err(|e| format!("init config_history schema: {e}"))?;
+    ensure_config_history_environment_column(conn)?;
 
     // 确保 history 目录存在，并把旧目录中的快照路径迁移到 Kimi Code 标准目录。
     let target_history_dir = ensure_history_dir()?;
-    if let Ok(legacy) = legacy_history_dir() {
-        migrate_history_snapshot_paths(conn, &legacy, &target_history_dir)?;
+    if let Ok(legacy_dirs) = legacy_history_dirs() {
+        for legacy in legacy_dirs {
+            migrate_history_snapshot_paths(conn, &legacy, &target_history_dir)?;
+        }
     }
 
     Ok(())
@@ -169,7 +199,7 @@ fn gzip_compress(content: &str) -> Result<Vec<u8>, String> {
 /// 2. 计算 SHA256
 /// 3. 检查是否已存在（去重）
 /// 4. gzip 压缩
-/// 5. 保存到 ~/.kimi-code/.panel/history/{timestamp_ms}-{file_id}.{json|toml}.gz
+/// 5. 保存到 ~/.kimi-code-switch-gui/history/{timestamp_ms}-{file_id}.{json|toml}.gz
 /// 6. 插入 SQLite 记录
 ///
 /// 错误处理：快照失败时记录错误日志，返回 Ok(None)，不阻塞调用方。
@@ -178,6 +208,7 @@ pub fn capture_snapshot(
     file_id: String,
     file_path: String,
     description: Option<String>,
+    kimi_code_environment_id: Option<String>,
     state: tauri::State<crate::usage::UsageState>,
 ) -> Result<Option<i64>, String> {
     // 读取配置内容
@@ -250,12 +281,14 @@ pub fn capture_snapshot(
     // 插入 SQLite 记录
     let snapshot_at = chrono::Utc::now().to_rfc3339();
     let snapshot_path_str = snapshot_path.to_string_lossy().to_string();
+    let environment_id = kimi_code_environment_id.unwrap_or_default();
 
     match conn.execute(
-        "INSERT INTO config_history (snapshot_at, file_id, sha256, size_bytes, snapshot_path, description)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO config_history (snapshot_at, kimi_code_environment_id, file_id, sha256, size_bytes, snapshot_path, description)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         rusqlite::params![
             snapshot_at,
+            environment_id,
             file_id,
             sha256,
             size_bytes,
@@ -492,10 +525,11 @@ pub fn restore_snapshot(
 
             // 插入记录失败也应该阻止回滚
             conn.execute(
-                "INSERT INTO config_history (snapshot_at, file_id, sha256, size_bytes, snapshot_path, description)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO config_history (snapshot_at, kimi_code_environment_id, file_id, sha256, size_bytes, snapshot_path, description)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 rusqlite::params![
                     snapshot_at,
+                    "",
                     file_id,
                     sha256,
                     size_bytes,
@@ -592,6 +626,51 @@ mod tests {
             .unwrap();
         let exists = stmt.exists([]).unwrap();
         assert!(exists, "idx_history_time index should exist");
+
+        assert!(
+            !SCHEMA_SQL.contains("idx_history_environment_time"),
+            "environment index must be created after legacy column migration"
+        );
+    }
+
+    #[test]
+    fn test_legacy_schema_adds_environment_column_before_index() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            r#"
+            CREATE TABLE config_history (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              snapshot_at TEXT NOT NULL,
+              file_id TEXT NOT NULL,
+              sha256 TEXT NOT NULL,
+              size_bytes INTEGER NOT NULL,
+              snapshot_path TEXT NOT NULL,
+              description TEXT,
+              UNIQUE(file_id, sha256)
+            );
+            CREATE INDEX IF NOT EXISTS idx_history_time
+              ON config_history(snapshot_at DESC);
+            CREATE INDEX IF NOT EXISTS idx_history_file
+              ON config_history(file_id, snapshot_at DESC);
+            "#,
+        )
+        .unwrap();
+
+        conn.execute_batch(SCHEMA_SQL).unwrap();
+        ensure_config_history_environment_column(&conn).unwrap();
+
+        let has_column: bool = conn
+            .prepare("SELECT name FROM pragma_table_info('config_history') WHERE name = 'kimi_code_environment_id'")
+            .unwrap()
+            .exists([])
+            .unwrap();
+        let has_index: bool = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_history_environment_time'")
+            .unwrap()
+            .exists([])
+            .unwrap();
+        assert!(has_column);
+        assert!(has_index);
     }
 
     #[test]

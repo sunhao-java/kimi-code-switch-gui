@@ -48,6 +48,7 @@ export interface ProxyState {
 
 export interface UsageEvent {
   request_id: string;
+  kimi_code_environment_id?: string;
   ts: number;
   ts_end: number | null;
   profile: string;

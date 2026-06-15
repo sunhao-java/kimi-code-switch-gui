@@ -18,6 +18,157 @@ fn lock_conn<'a>(
         .map_err(|_| "database lock poisoned".to_string())
 }
 
+fn ensure_column(
+    conn: &rusqlite::Connection,
+    columns: &[String],
+    column_name: &str,
+    column_definition: &str,
+) -> Result<(), String> {
+    if columns.contains(&column_name.to_string()) {
+        return Ok(());
+    }
+    conn.execute(
+        &format!("ALTER TABLE panel_settings ADD COLUMN {column_definition}"),
+        [],
+    )
+    .map_err(|e| format!("add {column_name} column to panel_settings: {e}"))?;
+    Ok(())
+}
+
+fn ensure_structured_panel_settings_columns(
+    conn: &rusqlite::Connection,
+    columns: &[String],
+) -> Result<(), String> {
+    let required_columns = [
+        ("version", "version INTEGER NOT NULL DEFAULT 1"),
+        (
+            "config_target",
+            "config_target TEXT NOT NULL DEFAULT 'kimi-code'",
+        ),
+        ("config_path", "config_path TEXT NOT NULL DEFAULT ''"),
+        ("profiles", "profiles TEXT NOT NULL DEFAULT '{}'"),
+        (
+            "active_profile",
+            "active_profile TEXT NOT NULL DEFAULT 'default'",
+        ),
+        ("profiles_path", "profiles_path TEXT NOT NULL DEFAULT ''"),
+        (
+            "follow_config_profiles",
+            "follow_config_profiles INTEGER NOT NULL DEFAULT 1",
+        ),
+        ("theme", "theme TEXT NOT NULL DEFAULT 'auto'"),
+        (
+            "appearance_theme",
+            "appearance_theme TEXT NOT NULL DEFAULT 'cupertino'",
+        ),
+        (
+            "ui_font_size",
+            "ui_font_size TEXT NOT NULL DEFAULT 'medium'",
+        ),
+        ("locale", "locale TEXT NOT NULL DEFAULT 'en-US'"),
+        ("tray_icon", "tray_icon INTEGER NOT NULL DEFAULT 0"),
+        (
+            "sidebar_collapsed",
+            "sidebar_collapsed INTEGER NOT NULL DEFAULT 0",
+        ),
+        (
+            "display_open_mode",
+            "display_open_mode TEXT NOT NULL DEFAULT 'normal'",
+        ),
+        (
+            "close_behavior",
+            "close_behavior TEXT NOT NULL DEFAULT 'minimize'",
+        ),
+        ("terminal_app", "terminal_app TEXT NOT NULL DEFAULT 'auto'"),
+        ("last_display_id", "last_display_id INTEGER"),
+        ("ui_state", "ui_state TEXT"),
+        ("favorites", "favorites TEXT"),
+        (
+            "active_official_account_id",
+            "active_official_account_id TEXT NOT NULL DEFAULT ''",
+        ),
+        (
+            "backup_strategy",
+            "backup_strategy TEXT NOT NULL DEFAULT 'manual'",
+        ),
+        (
+            "backup_frequency",
+            "backup_frequency TEXT NOT NULL DEFAULT 'daily'",
+        ),
+        (
+            "backup_retention_count",
+            "backup_retention_count INTEGER NOT NULL DEFAULT 7",
+        ),
+        (
+            "backup_destination_type",
+            "backup_destination_type TEXT NOT NULL DEFAULT 'local'",
+        ),
+        (
+            "backup_local_path",
+            "backup_local_path TEXT NOT NULL DEFAULT ''",
+        ),
+        (
+            "backup_webdav_url",
+            "backup_webdav_url TEXT NOT NULL DEFAULT ''",
+        ),
+        (
+            "backup_webdav_username",
+            "backup_webdav_username TEXT NOT NULL DEFAULT ''",
+        ),
+        (
+            "backup_webdav_password",
+            "backup_webdav_password TEXT NOT NULL DEFAULT ''",
+        ),
+        (
+            "backup_webdav_path",
+            "backup_webdav_path TEXT NOT NULL DEFAULT '/kimi-backups'",
+        ),
+        ("shortcuts", "shortcuts TEXT NOT NULL DEFAULT '{}'"),
+        ("mcp_servers", "mcp_servers TEXT NOT NULL DEFAULT '{}'"),
+        ("kimi_code_environments", "kimi_code_environments TEXT"),
+        (
+            "active_kimi_code_environment_id",
+            "active_kimi_code_environment_id TEXT NOT NULL DEFAULT 'default'",
+        ),
+        (
+            "insights_status",
+            "insights_status TEXT NOT NULL DEFAULT 'disabled'",
+        ),
+        ("insights_proxy_port", "insights_proxy_port TEXT"),
+        (
+            "insights_retention_days",
+            "insights_retention_days INTEGER NOT NULL DEFAULT 30",
+        ),
+        (
+            "insights_disk_warn_threshold_mb",
+            "insights_disk_warn_threshold_mb INTEGER NOT NULL DEFAULT 500",
+        ),
+        (
+            "insights_store_prompt_preview",
+            "insights_store_prompt_preview INTEGER NOT NULL DEFAULT 1",
+        ),
+        (
+            "insights_onboarding_shown_at",
+            "insights_onboarding_shown_at TEXT",
+        ),
+        (
+            "insights_last_known_port",
+            "insights_last_known_port INTEGER",
+        ),
+        (
+            "insights_display_currency",
+            "insights_display_currency TEXT NOT NULL DEFAULT 'USD'",
+        ),
+        ("insights_currency_rates", "insights_currency_rates TEXT"),
+        ("updated_at", "updated_at TEXT NOT NULL DEFAULT ''"),
+        ("created_at", "created_at TEXT NOT NULL DEFAULT ''"),
+    ];
+    for (column_name, column_definition) in required_columns {
+        ensure_column(conn, columns, column_name, column_definition)?;
+    }
+    Ok(())
+}
+
 /// 初始化 panel_settings 表。
 #[tauri::command]
 pub fn init_panel_settings_store(
@@ -53,33 +204,12 @@ pub fn init_panel_settings_store(
             log::info!("Detected old panel_settings schema, dropping and recreating...");
             conn.execute("DROP TABLE panel_settings", [])
                 .map_err(|e| format!("drop old panel_settings table: {e}"))?;
-        } else if !columns.contains(&"config_target".to_string()) {
-            conn.execute(
-                "ALTER TABLE panel_settings ADD COLUMN config_target TEXT NOT NULL DEFAULT 'kimi-code'",
-                [],
-            )
-            .map_err(|e| format!("add config_target column to panel_settings: {e}"))?;
-        }
-        if !has_settings_json_only && !columns.contains(&"profiles".to_string()) {
-            conn.execute(
-                "ALTER TABLE panel_settings ADD COLUMN profiles TEXT NOT NULL DEFAULT '{}'",
-                [],
-            )
-            .map_err(|e| format!("add profiles column to panel_settings: {e}"))?;
-        }
-        if !has_settings_json_only && !columns.contains(&"active_profile".to_string()) {
-            conn.execute(
-                "ALTER TABLE panel_settings ADD COLUMN active_profile TEXT NOT NULL DEFAULT 'default'",
-                [],
-            )
-            .map_err(|e| format!("add active_profile column to panel_settings: {e}"))?;
-        }
-        if !has_settings_json_only && !columns.contains(&"active_official_account_id".to_string()) {
-            conn.execute(
-                "ALTER TABLE panel_settings ADD COLUMN active_official_account_id TEXT NOT NULL DEFAULT ''",
-                [],
-            )
-            .map_err(|e| format!("add active_official_account_id column to panel_settings: {e}"))?;
+        } else if !columns.contains(&"id".to_string()) {
+            log::info!("Detected incompatible panel_settings schema, dropping and recreating...");
+            conn.execute("DROP TABLE panel_settings", [])
+                .map_err(|e| format!("drop incompatible panel_settings table: {e}"))?;
+        } else {
+            ensure_structured_panel_settings_columns(conn, &columns)?;
         }
     }
 
@@ -113,7 +243,7 @@ pub fn get_panel_settings(
                 backup_strategy, backup_frequency, backup_retention_count, backup_destination_type,
                 backup_local_path, backup_webdav_url, backup_webdav_username,
                 backup_webdav_password, backup_webdav_path,
-                shortcuts, mcp_servers,
+                shortcuts, mcp_servers, kimi_code_environments, active_kimi_code_environment_id,
                 insights_status, insights_proxy_port, insights_retention_days,
                 insights_disk_warn_threshold_mb, insights_store_prompt_preview,
                 insights_onboarding_shown_at, insights_last_known_port,
@@ -155,16 +285,19 @@ pub fn get_panel_settings(
                     "backup_webdav_path": row.get::<_, String>(28)?,
                     "shortcuts": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(29)?).unwrap_or(serde_json::json!({})),
                     "mcp_servers": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(30)?).unwrap_or(serde_json::json!({})),
-                    "insights_status": row.get::<_, String>(31)?,
-                    "insights_proxy_port": row.get::<_, Option<String>>(32)?
+                    "kimi_code_environments": row.get::<_, Option<String>>(31)?
+                        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
+                    "active_kimi_code_environment_id": row.get::<_, String>(32)?,
+                    "insights_status": row.get::<_, String>(33)?,
+                    "insights_proxy_port": row.get::<_, Option<String>>(34)?
                         .and_then(|s| if s == "auto" { Some(serde_json::json!("auto")) } else { s.parse::<i64>().ok().map(|n| serde_json::json!(n)) }),
-                    "insights_retention_days": row.get::<_, i64>(33)?,
-                    "insights_disk_warn_threshold_mb": row.get::<_, i64>(34)?,
-                    "insights_store_prompt_preview": row.get::<_, i64>(35)? != 0,
-                    "insights_onboarding_shown_at": row.get::<_, Option<String>>(36)?,
-                    "insights_last_known_port": row.get::<_, Option<i64>>(37)?,
-                    "insights_display_currency": row.get::<_, String>(38)?,
-                    "insights_currency_rates": row.get::<_, Option<String>>(39)?
+                    "insights_retention_days": row.get::<_, i64>(35)?,
+                    "insights_disk_warn_threshold_mb": row.get::<_, i64>(36)?,
+                    "insights_store_prompt_preview": row.get::<_, i64>(37)? != 0,
+                    "insights_onboarding_shown_at": row.get::<_, Option<String>>(38)?,
+                    "insights_last_known_port": row.get::<_, Option<i64>>(39)?,
+                    "insights_display_currency": row.get::<_, String>(40)?,
+                    "insights_currency_rates": row.get::<_, Option<String>>(41)?
                         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
                 });
                 Ok(json.to_string())
@@ -223,7 +356,7 @@ pub fn save_panel_settings(
             backup_strategy, backup_frequency, backup_retention_count, backup_destination_type,
             backup_local_path, backup_webdav_url, backup_webdav_username,
             backup_webdav_password, backup_webdav_path,
-            shortcuts, mcp_servers,
+            shortcuts, mcp_servers, kimi_code_environments, active_kimi_code_environment_id,
             insights_status, insights_proxy_port, insights_retention_days,
             insights_disk_warn_threshold_mb, insights_store_prompt_preview,
             insights_onboarding_shown_at, insights_last_known_port,
@@ -238,12 +371,12 @@ pub fn save_panel_settings(
             ?21, ?22, ?23, ?24,
             ?25, ?26, ?27,
             ?28, ?29,
-            ?30, ?31,
-            ?32, ?33, ?34,
-            ?35, ?36,
+            ?30, ?31, ?32, ?33,
+            ?34, ?35, ?36,
             ?37, ?38,
             ?39, ?40,
-            ?41, ?41
+            ?41, ?42,
+            ?43, ?43
         )
         ON CONFLICT(id) DO UPDATE SET
             version = excluded.version,
@@ -277,6 +410,8 @@ pub fn save_panel_settings(
             backup_webdav_path = excluded.backup_webdav_path,
             shortcuts = excluded.shortcuts,
             mcp_servers = excluded.mcp_servers,
+            kimi_code_environments = excluded.kimi_code_environments,
+            active_kimi_code_environment_id = excluded.active_kimi_code_environment_id,
             insights_status = excluded.insights_status,
             insights_proxy_port = excluded.insights_proxy_port,
             insights_retention_days = excluded.insights_retention_days,
@@ -319,6 +454,8 @@ pub fn save_panel_settings(
             get_str("backup_webdav_path"),
             settings["shortcuts"].to_string(),
             settings["mcp_servers"].to_string(),
+            get_json_str("kimi_code_environments"),
+            get_str("active_kimi_code_environment_id"),
             get_str("insights_status"),
             // insights_proxy_port: number | "auto" | null
             settings["insights_proxy_port"].as_str().map(|s| s.to_string())
@@ -472,7 +609,7 @@ mod tests {
                 backup_strategy, backup_frequency, backup_retention_count, backup_destination_type,
                 backup_local_path, backup_webdav_url, backup_webdav_username,
                 backup_webdav_password, backup_webdav_path,
-                shortcuts, mcp_servers,
+                shortcuts, mcp_servers, kimi_code_environments, active_kimi_code_environment_id,
                 insights_status, insights_proxy_port, insights_retention_days,
                 insights_disk_warn_threshold_mb, insights_store_prompt_preview,
                 insights_onboarding_shown_at, insights_last_known_port,
@@ -487,12 +624,12 @@ mod tests {
                 ?21, ?22, ?23, ?24,
                 ?25, ?26, ?27,
                 ?28, ?29,
-                ?30, ?31,
-                ?32, ?33, ?34,
-                ?35, ?36,
+                ?30, ?31, ?32, ?33,
+                ?34, ?35, ?36,
                 ?37, ?38,
                 ?39, ?40,
-                ?41, ?41
+                ?41, ?42,
+                ?43, ?43
             )
             ON CONFLICT(id) DO UPDATE SET
                 version = excluded.version,
@@ -526,6 +663,8 @@ mod tests {
                 backup_webdav_path = excluded.backup_webdav_path,
                 shortcuts = excluded.shortcuts,
                 mcp_servers = excluded.mcp_servers,
+                kimi_code_environments = excluded.kimi_code_environments,
+                active_kimi_code_environment_id = excluded.active_kimi_code_environment_id,
                 insights_status = excluded.insights_status,
                 insights_proxy_port = excluded.insights_proxy_port,
                 insights_retention_days = excluded.insights_retention_days,
@@ -568,6 +707,8 @@ mod tests {
                 get_str("backup_webdav_path"),
                 settings["shortcuts"].to_string(),
                 settings["mcp_servers"].to_string(),
+                get_json_str("kimi_code_environments"),
+                get_str("active_kimi_code_environment_id"),
                 get_str("insights_status"),
                 settings["insights_proxy_port"].as_str().map(|s| s.to_string())
                     .or_else(|| settings["insights_proxy_port"].as_i64().map(|n| n.to_string())),
@@ -600,7 +741,7 @@ mod tests {
                     backup_strategy, backup_frequency, backup_retention_count, backup_destination_type,
                     backup_local_path, backup_webdav_url, backup_webdav_username,
                     backup_webdav_password, backup_webdav_path,
-                    shortcuts, mcp_servers,
+                    shortcuts, mcp_servers, kimi_code_environments, active_kimi_code_environment_id,
                     insights_status, insights_proxy_port, insights_retention_days,
                     insights_disk_warn_threshold_mb, insights_store_prompt_preview,
                     insights_onboarding_shown_at, insights_last_known_port,
@@ -642,16 +783,19 @@ mod tests {
                         "backup_webdav_path": row.get::<_, String>(28)?,
                         "shortcuts": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(29)?).unwrap_or(serde_json::json!({})),
                         "mcp_servers": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(30)?).unwrap_or(serde_json::json!({})),
-                        "insights_status": row.get::<_, String>(31)?,
-                        "insights_proxy_port": row.get::<_, Option<String>>(32)?
+                        "kimi_code_environments": row.get::<_, Option<String>>(31)?
+                            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
+                        "active_kimi_code_environment_id": row.get::<_, String>(32)?,
+                        "insights_status": row.get::<_, String>(33)?,
+                        "insights_proxy_port": row.get::<_, Option<String>>(34)?
                             .and_then(|s| if s == "auto" { Some(serde_json::json!("auto")) } else { s.parse::<i64>().ok().map(|n| serde_json::json!(n)) }),
-                        "insights_retention_days": row.get::<_, i64>(33)?,
-                        "insights_disk_warn_threshold_mb": row.get::<_, i64>(34)?,
-                        "insights_store_prompt_preview": row.get::<_, i64>(35)? != 0,
-                        "insights_onboarding_shown_at": row.get::<_, Option<String>>(36)?,
-                        "insights_last_known_port": row.get::<_, Option<i64>>(37)?,
-                        "insights_display_currency": row.get::<_, String>(38)?,
-                        "insights_currency_rates": row.get::<_, Option<String>>(39)?
+                        "insights_retention_days": row.get::<_, i64>(35)?,
+                        "insights_disk_warn_threshold_mb": row.get::<_, i64>(36)?,
+                        "insights_store_prompt_preview": row.get::<_, i64>(37)? != 0,
+                        "insights_onboarding_shown_at": row.get::<_, Option<String>>(38)?,
+                        "insights_last_known_port": row.get::<_, Option<i64>>(39)?,
+                        "insights_display_currency": row.get::<_, String>(40)?,
+                        "insights_currency_rates": row.get::<_, Option<String>>(41)?
                             .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
                     });
                     Ok(json.to_string())
@@ -696,6 +840,8 @@ mod tests {
             "backup_webdav_path": "/kimi-backups",
             "shortcuts": {},
             "mcp_servers": {},
+            "kimi_code_environments": [{"id": "default", "name": "Default", "homePath": "~/.kimi-code"}],
+            "active_kimi_code_environment_id": "default",
             "insights_status": "enabled",
             "insights_proxy_port": "auto",
             "insights_retention_days": 30,
@@ -720,6 +866,7 @@ mod tests {
         assert_eq!(loaded_json["tray_icon"], true);
         assert_eq!(loaded_json["last_display_id"], 123);
         assert_eq!(loaded_json["active_official_account_id"], "acct-test");
+        assert_eq!(loaded_json["active_kimi_code_environment_id"], "default");
     }
 
     #[test]
@@ -751,6 +898,8 @@ mod tests {
             "backup_webdav_path": "/backups",
             "shortcuts": {},
             "mcp_servers": {},
+            "kimi_code_environments": [{"id": "default", "name": "Default", "homePath": "~/.kimi-code"}],
+            "active_kimi_code_environment_id": "default",
             "insights_status": "disabled",
             "insights_proxy_port": 9000,
             "insights_retention_days": 60,
@@ -770,5 +919,126 @@ mod tests {
         assert_eq!(exported_json["theme"], "light");
         assert_eq!(exported_json["locale"], "en-US");
         assert_eq!(exported_json["insights_display_currency"], "CNY");
+    }
+
+    #[test]
+    fn saves_startup_default_panel_settings_shape() {
+        let state = make_test_state();
+        let default_settings = serde_json::json!({
+            "version": 1,
+            "config_target": "kimi-code",
+            "config_path": "~/.kimi-code/config.toml",
+            "profiles": {},
+            "active_profile": "default",
+            "profiles_path": "",
+            "follow_config_profiles": true,
+            "theme": "auto",
+            "appearance_theme": "aurora",
+            "ui_font_size": "standard",
+            "locale": "zh-CN",
+            "tray_icon": false,
+            "sidebar_collapsed": false,
+            "display_open_mode": "remember-last",
+            "close_behavior": "quit",
+            "terminal_app": "system-terminal",
+            "backup_strategy": "manual",
+            "backup_frequency": "daily",
+            "backup_retention_count": 10,
+            "backup_destination_type": "local",
+            "backup_local_path": "~/.kimi-code-switch-gui/backups",
+            "backup_webdav_url": "",
+            "backup_webdav_username": "",
+            "backup_webdav_password": "",
+            "backup_webdav_path": "",
+            "shortcuts": {},
+            "mcp_servers": {},
+            "kimi_code_environments": [{
+                "id": "default",
+                "name": "Default",
+                "homePath": "~/.kimi-code",
+                "description": "",
+                "createdAt": "2026-01-01T00:00:00.000Z",
+                "updatedAt": "2026-01-01T00:00:00.000Z",
+                "profiles": {},
+                "activeProfile": "",
+                "mcpServers": {}
+            }],
+            "active_kimi_code_environment_id": "default",
+            "insights_status": "disabled",
+            "insights_proxy_port": "auto",
+            "insights_retention_days": 90,
+            "insights_disk_warn_threshold_mb": 100,
+            "insights_store_prompt_preview": false,
+            "insights_onboarding_shown_at": "",
+            "insights_last_known_port": null,
+            "insights_display_currency": "USD",
+            "insights_currency_rates": {}
+        });
+
+        save_test(&default_settings.to_string(), &state).unwrap();
+
+        let loaded = get_test(&state).unwrap().expect("settings should exist");
+        let loaded_json: serde_json::Value = serde_json::from_str(&loaded).unwrap();
+        assert_eq!(loaded_json["config_target"], "kimi-code");
+        assert_eq!(loaded_json["active_profile"], "default");
+        assert_eq!(loaded_json["active_kimi_code_environment_id"], "default");
+        assert_eq!(
+            loaded_json["kimi_code_environments"][0]["homePath"],
+            "~/.kimi-code"
+        );
+    }
+
+    #[test]
+    fn init_adds_missing_columns_for_partial_structured_schema() {
+        let state = {
+            let conn = Connection::open_in_memory().unwrap();
+            conn.execute_batch(
+                r#"
+                CREATE TABLE panel_settings (
+                  id INTEGER PRIMARY KEY CHECK (id = 1),
+                  version INTEGER NOT NULL DEFAULT 1,
+                  config_path TEXT NOT NULL,
+                  shortcuts TEXT NOT NULL,
+                  mcp_servers TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  created_at TEXT NOT NULL
+                );
+                "#,
+            )
+            .unwrap();
+            crate::usage::UsageState {
+                conn: Mutex::new(Some(conn)),
+            }
+        };
+
+        {
+            let guard = lock_test_conn(&state).unwrap();
+            let conn = guard.as_ref().unwrap();
+            let columns: Vec<String> = conn
+                .prepare("SELECT name FROM pragma_table_info('panel_settings')")
+                .unwrap()
+                .query_map([], |row| row.get::<_, String>(0))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap();
+            ensure_structured_panel_settings_columns(conn, &columns).unwrap();
+            conn.execute_batch(SCHEMA_SQL).unwrap();
+        }
+
+        let columns = {
+            let guard = lock_test_conn(&state).unwrap();
+            let conn = guard.as_ref().unwrap();
+            let mut stmt = conn
+                .prepare("SELECT name FROM pragma_table_info('panel_settings')")
+                .unwrap();
+            stmt.query_map([], |row| row.get::<_, String>(0))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+
+        assert!(columns.contains(&"active_kimi_code_environment_id".to_string()));
+        assert!(columns.contains(&"insights_display_currency".to_string()));
+        assert!(columns.contains(&"backup_local_path".to_string()));
     }
 }

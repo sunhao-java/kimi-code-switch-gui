@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
 
   -- 服务器标识
-  server_name TEXT NOT NULL UNIQUE,  -- 服务器名称（唯一键）
+  kimi_code_environment_id TEXT NOT NULL DEFAULT 'default',
+  server_name TEXT NOT NULL,  -- 服务器名称（环境内唯一键）
 
   -- 状态管理
   enabled INTEGER NOT NULL DEFAULT 1,  -- 是否启用（0=禁用，1=启用）
@@ -26,9 +27,10 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
 
   -- 约束
   CHECK (enabled IN (0, 1)),
-  CHECK (transport IN ('sse', 'stdio', 'streamable-http'))
+  CHECK (transport IN ('sse', 'stdio', 'streamable-http')),
+  UNIQUE(kimi_code_environment_id, server_name)
 );
 
 -- 索引
-CREATE INDEX IF NOT EXISTS idx_mcp_servers_enabled ON mcp_servers(enabled);
-CREATE INDEX IF NOT EXISTS idx_mcp_servers_name ON mcp_servers(server_name);
+CREATE INDEX IF NOT EXISTS idx_mcp_servers_environment_enabled ON mcp_servers(kimi_code_environment_id, enabled);
+CREATE INDEX IF NOT EXISTS idx_mcp_servers_environment_name ON mcp_servers(kimi_code_environment_id, server_name);

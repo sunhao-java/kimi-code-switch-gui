@@ -48,6 +48,10 @@ CREATE TABLE IF NOT EXISTS panel_settings (
   -- MCP 服务器（JSON）
   mcp_servers TEXT NOT NULL, -- Record<string, McpServerConfig>
 
+  -- Kimi Code 环境（JSON）
+  kimi_code_environments TEXT, -- KimiCodeEnvironment[]
+  active_kimi_code_environment_id TEXT NOT NULL DEFAULT 'default',
+
   -- 洞察配置
   insights_status TEXT NOT NULL DEFAULT 'disabled',
   insights_proxy_port TEXT, -- number | "auto" | null

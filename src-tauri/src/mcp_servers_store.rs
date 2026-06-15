@@ -10,6 +10,7 @@ use serde_json::json;
 
 /// mcp_servers 表 schema
 pub const SCHEMA_SQL: &str = include_str!("mcp_servers_schema.sql");
+const DEFAULT_ENVIRONMENT_ID: &str = "default";
 
 /// 安全地获取数据库连接，处理 poisoned lock。
 fn lock_conn<'a>(
@@ -21,12 +22,102 @@ fn lock_conn<'a>(
         .map_err(|_| "database lock poisoned".to_string())
 }
 
+fn migrate_mcp_servers_schema(conn: &rusqlite::Connection) -> Result<(), String> {
+    let table_exists: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'mcp_servers'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("check mcp_servers table: {e}"))?;
+    if table_exists == 0 {
+        return Ok(());
+    }
+
+    let create_sql: String = conn
+        .query_row(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mcp_servers'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("read mcp_servers schema: {e}"))?;
+    let needs_rebuild = !create_sql.contains("kimi_code_environment_id")
+        || create_sql.contains("server_name TEXT NOT NULL UNIQUE");
+    if !needs_rebuild {
+        return Ok(());
+    }
+
+    conn.execute_batch(
+        r#"
+        ALTER TABLE mcp_servers RENAME TO mcp_servers_legacy;
+        CREATE TABLE mcp_servers (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          kimi_code_environment_id TEXT NOT NULL DEFAULT 'default',
+          server_name TEXT NOT NULL,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          transport TEXT NOT NULL,
+          url TEXT NOT NULL DEFAULT '',
+          command TEXT NOT NULL DEFAULT '',
+          args TEXT NOT NULL DEFAULT '[]',
+          headers TEXT NOT NULL DEFAULT '{}',
+          env TEXT NOT NULL DEFAULT '{}',
+          extra TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          CHECK (enabled IN (0, 1)),
+          CHECK (transport IN ('sse', 'stdio', 'streamable-http')),
+          UNIQUE(kimi_code_environment_id, server_name)
+        );
+        INSERT OR IGNORE INTO mcp_servers (
+          id, kimi_code_environment_id, server_name, enabled, transport, url, command,
+          args, headers, env, extra, created_at, updated_at
+        )
+        SELECT
+          id, 'default', server_name, enabled, transport, url, command,
+          args, headers, env, extra, created_at, updated_at
+        FROM mcp_servers_legacy;
+        DROP TABLE mcp_servers_legacy;
+        "#,
+    )
+    .map_err(|e| format!("migrate mcp_servers schema: {e}"))?;
+
+    Ok(())
+}
+
+fn environment_id_from_server(server: &serde_json::Value) -> String {
+    server["kimi_code_environment_id"]
+        .as_str()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(DEFAULT_ENVIRONMENT_ID)
+        .to_string()
+}
+
+fn server_json_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value> {
+    Ok(json!({
+        "id": row.get::<_, i64>(0)?,
+        "kimi_code_environment_id": row.get::<_, String>(1)?,
+        "server_name": row.get::<_, String>(2)?,
+        "enabled": row.get::<_, i64>(3)? != 0,
+        "transport": row.get::<_, String>(4)?,
+        "url": row.get::<_, String>(5)?,
+        "command": row.get::<_, String>(6)?,
+        "args": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(7)?).unwrap_or(json!([])),
+        "headers": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(8)?).unwrap_or(json!({})),
+        "env": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(9)?).unwrap_or(json!({})),
+        "extra": row.get::<_, Option<String>>(10)?
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
+        "created_at": row.get::<_, String>(11)?,
+        "updated_at": row.get::<_, String>(12)?,
+    }))
+}
+
 /// 初始化 mcp_servers 表
 #[tauri::command]
 pub fn init_mcp_servers_store(state: tauri::State<crate::usage::UsageState>) -> Result<(), String> {
     let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
+    migrate_mcp_servers_schema(conn)?;
     conn.execute_batch(SCHEMA_SQL)
         .map_err(|e| format!("create mcp_servers table: {e}"))?;
 
@@ -42,29 +133,13 @@ pub fn list_mcp_servers(state: tauri::State<crate::usage::UsageState>) -> Result
 
     let mut stmt = conn
         .prepare(
-            "SELECT id, server_name, enabled, transport, url, command, args, headers, env, extra, created_at, updated_at
+            "SELECT id, kimi_code_environment_id, server_name, enabled, transport, url, command, args, headers, env, extra, created_at, updated_at
              FROM mcp_servers ORDER BY server_name",
         )
         .map_err(|e| format!("prepare list: {e}"))?;
 
     let servers: Vec<serde_json::Value> = stmt
-        .query_map([], |row| {
-            Ok(json!({
-                "id": row.get::<_, i64>(0)?,
-                "server_name": row.get::<_, String>(1)?,
-                "enabled": row.get::<_, i64>(2)? != 0,
-                "transport": row.get::<_, String>(3)?,
-                "url": row.get::<_, String>(4)?,
-                "command": row.get::<_, String>(5)?,
-                "args": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(6)?).unwrap_or(json!([])),
-                "headers": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(7)?).unwrap_or(json!({})),
-                "env": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(8)?).unwrap_or(json!({})),
-                "extra": row.get::<_, Option<String>>(9)?
-                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
-                "created_at": row.get::<_, String>(10)?,
-                "updated_at": row.get::<_, String>(11)?,
-            }))
-        })
+        .query_map([], server_json_from_row)
         .map_err(|e| format!("query servers: {e}"))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("collect servers: {e}"))?;
@@ -83,26 +158,10 @@ pub fn get_mcp_server(
 
     let server_json: Option<String> = conn
         .query_row(
-            "SELECT id, server_name, enabled, transport, url, command, args, headers, env, extra, created_at, updated_at
-             FROM mcp_servers WHERE server_name = ?1",
-            [&server_name],
-            |row| {
-                Ok(json!({
-                    "id": row.get::<_, i64>(0)?,
-                    "server_name": row.get::<_, String>(1)?,
-                    "enabled": row.get::<_, i64>(2)? != 0,
-                    "transport": row.get::<_, String>(3)?,
-                    "url": row.get::<_, String>(4)?,
-                    "command": row.get::<_, String>(5)?,
-                    "args": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(6)?).unwrap_or(json!([])),
-                    "headers": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(7)?).unwrap_or(json!({})),
-                    "env": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(8)?).unwrap_or(json!({})),
-                    "extra": row.get::<_, Option<String>>(9)?
-                        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
-                    "created_at": row.get::<_, String>(10)?,
-                    "updated_at": row.get::<_, String>(11)?,
-                }).to_string())
-            },
+            "SELECT id, kimi_code_environment_id, server_name, enabled, transport, url, command, args, headers, env, extra, created_at, updated_at
+             FROM mcp_servers WHERE kimi_code_environment_id = ?1 AND server_name = ?2",
+            rusqlite::params![DEFAULT_ENVIRONMENT_ID, server_name],
+            |row| Ok(server_json_from_row(row)?.to_string()),
         )
         .optional()
         .map_err(|e| format!("query server: {e}"))?;
@@ -127,6 +186,7 @@ pub fn save_mcp_server(
     let server_name = server["server_name"]
         .as_str()
         .ok_or("missing server_name")?;
+    let environment_id = environment_id_from_server(&server);
     let enabled = if server["enabled"].as_bool().unwrap_or(true) {
         1i64
     } else {
@@ -145,9 +205,9 @@ pub fn save_mcp_server(
     };
 
     conn.execute(
-        "INSERT INTO mcp_servers (server_name, enabled, transport, url, command, args, headers, env, extra, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)
-         ON CONFLICT(server_name) DO UPDATE SET
+        "INSERT INTO mcp_servers (kimi_code_environment_id, server_name, enabled, transport, url, command, args, headers, env, extra, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)
+         ON CONFLICT(kimi_code_environment_id, server_name) DO UPDATE SET
            enabled = excluded.enabled,
            transport = excluded.transport,
            url = excluded.url,
@@ -157,7 +217,7 @@ pub fn save_mcp_server(
            env = excluded.env,
            extra = excluded.extra,
            updated_at = excluded.updated_at",
-        rusqlite::params![server_name, enabled, transport, url, command, args, headers, env, extra, now],
+        rusqlite::params![environment_id, server_name, enabled, transport, url, command, args, headers, env, extra, now],
     )
     .map_err(|e| format!("save mcp_server: {e}"))?;
 
@@ -178,8 +238,8 @@ pub fn enable_mcp_server(
 
     let rows = conn
         .execute(
-            "UPDATE mcp_servers SET enabled = 1, updated_at = ?1 WHERE server_name = ?2",
-            rusqlite::params![now, server_name],
+            "UPDATE mcp_servers SET enabled = 1, updated_at = ?1 WHERE kimi_code_environment_id = ?2 AND server_name = ?3",
+            rusqlite::params![now, DEFAULT_ENVIRONMENT_ID, server_name],
         )
         .map_err(|e| format!("enable mcp_server: {e}"))?;
 
@@ -204,8 +264,8 @@ pub fn disable_mcp_server(
 
     let rows = conn
         .execute(
-            "UPDATE mcp_servers SET enabled = 0, updated_at = ?1 WHERE server_name = ?2",
-            rusqlite::params![now, server_name],
+            "UPDATE mcp_servers SET enabled = 0, updated_at = ?1 WHERE kimi_code_environment_id = ?2 AND server_name = ?3",
+            rusqlite::params![now, DEFAULT_ENVIRONMENT_ID, server_name],
         )
         .map_err(|e| format!("disable mcp_server: {e}"))?;
 
@@ -228,8 +288,8 @@ pub fn delete_mcp_server(
 
     let rows = conn
         .execute(
-            "DELETE FROM mcp_servers WHERE server_name = ?1",
-            [&server_name],
+            "DELETE FROM mcp_servers WHERE kimi_code_environment_id = ?1 AND server_name = ?2",
+            rusqlite::params![DEFAULT_ENVIRONMENT_ID, server_name],
         )
         .map_err(|e| format!("delete mcp_server: {e}"))?;
 
@@ -252,12 +312,12 @@ pub fn get_enabled_mcp_servers(
     let mut stmt = conn
         .prepare(
             "SELECT server_name, transport, url, command, args, headers, env, extra
-             FROM mcp_servers WHERE enabled = 1 ORDER BY server_name",
+             FROM mcp_servers WHERE kimi_code_environment_id = ?1 AND enabled = 1 ORDER BY server_name",
         )
         .map_err(|e| format!("prepare enabled servers: {e}"))?;
 
     let servers: Vec<serde_json::Value> = stmt
-        .query_map([], |row| {
+        .query_map([DEFAULT_ENVIRONMENT_ID], |row| {
             Ok(json!({
                 "server_name": row.get::<_, String>(0)?,
                 "transport": row.get::<_, String>(1)?,
@@ -277,7 +337,10 @@ pub fn get_enabled_mcp_servers(
     serde_json::to_string(&servers).map_err(|e| format!("serialize: {e}"))
 }
 
-/// 从 mcp.json 迁移到数据库（首次启动）
+/// 从旧 MCP JSON 导入到数据库。
+///
+/// 注意：不要重命名或删除源文件。`~/.kimi-code/mcp.json` 是 Kimi Code 标准配置文件，
+/// 启动后台迁移如果移动它，会被保存冲突检测识别成外部删除。
 #[tauri::command]
 pub fn migrate_mcp_from_json(
     json_path: String,
@@ -321,11 +384,7 @@ pub fn migrate_mcp_from_json(
         save_mcp_server(server_with_name.to_string(), state.clone())?;
     }
 
-    // 重命名 JSON 文件
-    let migrated_path = resolved_path.with_extension("json.migrated");
-    fs::rename(&resolved_path, &migrated_path).map_err(|e| format!("rename mcp json: {e}"))?;
-
-    log::info!("Migrated MCP servers from {} to database", json_path);
+    log::info!("Imported MCP servers from {} to database", json_path);
     Ok(())
 }
 
@@ -366,6 +425,7 @@ mod tests {
         let server_name = server["server_name"]
             .as_str()
             .ok_or("missing server_name")?;
+        let environment_id = environment_id_from_server(&server);
         let enabled = if server["enabled"].as_bool().unwrap_or(true) {
             1i64
         } else {
@@ -384,9 +444,9 @@ mod tests {
         };
 
         conn.execute(
-            "INSERT INTO mcp_servers (server_name, enabled, transport, url, command, args, headers, env, extra, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)
-             ON CONFLICT(server_name) DO UPDATE SET
+            "INSERT INTO mcp_servers (kimi_code_environment_id, server_name, enabled, transport, url, command, args, headers, env, extra, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)
+             ON CONFLICT(kimi_code_environment_id, server_name) DO UPDATE SET
                enabled = excluded.enabled,
                transport = excluded.transport,
                url = excluded.url,
@@ -396,7 +456,7 @@ mod tests {
                env = excluded.env,
                extra = excluded.extra,
                updated_at = excluded.updated_at",
-            rusqlite::params![server_name, enabled, transport, url, command, args, headers, env, extra, now],
+            rusqlite::params![environment_id, server_name, enabled, transport, url, command, args, headers, env, extra, now],
         )
         .map_err(|e| format!("save mcp_server: {e}"))?;
 
@@ -412,26 +472,10 @@ mod tests {
 
         let server_json: Option<String> = conn
             .query_row(
-                "SELECT id, server_name, enabled, transport, url, command, args, headers, env, extra, created_at, updated_at
-                 FROM mcp_servers WHERE server_name = ?1",
-                [server_name],
-                |row| {
-                    Ok(json!({
-                        "id": row.get::<_, i64>(0)?,
-                        "server_name": row.get::<_, String>(1)?,
-                        "enabled": row.get::<_, i64>(2)? != 0,
-                        "transport": row.get::<_, String>(3)?,
-                        "url": row.get::<_, String>(4)?,
-                        "command": row.get::<_, String>(5)?,
-                        "args": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(6)?).unwrap_or(json!([])),
-                        "headers": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(7)?).unwrap_or(json!({})),
-                        "env": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(8)?).unwrap_or(json!({})),
-                        "extra": row.get::<_, Option<String>>(9)?
-                            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
-                        "created_at": row.get::<_, String>(10)?,
-                        "updated_at": row.get::<_, String>(11)?,
-                    }).to_string())
-                },
+                "SELECT id, kimi_code_environment_id, server_name, enabled, transport, url, command, args, headers, env, extra, created_at, updated_at
+                 FROM mcp_servers WHERE kimi_code_environment_id = ?1 AND server_name = ?2",
+                rusqlite::params![DEFAULT_ENVIRONMENT_ID, server_name],
+                |row| Ok(server_json_from_row(row)?.to_string()),
             )
             .optional()
             .map_err(|e| format!("query server: {e}"))?;
@@ -446,8 +490,8 @@ mod tests {
         let now = chrono::Utc::now().to_rfc3339();
         let rows = conn
             .execute(
-                "UPDATE mcp_servers SET enabled = 1, updated_at = ?1 WHERE server_name = ?2",
-                rusqlite::params![now, server_name],
+                "UPDATE mcp_servers SET enabled = 1, updated_at = ?1 WHERE kimi_code_environment_id = ?2 AND server_name = ?3",
+                rusqlite::params![now, DEFAULT_ENVIRONMENT_ID, server_name],
             )
             .map_err(|e| format!("enable mcp_server: {e}"))?;
 
@@ -464,8 +508,8 @@ mod tests {
         let now = chrono::Utc::now().to_rfc3339();
         let rows = conn
             .execute(
-                "UPDATE mcp_servers SET enabled = 0, updated_at = ?1 WHERE server_name = ?2",
-                rusqlite::params![now, server_name],
+                "UPDATE mcp_servers SET enabled = 0, updated_at = ?1 WHERE kimi_code_environment_id = ?2 AND server_name = ?3",
+                rusqlite::params![now, DEFAULT_ENVIRONMENT_ID, server_name],
             )
             .map_err(|e| format!("disable mcp_server: {e}"))?;
 
@@ -481,8 +525,8 @@ mod tests {
 
         let rows = conn
             .execute(
-                "DELETE FROM mcp_servers WHERE server_name = ?1",
-                [server_name],
+                "DELETE FROM mcp_servers WHERE kimi_code_environment_id = ?1 AND server_name = ?2",
+                rusqlite::params![DEFAULT_ENVIRONMENT_ID, server_name],
             )
             .map_err(|e| format!("delete mcp_server: {e}"))?;
 
@@ -499,12 +543,12 @@ mod tests {
         let mut stmt = conn
             .prepare(
                 "SELECT server_name, transport, url, command, args, headers, env, extra
-                 FROM mcp_servers WHERE enabled = 1 ORDER BY server_name",
+                 FROM mcp_servers WHERE kimi_code_environment_id = ?1 AND enabled = 1 ORDER BY server_name",
             )
             .map_err(|e| format!("prepare enabled servers: {e}"))?;
 
         let servers: Vec<serde_json::Value> = stmt
-            .query_map([], |row| {
+            .query_map([DEFAULT_ENVIRONMENT_ID], |row| {
                 Ok(json!({
                     "server_name": row.get::<_, String>(0)?,
                     "transport": row.get::<_, String>(1)?,
@@ -640,5 +684,49 @@ mod tests {
         assert_eq!(enabled.len(), 2);
         assert_eq!(enabled[0]["server_name"], "server1");
         assert_eq!(enabled[1]["server_name"], "server3");
+    }
+
+    #[test]
+    fn same_server_name_can_exist_in_different_environments() {
+        let state = make_test_state();
+
+        let default_server = json!({
+            "kimi_code_environment_id": "default",
+            "server_name": "shared-name",
+            "enabled": true,
+            "transport": "stdio",
+            "url": "",
+            "command": "/bin/default",
+            "args": [],
+            "headers": {},
+            "env": {},
+            "extra": null
+        });
+        let work_server = json!({
+            "kimi_code_environment_id": "work",
+            "server_name": "shared-name",
+            "enabled": true,
+            "transport": "stdio",
+            "url": "",
+            "command": "/bin/work",
+            "args": [],
+            "headers": {},
+            "env": {},
+            "extra": null
+        });
+
+        save_test(&default_server.to_string(), &state).unwrap();
+        save_test(&work_server.to_string(), &state).unwrap();
+
+        let guard = lock_test_conn(&state).unwrap();
+        let conn = guard.as_ref().unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM mcp_servers WHERE server_name = 'shared-name'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 2);
     }
 }

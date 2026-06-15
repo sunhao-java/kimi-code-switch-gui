@@ -7,6 +7,7 @@ import {
   cloneState,
   DEFAULT_CONFIG_PATH,
   DEFAULT_PANEL_DIRECTORY,
+  getActiveKimiCodeEnvironment,
 } from "@shared/configStore";
 import type { OpenKimiTerminalRequest, PanelSettings, TerminalApp } from "@shared/types";
 
@@ -47,10 +48,10 @@ function quotePathForShell(value: string): string {
 function escapeForAppleScript(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
-function buildKimiShellCommand(workingDirectory: string, args: string[] = []): string {
+function buildKimiShellCommand(workingDirectory: string, homePath: string, args: string[] = []): string {
   // PATH 由 Rust exec 注入，这里不再 export PATH。
   const kimiArgs = args.length ? ` ${args.map(quoteForShell).join(" ")}` : "";
-  return `cd ${quotePathForShell(workingDirectory)}; kimi${kimiArgs}`;
+  return `export KIMI_CODE_HOME=${quotePathForShell(homePath)}; cd ${quotePathForShell(workingDirectory)}; kimi${kimiArgs}`;
 }
 
 function buildAppleScriptLines(app: TerminalApp, shellCommand: string, scriptPath?: string): string[] {
@@ -100,10 +101,10 @@ export async function openKimiInTerminal(
   const probe = await exec("open", ["-Ra", appName]);
   if (probe.code !== 0) throw new Error(`Configured terminal app is not installed: ${appLabel}`);
 
-  const configPathRaw = settings.config_path.trim() || DEFAULT_CONFIG_PATH;
-  const workingDirectory = dirname(resolveHome(configPathRaw));
+  const activeEnvironment = getActiveKimiCodeEnvironment(settings);
+  const workingDirectory = activeEnvironment.homePath.trim() || dirname(resolveHome(settings.config_path.trim() || DEFAULT_CONFIG_PATH));
   const kimiArgs = targetProfileName ? buildProfileKimiArgs(request as OpenKimiTerminalRequest, targetProfileName) : [];
-  const shellCommand = buildKimiShellCommand(workingDirectory, kimiArgs);
+  const shellCommand = buildKimiShellCommand(workingDirectory, workingDirectory, kimiArgs);
 
   let scriptPath: string | undefined;
   if (settings.terminal_app === "iterm2") {

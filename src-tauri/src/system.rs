@@ -131,7 +131,7 @@ fn executable_path_if_exists(path: PathBuf) -> Option<PathBuf> {
 }
 
 fn panel_tmp_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|home| home.join(".kimi-code/.panel/tmp"))
+    dirs::home_dir().map(|home| home.join(".kimi-code-switch-gui/tmp"))
 }
 
 fn find_kimi_code_login_command() -> OAuthLoginCommand {
@@ -1130,7 +1130,7 @@ mod tests {
     #[test]
     fn panel_tmp_dir_allows_terminal_launch_scripts() {
         let panel_tmp = panel_tmp_dir().expect("home dir required");
-        assert!(panel_tmp.ends_with(".kimi-code/.panel/tmp"));
+        assert!(panel_tmp.ends_with(".kimi-code-switch-gui/tmp"));
         assert!(panel_tmp
             .join("terminal/kimi-launch.sh")
             .starts_with(&panel_tmp));

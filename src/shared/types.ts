@@ -145,6 +145,20 @@ export interface ShortcutBinding {
   scope: ShortcutScope;
 }
 
+export interface KimiCodeEnvironment {
+  id: string;
+  name: string;
+  homePath: string;
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  mainConfig?: MainConfig;
+  profiles?: Record<string, Profile>;
+  activeProfile?: string;
+  mcpServers?: Record<string, McpServerConfig>;
+  sourceEnvironmentId?: string;
+}
+
 export interface PanelSettings {
   version: number;
   config_target?: ConfigTarget;
@@ -175,6 +189,8 @@ export interface PanelSettings {
   backup_webdav_path: string;
   shortcuts: Record<ShortcutAction, ShortcutBinding>;
   mcp_servers: Record<string, McpServerConfig>;
+  kimi_code_environments?: KimiCodeEnvironment[];
+  active_kimi_code_environment_id?: string;
   last_display_id?: number;
   uiState?: {
     activeTab?: string;
@@ -337,6 +353,12 @@ export interface ExternalChangeConflict {
 }
 
 export interface SaveStateResult {
+  ok: true;
+  snapshot: FileSnapshotBundle;
+  doctor: ConfigDoctorReport;
+}
+
+export interface KimiCodeEnvironmentPreferenceResult {
   ok: true;
   snapshot: FileSnapshotBundle;
   doctor: ConfigDoctorReport;

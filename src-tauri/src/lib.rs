@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 //! Kimi Code Switch GUI — Tauri 后端入口（薄 Rust 壳）。
 //!
 //! 架构：业务逻辑（configStore / configSafety / skillsStore 等约 5300 行 TS）
@@ -31,12 +33,15 @@ pub fn run() {
             fs_access::ensure_dir,
             fs_access::remove_file,
             fs_access::move_file,
+            fs_access::copy_dir,
             fs_access::path_exists,
             fs_access::list_dir,
             fs_access::list_dir_typed,
             fs_access::remove_dir,
             fs_access::hostname,
             fs_access::list_subdirs,
+            fs_access::ensure_kimi_code_environment_layout,
+            fs_access::activate_kimi_code_environment_link,
             // 系统集成
             system::exec_command,
             system::start_kimi_oauth_login,

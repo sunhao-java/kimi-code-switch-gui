@@ -5,6 +5,7 @@ import { redactAppStateSecrets } from "./configSafety";
 import { ConfigResolver, ConfigTarget, parseConfigTarget } from "./configTarget";
 import { SUPPORTED_CURRENCIES } from "./currency";
 import { buildMcpConfigDocument, DEFAULT_MCP_CONFIG_PATH, loadMcpConfig, parseMcpConfigStrict } from "./mcpStore";
+import { normalizeEntryName } from "./nameRules";
 import { createDefaultShortcuts, normalizeShortcuts } from "./shortcutStore";
 import type {
   AppState,
@@ -15,6 +16,7 @@ import type {
   ImportConflict,
   ImportConflictStrategy,
   ImportPreview,
+  KimiCodeEnvironment,
   MainConfig,
   McpServerConfig,
   ModelConfig,
@@ -31,6 +33,10 @@ export const PROFILE_FILENAME = "config.profiles.toml";
 export const PANEL_SETTINGS_FILENAME = "config.panel.toml";
 export const BACKUP_DIRECTORY_NAME = "backups";
 export const DEFAULT_PROFILE_NAME = "default";
+export const DEFAULT_KIMI_CODE_ENVIRONMENT_ID = "default";
+export const DEFAULT_KIMI_CODE_ENVIRONMENT_NAME = "默认环境";
+export const PANEL_APP_DIRECTORY = "~/.kimi-code-switch-gui";
+export const KIMI_CODE_ENVIRONMENTS_DIRECTORY = `${PANEL_APP_DIRECTORY}/.env`;
 
 /**
  * 根据目标获取默认配置路径
@@ -55,14 +61,44 @@ export function getDefaultMcpConfigPath(target: ConfigTarget): string {
  * 根据目标获取默认 panel 路径
  */
 export function getDefaultPanelDirectory(target: ConfigTarget): string {
-  const resolver = new ConfigResolver(target);
-  return `~/${resolver.getConfigDir()}/.panel`;
+  void target;
+  return PANEL_APP_DIRECTORY;
+}
+
+export function defaultKimiCodeHomePath(): string {
+  return "~/.kimi-code";
+}
+
+export function getKimiCodeEnvironmentHomePath(environmentId: string): string {
+  return joinPath(KIMI_CODE_ENVIRONMENTS_DIRECTORY, sanitizeEnvironmentId(environmentId, DEFAULT_KIMI_CODE_ENVIRONMENT_ID));
+}
+
+export function getKimiCodeConfigPath(homePath = defaultKimiCodeHomePath()): string {
+  return joinPath(sanitizePath(homePath, defaultKimiCodeHomePath()), "config.toml");
+}
+
+export function getKimiCodeMcpConfigPath(homePath = defaultKimiCodeHomePath()): string {
+  return joinPath(sanitizePath(homePath, defaultKimiCodeHomePath()), "mcp.json");
+}
+
+export function getKimiCodeSkillsPath(homePath = defaultKimiCodeHomePath()): string {
+  return joinPath(sanitizePath(homePath, defaultKimiCodeHomePath()), "skills");
+}
+
+export function createDefaultKimiCodeEnvironment(): KimiCodeEnvironment {
+  return {
+    id: DEFAULT_KIMI_CODE_ENVIRONMENT_ID,
+    name: DEFAULT_KIMI_CODE_ENVIRONMENT_NAME,
+    homePath: getKimiCodeEnvironmentHomePath(DEFAULT_KIMI_CODE_ENVIRONMENT_ID),
+    description: "Default Kimi Code home",
+  };
 }
 
 export const DEFAULT_CONFIG_PATH = getDefaultConfigPath(ConfigTarget.KimiCode);
 export const DEFAULT_PANEL_DIRECTORY = getDefaultPanelDirectory(ConfigTarget.KimiCode);
 export const DEFAULT_PANEL_SETTINGS_PATH = `${DEFAULT_PANEL_DIRECTORY}/${PANEL_SETTINGS_FILENAME}`;
 export const LEGACY_PANEL_SETTINGS_PATH = "~/.kimi/config.panel.toml";
+export const LEGACY_KIMI_CODE_PANEL_SETTINGS_PATH = "~/.kimi-code/.panel/config.panel.toml";
 export const PANEL_USAGE_DIRECTORY = `${DEFAULT_PANEL_DIRECTORY}/usage`;
 export const PANEL_USAGE_DB_PATH = `${PANEL_USAGE_DIRECTORY}/index.db`;
 export const LEGACY_USAGE_DIRECTORY = "~/.kimi/usage";
@@ -71,16 +107,6 @@ const LEGACY_PROFILES_PATH = "~/.kimi/config.profiles.toml";
 const LEGACY_MCP_CONFIG_PATH = "~/.kimi/config.mcp.json";
 const LEGACY_MCP_JSON_PATH = "~/.kimi/mcp.json";
 const LEGACY_MIGRATION_MARKER_PATH = `${DEFAULT_PANEL_DIRECTORY}/legacy-kimi-cli-config.migrated.json`;
-const KNOWN_DEFAULT_CONFIG_PATHS = [
-  getDefaultConfigPath(ConfigTarget.KimiCode),
-  LEGACY_CONFIG_PATH,
-] as const;
-const KNOWN_DEFAULT_MCP_CONFIG_PATHS = [
-  getDefaultMcpConfigPath(ConfigTarget.KimiCode),
-  DEFAULT_MCP_CONFIG_PATH,
-  LEGACY_MCP_JSON_PATH,
-  LEGACY_MCP_CONFIG_PATH,
-] as const;
 const SUPPORTED_LOCALES = new Set<PanelSettings["locale"]>(["zh-CN", "zh-TW", "en-US", "ja-JP", "de-DE", "es-ES"]);
 
 type ProfileConfigKey = Exclude<keyof Profile, "name" | "label">;
@@ -151,6 +177,8 @@ export function createDefaultPanelSettings(
     backup_webdav_path: "",
     shortcuts: createDefaultShortcuts(),
     mcp_servers: {},
+    kimi_code_environments: [createDefaultKimiCodeEnvironment()],
+    active_kimi_code_environment_id: DEFAULT_KIMI_CODE_ENVIRONMENT_ID,
     insights_status: "disabled",
     insights_proxy_port: "auto",
     insights_retention_days: 90,
@@ -184,32 +212,51 @@ export async function loadAppState(
   const panelSettings = panelSettingsResult.settings;
 
   const configTarget = ConfigTarget.KimiCode;
+  const activeEnvironment = resolveActiveKimiCodeEnvironment(panelSettings);
+  const environmentConfigPath = getKimiCodeConfigPath(activeEnvironment.homePath);
+  const environmentMcpConfigPath = getKimiCodeMcpConfigPath(activeEnvironment.homePath);
   if (panelSettingsResult.migratedFromLegacy) {
     await files.ensureDir(dirnamePath(DEFAULT_PANEL_SETTINGS_PATH));
     await files.writeText(DEFAULT_PANEL_SETTINGS_PATH, buildPanelSettingsDocument(panelSettings));
   }
-  const mcpConfigPath = sanitizePath(paths?.mcpConfigPath, getDefaultMcpConfigPath(configTarget));
-  const configPath = sanitizePath(paths?.configPath, getDefaultConfigPath(configTarget));
+  const mcpConfigPath = sanitizePath(paths?.mcpConfigPath, environmentMcpConfigPath);
+  const configPath = sanitizePath(paths?.configPath, environmentConfigPath);
   const profilesPath = "";
   const resolvedPanelSettingsPath = sanitizePath(
     panelSettingsPath,
     DEFAULT_PANEL_SETTINGS_PATH,
   );
-  const mainConfig = normalizeMainConfig(await loadTomlFile(files, configPath, "main config"));
+  const fileMainConfig = normalizeMainConfig(await loadTomlFile(files, configPath, "main config"));
+  const mainConfig = shouldUseEnvironmentMainConfig(activeEnvironment, fileMainConfig)
+    ? cloneMainConfig(activeEnvironment.mainConfig!)
+    : fileMainConfig;
   const fileMcpConfig = await loadMcpConfig(files, mcpConfigPath);
-  const mcpConfig = mergePanelMcpServers(panelSettings.mcp_servers, fileMcpConfig.mcpServers);
+  const environments = parseKimiCodeEnvironments(
+    panelSettings.kimi_code_environments,
+    [createDefaultKimiCodeEnvironment()],
+  );
+  const environmentMcpServers = getEnvironmentMcpServers(activeEnvironment, panelSettings, fileMcpConfig.mcpServers);
+  const mcpConfig = {
+    mcpServers: environmentMcpServers,
+  };
 
   const legacyProfiles = await loadLegacyProfiles(files, paths?.profilesPath, configPath, mainConfig);
-  const panelProfiles = sanitizeProfilesRecord(panelSettings.profiles);
-  const profiles = Object.keys(panelProfiles).length > 0
-    ? panelProfiles
-    : legacyProfiles?.profiles ?? bootstrapProfiles(mainConfig);
+  const environmentProfiles = getEnvironmentProfiles(activeEnvironment, panelSettings, mainConfig);
+  const profiles = environmentProfiles
+    ?? legacyProfiles?.profiles
+    ?? bootstrapProfiles(mainConfig);
   const activeProfile = ensureActiveProfile(
-    panelSettings.active_profile
+    getEnvironmentActiveProfile(activeEnvironment, panelSettings)
       || legacyProfiles?.activeProfile
       || pickActiveProfile(mainConfig, profiles),
     profiles,
   );
+  const scopedEnvironments = snapshotActiveKimiCodeEnvironment(environments, activeEnvironment.id, {
+    mainConfig,
+    profiles,
+    activeProfile,
+    mcpServers: mcpConfig.mcpServers,
+  });
 
   return {
     configTarget,
@@ -229,6 +276,8 @@ export async function loadAppState(
       profiles_path: "",
       follow_config_profiles: true,
       mcp_servers: cloneMcpServers(mcpConfig.mcpServers),
+      kimi_code_environments: scopedEnvironments,
+      active_kimi_code_environment_id: activeEnvironment.id,
     },
     mcpConfig,
   };
@@ -297,16 +346,13 @@ async function loadPanelSettingsWithLegacyFallback(
     }
   }
 
-  const legacyData = await loadTomlFile(files, LEGACY_PANEL_SETTINGS_PATH, "legacy panel settings");
-  if (!Object.keys(legacyData).length) {
-    return {
-      settings: createDefaultPanelSettings(DEFAULT_CONFIG_PATH, panelSettingsPath),
-      migratedFromLegacy: false,
-    };
+  const legacyTomlSettings = await loadLegacyPanelSettings(files, panelSettingsPath);
+  if (legacyTomlSettings) {
+    return legacyTomlSettings;
   }
   return {
-    settings: panelSettingsFromUnknown(legacyData, createDefaultPanelSettings(DEFAULT_CONFIG_PATH, panelSettingsPath)),
-    migratedFromLegacy: true,
+    settings: createDefaultPanelSettings(DEFAULT_CONFIG_PATH, panelSettingsPath),
+    migratedFromLegacy: false,
   };
 }
 
@@ -342,19 +388,26 @@ async function tryLoadPanelSettingsFromToml(
     // 忽略，尝试 legacy
   }
 
-  // 尝试 legacy TOML
-  try {
-    const legacyData = await loadTomlFile(files, LEGACY_PANEL_SETTINGS_PATH, "legacy panel settings");
-    if (Object.keys(legacyData).length) {
-      return {
-        settings: panelSettingsFromUnknown(legacyData, createDefaultPanelSettings(DEFAULT_CONFIG_PATH, panelSettingsPath)),
-        migratedFromLegacy: true,
-      };
-    }
-  } catch {
-    // 忽略
-  }
+  return loadLegacyPanelSettings(files, panelSettingsPath);
+}
 
+async function loadLegacyPanelSettings(
+  files: FileAccess,
+  panelSettingsPath: string,
+): Promise<{ settings: PanelSettings; migratedFromLegacy: boolean } | null> {
+  for (const legacyPath of [LEGACY_KIMI_CODE_PANEL_SETTINGS_PATH, LEGACY_PANEL_SETTINGS_PATH]) {
+    try {
+      const legacyData = await loadTomlFile(files, legacyPath, "legacy panel settings");
+      if (Object.keys(legacyData).length) {
+        return {
+          settings: panelSettingsFromUnknown(legacyData, createDefaultPanelSettings(DEFAULT_CONFIG_PATH, panelSettingsPath)),
+          migratedFromLegacy: true,
+        };
+      }
+    } catch {
+      // 忽略，继续尝试下一个历史路径。
+    }
+  }
   return null;
 }
 
@@ -448,6 +501,11 @@ function panelSettingsFromUnknown(data: Record<string, unknown>, fallback: Panel
     backup_webdav_path: asString(data.backup_webdav_path, ""),
     shortcuts: normalizeShortcuts(data.shortcuts),
     mcp_servers: parsePanelMcpServers(data.mcp_servers),
+    kimi_code_environments: parseKimiCodeEnvironments(data.kimi_code_environments, fallback.kimi_code_environments),
+    active_kimi_code_environment_id: asString(
+      data.active_kimi_code_environment_id,
+      fallback.active_kimi_code_environment_id ?? DEFAULT_KIMI_CODE_ENVIRONMENT_ID,
+    ),
     last_display_id: typeof data.last_display_id === "number" ? data.last_display_id : undefined,
     uiState: parseUiState(data.uiState),
     favorites: parseFavorites(data.favorites),
@@ -500,6 +558,7 @@ export async function saveAppState(files: FileAccess, state: AppState): Promise<
       ...normalizedState.panelSettings,
       profiles: sanitizeProfilesRecord(normalizedState.profiles),
       active_profile: normalizedState.activeProfile,
+      mcp_servers: cloneMcpServers(normalizedState.mcpConfig.mcpServers),
       profiles_path: "",
       follow_config_profiles: true,
     },
@@ -648,6 +707,9 @@ async function restoreRedactedProviderSecrets(files: FileAccess, state: AppState
 }
 
 export function bootstrapProfiles(mainConfig: MainConfig): Record<string, Profile> {
+  if (!mainConfig.default_model || !mainConfig.models[mainConfig.default_model]) {
+    return {};
+  }
   return {
     [DEFAULT_PROFILE_NAME]: normalizeProfile({
       name: DEFAULT_PROFILE_NAME,
@@ -903,11 +965,11 @@ function pickActiveProfile(mainConfig: MainConfig, profiles: Record<string, Prof
       return name;
     }
   }
-  return Object.keys(profiles)[0] ?? DEFAULT_PROFILE_NAME;
+  return Object.keys(profiles)[0] ?? "";
 }
 
 function ensureActiveProfile(activeProfile: string, profiles: Record<string, Profile>): string {
-  return profiles[activeProfile] ? activeProfile : Object.keys(profiles)[0] ?? DEFAULT_PROFILE_NAME;
+  return profiles[activeProfile] ? activeProfile : Object.keys(profiles)[0] ?? "";
 }
 
 function sanitizeProfilesRecord(
@@ -919,6 +981,117 @@ function sanitizeProfilesRecord(
   }
   const entries = Object.entries(value).map(([name, raw]) => [name, profileFromUnknown(name, raw)] as const);
   return Object.fromEntries(entries);
+}
+
+function hasOwnRecordProperty(value: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function isDefaultKimiCodeEnvironment(environment: KimiCodeEnvironment): boolean {
+  return environment.id === DEFAULT_KIMI_CODE_ENVIRONMENT_ID;
+}
+
+function getEnvironmentProfiles(
+  environment: KimiCodeEnvironment,
+  settings: PanelSettings,
+  mainConfig: MainConfig,
+): Record<string, Profile> | null {
+  if (hasOwnRecordProperty(environment, "profiles")) {
+    const profiles = sanitizeProfilesRecord(environment.profiles);
+    return shouldIgnoreEmptyDefaultEnvironmentProfile(profiles, mainConfig) ? null : profiles;
+  }
+  if (!isDefaultKimiCodeEnvironment(environment)) {
+    return null;
+  }
+  const panelProfiles = sanitizeProfilesRecord(settings.profiles);
+  return Object.keys(panelProfiles).length > 0 ? panelProfiles : null;
+}
+
+function getEnvironmentActiveProfile(
+  environment: KimiCodeEnvironment,
+  settings: PanelSettings,
+): string {
+  if (typeof environment.activeProfile === "string") {
+    return environment.activeProfile;
+  }
+  return isDefaultKimiCodeEnvironment(environment) ? settings.active_profile : "";
+}
+
+function shouldIgnoreEmptyDefaultEnvironmentProfile(
+  profiles: Record<string, Profile>,
+  mainConfig: MainConfig,
+): boolean {
+  const keys = Object.keys(profiles);
+  if (keys.length !== 1 || keys[0] !== DEFAULT_PROFILE_NAME) {
+    return false;
+  }
+  if (Object.keys(mainConfig.models).length > 0 || Object.keys(mainConfig.providers).length > 0 || mainConfig.default_model) {
+    return false;
+  }
+  const profile = profiles[DEFAULT_PROFILE_NAME];
+  return profile.default_model === DEFAULTS.default_model
+    && profile.label === DEFAULTS.profile_label;
+}
+
+function getEnvironmentMcpServers(
+  environment: KimiCodeEnvironment,
+  settings: PanelSettings,
+  fileServers: Record<string, McpServerConfig>,
+): Record<string, McpServerConfig> {
+  if (hasOwnRecordProperty(environment, "mcpServers")) {
+    return mergePanelMcpServers(
+      cloneMcpServers(environment.mcpServers ?? {}),
+      fileServers,
+    ).mcpServers;
+  }
+  if (isDefaultKimiCodeEnvironment(environment)) {
+    return mergePanelMcpServers(settings.mcp_servers, fileServers).mcpServers;
+  }
+  return cloneMcpServers(fileServers);
+}
+
+function cloneMainConfig(config: MainConfig): MainConfig {
+  return structuredClone(config) as MainConfig;
+}
+
+function parseEnvironmentMainConfig(value: unknown): MainConfig | undefined {
+  return isRecord(value) ? normalizeMainConfig(value) : undefined;
+}
+
+function shouldUseEnvironmentMainConfig(
+  environment: KimiCodeEnvironment,
+  fileMainConfig: MainConfig,
+): boolean {
+  if (!environment.mainConfig) {
+    return false;
+  }
+  if (isDefaultKimiCodeEnvironment(environment)) {
+    return false;
+  }
+  return Object.keys(fileMainConfig.providers).length === 0
+    && Object.keys(fileMainConfig.models).length === 0
+    && !fileMainConfig.default_model;
+}
+
+function snapshotActiveKimiCodeEnvironment(
+  environments: KimiCodeEnvironment[],
+  activeEnvironmentId: string,
+  snapshot: {
+    mainConfig: MainConfig;
+    profiles: Record<string, Profile>;
+    activeProfile: string;
+    mcpServers: Record<string, McpServerConfig>;
+  },
+): KimiCodeEnvironment[] {
+  return environments.map((environment) => environment.id === activeEnvironmentId
+    ? {
+        ...environment,
+        mainConfig: cloneMainConfig(snapshot.mainConfig),
+        profiles: sanitizeProfilesRecord(snapshot.profiles),
+        activeProfile: snapshot.activeProfile,
+        mcpServers: cloneMcpServers(snapshot.mcpServers),
+      }
+    : environment);
 }
 
 function legacyProfilesPathForConfig(configPath: string): string {
@@ -1249,40 +1422,32 @@ function sanitizePath(path: string | undefined, fallback: string): string {
   return typeof path === "string" && path.trim() ? path.trim() : fallback;
 }
 
-function resolveTargetDefaultPath(
-  path: string | undefined,
-  fallback: string,
-  knownDefaults: readonly string[],
-): string {
-  const sanitized = sanitizePath(path, fallback);
-  return knownDefaults.includes(sanitized) ? fallback : sanitized;
-}
-
-function defaultProfilesPath(configPath: string): string {
-  return joinPath(dirnamePath(configPath), PROFILE_FILENAME);
-}
-
 function defaultBackupPath(): string {
   return joinPath(DEFAULT_PANEL_DIRECTORY, BACKUP_DIRECTORY_NAME);
 }
 
 export function normalizeStatePaths(state: AppState): AppState {
   const configTarget = ConfigTarget.KimiCode;
-  const defaultConfigPath = getDefaultConfigPath(configTarget);
-  const configPath = resolveTargetDefaultPath(
-    state.configPath,
-    defaultConfigPath,
-    KNOWN_DEFAULT_CONFIG_PATHS,
+  const environments = parseKimiCodeEnvironments(
+    state.panelSettings.kimi_code_environments,
+    [createDefaultKimiCodeEnvironment()],
   );
+  const requestedActiveEnvironmentId = state.panelSettings.active_kimi_code_environment_id;
+  const activeEnvironment = environments.find((environment) => environment.id === requestedActiveEnvironmentId)
+    ?? environments[0]
+    ?? createDefaultKimiCodeEnvironment();
+  const configPath = getKimiCodeConfigPath(activeEnvironment.homePath);
   const panelSettingsPath = sanitizePath(state.panelSettingsPath, DEFAULT_PANEL_SETTINGS_PATH);
-  const mcpConfigPath = resolveTargetDefaultPath(
-    state.mcpConfigPath,
-    getDefaultMcpConfigPath(configTarget),
-    KNOWN_DEFAULT_MCP_CONFIG_PATHS,
-  );
+  const mcpConfigPath = getKimiCodeMcpConfigPath(activeEnvironment.homePath);
   const profiles = sanitizeProfilesRecord(state.profiles);
   const activeProfile = ensureActiveProfile(state.activeProfile, profiles);
   const profilesPath = "";
+  const scopedEnvironments = snapshotActiveKimiCodeEnvironment(environments, activeEnvironment.id, {
+    mainConfig: state.mainConfig,
+    profiles,
+    activeProfile,
+    mcpServers: state.mcpConfig.mcpServers,
+  });
   const panelSettings: PanelSettings = {
     ...state.panelSettings,
     config_target: configTarget,
@@ -1306,6 +1471,8 @@ export function normalizeStatePaths(state: AppState): AppState {
     backup_webdav_path: asString(state.panelSettings.backup_webdav_path, "").trim(),
     sidebar_collapsed: asBoolean(state.panelSettings.sidebar_collapsed, false),
     shortcuts: normalizeShortcuts(state.panelSettings.shortcuts),
+    kimi_code_environments: scopedEnvironments,
+    active_kimi_code_environment_id: activeEnvironment.id,
     last_display_id: state.panelSettings.last_display_id,
     mcp_servers: cloneMcpServers(state.mcpConfig.mcpServers),
     profiles,
@@ -1582,6 +1749,66 @@ function parseFavorites(value: unknown): PanelSettings["favorites"] {
     result.profiles = value.profiles.filter((v: unknown) => typeof v === "string");
   }
   return (result.providers?.length || result.profiles?.length) ? result : undefined;
+}
+
+function sanitizeEnvironmentId(value: string, fallback: string): string {
+  const normalized = normalizeEntryName(value);
+  return normalized || fallback;
+}
+
+function parseKimiCodeEnvironments(
+  value: unknown,
+  fallback: PanelSettings["kimi_code_environments"],
+): KimiCodeEnvironment[] {
+  const entries = Array.isArray(value) ? value : fallback;
+  const defaults = [createDefaultKimiCodeEnvironment()];
+  if (!Array.isArray(entries)) return defaults;
+  const seen = new Set<string>();
+  const result: KimiCodeEnvironment[] = [];
+  for (const item of entries) {
+    if (!isRecord(item)) continue;
+    const id = sanitizeEnvironmentId(asString(item.id, ""), "");
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const name = id === DEFAULT_KIMI_CODE_ENVIRONMENT_ID
+      ? DEFAULT_KIMI_CODE_ENVIRONMENT_NAME
+      : asString(item.name, id) || id;
+    result.push({
+      id,
+      name,
+      homePath: getKimiCodeEnvironmentHomePath(id),
+      description: asString(item.description, ""),
+      createdAt: asString(item.createdAt, ""),
+      updatedAt: asString(item.updatedAt, ""),
+      sourceEnvironmentId: asString(item.sourceEnvironmentId, ""),
+      ...(hasOwnRecordProperty(item, "mainConfig") ? { mainConfig: parseEnvironmentMainConfig(item.mainConfig) } : {}),
+      ...(hasOwnRecordProperty(item, "profiles") ? { profiles: sanitizeProfilesRecord(item.profiles) } : {}),
+      ...(typeof item.activeProfile === "string" ? { activeProfile: item.activeProfile } : {}),
+      ...(hasOwnRecordProperty(item, "mcpServers") ? { mcpServers: parsePanelMcpServers(item.mcpServers) } : {}),
+    });
+  }
+  return result.length > 0 ? result : defaults;
+}
+
+function resolveActiveKimiCodeEnvironment(settings: PanelSettings): KimiCodeEnvironment {
+  const environments = parseKimiCodeEnvironments(
+    settings.kimi_code_environments,
+    [createDefaultKimiCodeEnvironment()],
+  );
+  return environments.find((environment) => environment.id === settings.active_kimi_code_environment_id)
+    ?? environments[0]
+    ?? createDefaultKimiCodeEnvironment();
+}
+
+export function normalizeKimiCodeEnvironments(
+  value: unknown,
+  fallback: KimiCodeEnvironment[] = [createDefaultKimiCodeEnvironment()],
+): KimiCodeEnvironment[] {
+  return parseKimiCodeEnvironments(value, fallback);
+}
+
+export function getActiveKimiCodeEnvironment(settings: PanelSettings): KimiCodeEnvironment {
+  return resolveActiveKimiCodeEnvironment(settings);
 }
 
 function normalizeTomlIndentation(document: string): string {

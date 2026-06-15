@@ -16,6 +16,7 @@ import {
   purgeAll,
   queryBreakdown,
   queryEvents,
+  queryHeaviestSessions,
   queryModelTokenSums,
   queryOverview,
   queryTrend,
@@ -33,6 +34,7 @@ function lastQuery(command: string): { sql: string; params: Record<string, unkno
 function event(overrides: Partial<UsageEvent> = {}): UsageEvent {
   return {
     request_id: "req-1",
+    kimi_code_environment_id: "",
     ts: 1700000000000,
     ts_end: null,
     profile: "default",
@@ -62,9 +64,15 @@ beforeEach(() => {
 });
 
 describe("open", () => {
+  it("keeps environment index creation out of the bootstrap schema for legacy events tables", () => {
+    expect(SCHEMA_SQL).not.toContain("idx_events_environment_ts");
+  });
+
   it("opens the db with schema and applies the schema version when missing", async () => {
     mockedInvoke
       .mockResolvedValueOnce(undefined as unknown as never) // usage_open
+      .mockResolvedValueOnce(0 as unknown as never) // ALTER environment column
+      .mockResolvedValueOnce(0 as unknown as never) // CREATE environment index
       .mockResolvedValueOnce([{ version: null }] as unknown as never) // SELECT MAX(version)
       .mockResolvedValueOnce(1 as unknown as never); // usage_exec INSERT
     await open("/tmp/usage.db");
@@ -78,21 +86,28 @@ describe("open", () => {
   it("skips schema version insert when already current", async () => {
     mockedInvoke
       .mockResolvedValueOnce(undefined as unknown as never)
+      .mockResolvedValueOnce(0 as unknown as never)
+      .mockResolvedValueOnce(0 as unknown as never)
       .mockResolvedValueOnce([{ version: 1 }] as unknown as never);
     await open("/tmp/usage.db");
-    expect(mockedInvoke.mock.calls.filter((c) => c[0] === "usage_exec")).toHaveLength(0);
+    const schemaVersionInserts = mockedInvoke.mock.calls.filter((call) =>
+      call[0] === "usage_exec"
+      && typeof call[1]?.sql === "string"
+      && call[1].sql.includes("INSERT INTO schema_versions"),
+    );
+    expect(schemaVersionInserts).toHaveLength(0);
   });
 });
 
 describe("insertEvent / insertEventsBatch", () => {
   it("maps an event onto named params and reports inserted=true when rows change", async () => {
     mockedInvoke.mockResolvedValue(1 as unknown as never);
-    const inserted = await insertEvent(event({ request_id: "abc" }));
+    const inserted = await insertEvent(event({ request_id: "abc", kimi_code_environment_id: "env-2" }));
     expect(inserted).toBe(true);
 
     const call = lastQuery("usage_exec");
     expect(call.sql).toMatch(/INSERT OR IGNORE INTO events/);
-    expect(call.params).toMatchObject({ request_id: "abc", prompt_tokens: 10 });
+    expect(call.params).toMatchObject({ request_id: "abc", kimi_code_environment_id: "env-2", prompt_tokens: 10 });
     expect((call.params as Record<string, unknown>).ingested_at_utc).toEqual(expect.any(Number));
   });
 
@@ -156,6 +171,25 @@ describe("queryOverview", () => {
     expect(slice.avgLatencyMs).toBe(0);
     expect(slice.errorRate).toBe(0);
   });
+
+  it("filters a non-default environment strictly by environment id", async () => {
+    mockedInvoke.mockResolvedValue([{ calls: 0, cache_input: 0 }] as unknown as never);
+    await queryOverview("7d", "env-2");
+
+    const call = lastQuery("usage_query");
+    expect(call.sql).toContain("kimi_code_environment_id = @environment_id");
+    expect(call.sql).not.toContain("kimi_code_environment_id = ''");
+    expect(call.params).toMatchObject({ environment_id: "env-2" });
+  });
+
+  it("keeps legacy unscoped rows visible for the default environment", async () => {
+    mockedInvoke.mockResolvedValue([{ calls: 0, cache_input: 0 }] as unknown as never);
+    await queryOverview("7d", "default");
+
+    const call = lastQuery("usage_query");
+    expect(call.sql).toContain("(kimi_code_environment_id = @environment_id OR kimi_code_environment_id = '')");
+    expect(call.params).toMatchObject({ environment_id: "default" });
+  });
 });
 
 describe("queryTrend", () => {
@@ -176,6 +210,14 @@ describe("queryTrend", () => {
     expect(call.sql).toMatch(/FROM events WHERE ts >= @from_ms AND ts < @to_ms/);
     expect(call.sql).toContain("localtime");
   });
+
+  it("applies the environment filter to trend queries", async () => {
+    mockedInvoke.mockResolvedValue([] as unknown as never);
+    await queryTrend("7d", "day", "model", "env-2");
+    const call = lastQuery("usage_query");
+    expect(call.sql).toContain("kimi_code_environment_id = @environment_id");
+    expect(call.params).toMatchObject({ environment_id: "env-2" });
+  });
 });
 
 describe("queryBreakdown", () => {
@@ -186,6 +228,14 @@ describe("queryBreakdown", () => {
     expect(call.sql).toMatch(/FROM events WHERE ts >= @from_ms AND ts < @to_ms/);
     expect(call.sql).toContain("ORDER BY errors DESC");
     expect(call.params).toMatchObject({ limit: 50 });
+  });
+
+  it("applies the environment filter to breakdown queries", async () => {
+    mockedInvoke.mockResolvedValue([] as unknown as never);
+    await queryBreakdown("profile", "30d", 10, "tokens", "env-2");
+    const call = lastQuery("usage_query");
+    expect(call.sql).toContain("kimi_code_environment_id = @environment_id");
+    expect(call.params).toMatchObject({ environment_id: "env-2" });
   });
 });
 
@@ -215,6 +265,26 @@ describe("queryModelTokenSums", () => {
     expect(call.sql).toMatch(/FROM events WHERE ts >= @from_ms AND ts < @to_ms/);
     expect(call.sql).toContain("localtime");
   });
+
+  it("applies the environment filter to cost token sums", async () => {
+    mockedInvoke.mockResolvedValue([] as unknown as never);
+    await queryModelTokenSums("7d", false, "env-2");
+    const call = lastQuery("usage_query");
+    expect(call.sql).toContain("kimi_code_environment_id = @environment_id");
+    expect(call.params).toMatchObject({ environment_id: "env-2" });
+  });
+});
+
+describe("queryHeaviestSessions", () => {
+  it("applies the environment filter to session aggregation and profile lookup", async () => {
+    mockedInvoke.mockResolvedValue([] as unknown as never);
+    await queryHeaviestSessions("7d", 10, "env-2");
+
+    const call = lastQuery("usage_query");
+    expect(call.sql).toContain("FROM events ue WHERE ts >= @from_ms AND ts < @to_ms AND kimi_code_environment_id = @environment_id");
+    expect(call.sql).toContain("e2.kimi_code_environment_id = @environment_id");
+    expect(call.params).toMatchObject({ environment_id: "env-2", limit: 10 });
+  });
 });
 
 describe("queryEvents cursor + filters", () => {
@@ -237,6 +307,14 @@ describe("queryEvents cursor + filters", () => {
     expect(call.sql).toContain("profile IN (@p_0,@p_1)");
     expect(call.sql).toContain("error_code IS NOT NULL");
     expect(call.params).toMatchObject({ p_0: "a", p_1: "b", limit: 2 });
+  });
+
+  it("applies the environment filter to event pages", async () => {
+    mockedInvoke.mockResolvedValue([] as unknown as never);
+    await queryEvents({ range: "7d" }, null, 10, "env-2");
+    const call = lastQuery("usage_query");
+    expect(call.sql).toContain("kimi_code_environment_id = @environment_id");
+    expect(call.params).toMatchObject({ environment_id: "env-2" });
   });
 
   it("decodes a cursor into ts/id predicate params", async () => {

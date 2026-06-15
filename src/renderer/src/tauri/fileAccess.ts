@@ -21,10 +21,7 @@ export const tauriFileAccess: FileAccess = {
   },
   async writePanelSettings(_path: string, settings: PanelSettings): Promise<void> {
     // 忽略 path 参数，直接写入 SQLite
-    const ok = await savePanelSettings(settings);
-    if (!ok) {
-      throw new Error("Failed to save panel settings to SQLite");
-    }
+    await savePanelSettings(settings);
   },
 };
 
@@ -36,10 +33,32 @@ export async function moveFile(from: string, to: string): Promise<void> {
   await invoke("move_file", { from, to });
 }
 
+export async function removeDir(path: string): Promise<void> {
+  await invoke("remove_dir", { path });
+}
+
+export async function copyDir(from: string, to: string): Promise<void> {
+  await invoke("copy_dir", { from, to });
+}
+
 export async function pathExists(path: string): Promise<boolean> {
   return invoke<boolean>("path_exists", { path });
 }
 
 export async function listDir(path: string): Promise<string[]> {
   return invoke<string[]>("list_dir", { path });
+}
+
+export async function ensureKimiCodeEnvironmentLayout(activeEnvironmentId: string): Promise<{
+  defaultHomePath: string;
+  managedDefaultPath: string;
+  environmentsPath: string;
+  defaultWasMigrated: boolean;
+  linkWasUpdated: boolean;
+}> {
+  return invoke("ensure_kimi_code_environment_layout", { activeEnvironmentId });
+}
+
+export async function activateKimiCodeEnvironmentLink(environmentId: string): Promise<boolean> {
+  return invoke<boolean>("activate_kimi_code_environment_link", { environmentId });
 }

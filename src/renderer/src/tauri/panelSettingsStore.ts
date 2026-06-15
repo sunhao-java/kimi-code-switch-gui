@@ -41,34 +41,29 @@ export async function getPanelSettings(): Promise<PanelSettings | null> {
  * 首次保存时，如果旧版 ~/.kimi/config.panel.toml 存在，会自动重命名为 .toml.migrated。
  *
  * @param settings PanelSettings 对象
- * @returns 成功返回 true，失败返回 false
+ * @returns 成功返回 true，失败时抛出底层 Tauri/SQLite 错误
  */
 export async function savePanelSettings(settings: PanelSettings): Promise<boolean> {
+  const json = JSON.stringify(settings);
+  await invoke("save_panel_settings", { settingsJson: json });
+
+  // 首次保存后，检查是否需要重命名旧 TOML 文件
+  // （迁移逻辑：若 TOML 存在，重命名为 .migrated）
   try {
-    const json = JSON.stringify(settings);
-    await invoke("save_panel_settings", { settingsJson: json });
-
-    // 首次保存后，检查是否需要重命名旧 TOML 文件
-    // （迁移逻辑：若 TOML 存在，重命名为 .migrated）
-    try {
-      const tomlPath = "~/.kimi/config.panel.toml";
-      const { pathExists } = await import("./fileAccess");
-      if (await pathExists(tomlPath)) {
-        await invoke("migrate_panel_settings_from_toml", {
-          tomlPath,
-          settingsJson: json,
-        });
-      }
-    } catch (err) {
-      // 忽略迁移错误（TOML 文件可能已被删除）
-      console.warn("TOML migration skipped:", err);
+    const tomlPath = "~/.kimi/config.panel.toml";
+    const { pathExists } = await import("./fileAccess");
+    if (await pathExists(tomlPath)) {
+      await invoke("migrate_panel_settings_from_toml", {
+        tomlPath,
+        settingsJson: json,
+      });
     }
-
-    return true;
   } catch (err) {
-    console.error("Failed to save panel settings:", err);
-    return false;
+    // 忽略迁移错误（TOML 文件可能已被删除）
+    console.warn("TOML migration skipped:", err);
   }
+
+  return true;
 }
 
 /**

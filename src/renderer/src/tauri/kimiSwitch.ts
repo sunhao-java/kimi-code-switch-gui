@@ -10,6 +10,10 @@ import parseTomlString from "@iarna/toml/parse-string.js";
 
 import {
   createDefaultPanelSettings,
+  getKimiCodeConfigPath,
+  getKimiCodeMcpConfigPath,
+  getKimiCodeEnvironmentHomePath,
+  normalizeKimiCodeEnvironments,
   getDefaultConfigPath,
   getDefaultMcpConfigPath,
   loadAppState,
@@ -23,9 +27,9 @@ import { buildConfigDoctorReport, buildManagedDocuments, buildRedactedPreviewBun
 import { scanSkills } from "@shared/skillsStore";
 import { compareReleaseVersions } from "@shared/versionUtils";
 import { computeEventCost, resolveModelPricing } from "@shared/pricing";
-import type { AppState, ManagedFileId, ModelConfig, PanelSettings, PreviewBundle, OpenKimiTerminalRequest, FileSnapshotBundle, SaveStateConflictResult, SaveStateResult } from "@shared/types";
+import type { AppState, KimiCodeEnvironment, KimiCodeEnvironmentPreferenceResult, ManagedFileId, ModelConfig, PanelSettings, PreviewBundle, OpenKimiTerminalRequest, FileSnapshotBundle, SaveStateConflictResult, SaveStateResult } from "@shared/types";
 
-import { tauriFileAccess, pathExists } from "./fileAccess";
+import { tauriFileAccess, pathExists, ensureKimiCodeEnvironmentLayout, activateKimiCodeEnvironmentLink } from "./fileAccess";
 import * as usageDb from "./usageDb";
 import { UsageLogWatcher } from "./usageLogWatcher";
 import * as cli from "./cli";
@@ -46,8 +50,9 @@ const skillFileAccess = {
 
 // ── 用量洞察运行时（log watcher + db 生命周期）──
 // 全局应用数据库：包含 usage 数据、config_history、panel_settings
-const USAGE_DB_PATH = "~/.kimi-code/.panel/app.db";
-const USAGE_JSONL_DIR = "~/.kimi-code/.panel/usage";
+const PANEL_APP_DIR = "~/.kimi-code-switch-gui";
+const USAGE_DB_PATH = `${PANEL_APP_DIR}/app.db`;
+const USAGE_JSONL_DIR = `${PANEL_APP_DIR}/usage`;
 let logWatcher: UsageLogWatcher | null = null;
 let usageOpen = false;
 let currentAppState: AppState | null = null;
@@ -71,6 +76,10 @@ export type EndpointReachabilityResult = {
 
 function activeProfile(): string {
   return currentAppState?.activeProfile ?? "default";
+}
+
+function activeKimiCodeEnvironmentId(): string {
+  return currentAppState?.panelSettings.active_kimi_code_environment_id ?? "default";
 }
 
 async function getStartupKimiCodeDetection(): Promise<AppState["kimiTargetDetection"]> {
@@ -161,9 +170,6 @@ async function runPostLoadMaintenance(
 
     try {
       const migrationPaths = new Set([
-        effectivePaths.mcpConfigPath,
-        getDefaultMcpConfigPath("kimi-code"),
-        "~/.kimi-code/mcp.json",
         "~/.kimi/mcp.json",
         "~/.kimi/config.mcp.json",
       ].filter((path): path is string => Boolean(path)));
@@ -175,13 +181,30 @@ async function runPostLoadMaintenance(
     }
 
     const currentSettings = await getPanelSettings();
-    if (!currentSettings) return;
+    if (!currentSettings) {
+      await savePanelSettings({
+        ...state.panelSettings,
+        config_target: state.panelSettings.config_target,
+        config_path: state.panelSettings.config_path,
+        profiles: state.profiles,
+        active_profile: state.activeProfile,
+        mcp_servers: state.mcpConfig.mcpServers,
+        kimi_code_environments: state.panelSettings.kimi_code_environments,
+        active_kimi_code_environment_id: state.panelSettings.active_kimi_code_environment_id,
+        active_official_account_id: state.panelSettings.active_official_account_id ?? "",
+        profiles_path: "",
+        follow_config_profiles: true,
+      });
+      return;
+    }
     const needsPanelSync =
       currentSettings.config_target !== state.panelSettings.config_target ||
       currentSettings.config_path !== state.panelSettings.config_path ||
       currentSettings.active_profile !== state.activeProfile ||
       JSON.stringify(currentSettings.profiles ?? {}) !== JSON.stringify(state.profiles ?? {}) ||
       JSON.stringify(currentSettings.mcp_servers ?? {}) !== JSON.stringify(state.mcpConfig.mcpServers ?? {}) ||
+      JSON.stringify(currentSettings.kimi_code_environments ?? []) !== JSON.stringify(state.panelSettings.kimi_code_environments ?? []) ||
+      (currentSettings.active_kimi_code_environment_id ?? "") !== (state.panelSettings.active_kimi_code_environment_id ?? "") ||
       (currentSettings.active_official_account_id ?? "") !== (state.panelSettings.active_official_account_id ?? "");
     if (needsPanelSync) {
       await savePanelSettings({
@@ -191,6 +214,8 @@ async function runPostLoadMaintenance(
         profiles: state.profiles,
         active_profile: state.activeProfile,
         mcp_servers: state.mcpConfig.mcpServers,
+        kimi_code_environments: state.panelSettings.kimi_code_environments,
+        active_kimi_code_environment_id: state.panelSettings.active_kimi_code_environment_id,
         active_official_account_id: state.panelSettings.active_official_account_id ?? "",
         profiles_path: "",
         follow_config_profiles: true,
@@ -259,7 +284,10 @@ async function ensureUsageRuntime(): Promise<void> {
     usageOpen = true;
   }
   if (!logWatcher) {
-    logWatcher = new UsageLogWatcher({ getActiveProfile: activeProfile });
+    logWatcher = new UsageLogWatcher({
+      getActiveProfile: activeProfile,
+      getActiveEnvironmentId: activeKimiCodeEnvironmentId,
+    });
     await logWatcher.start();
   }
 }
@@ -295,23 +323,21 @@ export const kimiSwitchTauri = {
     // 确保数据库打开（panel_settings 依赖数据库连接）
     if (!usageOpen) {
       const dbStartedAt = startupTimingNow();
-      // 迁移数据库文件到 .panel 目录（如果还在根目录）
-      const oldDbPath = "~/.kimi/app.db";
-      const newDbPath = USAGE_DB_PATH; // ~/.kimi-code/.panel/app.db
+      // 迁移旧数据库文件到独立 GUI 目录，避免和 Kimi Code 运行时数据混在一起。
+      const oldDbPaths = ["~/.kimi-code/.panel/app.db", "~/.kimi/app.db"];
+      const newDbPath = USAGE_DB_PATH;
       const { pathExists, ensureDir, moveFile, removeFile } = await import("./fileAccess");
 
       try {
-        if (await pathExists(oldDbPath)) {
-          console.log("Migrating app.db to .panel directory...");
-          // 确保目标目录存在
-          await ensureDir("~/.kimi-code/.panel");
-          // 移动文件（如果目标已存在则删除旧文件）
-          if (!(await pathExists(newDbPath))) {
-            await moveFile(oldDbPath, newDbPath);
-            console.log("Database migrated to ~/.kimi-code/.panel/app.db");
-          } else {
-            console.log("Target database already exists, removing old file...");
-            await removeFile(oldDbPath);
+        await ensureDir(PANEL_APP_DIR);
+        for (const oldDbPath of oldDbPaths) {
+          if (await pathExists(oldDbPath)) {
+            console.log(`Migrating app.db from ${oldDbPath} to ${newDbPath}...`);
+            if (!(await pathExists(newDbPath))) {
+              await moveFile(oldDbPath, newDbPath);
+            } else {
+              await removeFile(oldDbPath);
+            }
           }
         }
       } catch (err) {
@@ -334,6 +360,10 @@ export const kimiSwitchTauri = {
     await initMcpServersStore();
     await officialAccounts.initOfficialAccountsStore();
     recordStartupTiming("kimiSwitch.loadState.stores", storeStartedAt);
+
+    const currentSettingsBeforeLoad = await getPanelSettings();
+    const activeEnvironmentIdBeforeLoad = currentSettingsBeforeLoad?.active_kimi_code_environment_id ?? "default";
+    await ensureKimiCodeEnvironmentLayout(activeEnvironmentIdBeforeLoad);
 
     const effectiveTarget = "kimi-code";
     const effectivePaths: LoadStatePaths = {
@@ -373,10 +403,11 @@ export const kimiSwitchTauri = {
   saveState: async (state: AppState): Promise<SaveStateResult> => {
     // 保存前捕获快照（Kimi 标准配置 + GUI SQLite 导出）
     const normalized = normalizeStatePaths(state);
+    const environmentId = normalized.panelSettings.active_kimi_code_environment_id ?? "";
     await Promise.all([
-      captureSnapshot("config", normalized.configPath),
-      captureSnapshot("panel", normalized.panelSettingsPath),
-      captureSnapshot("mcp", normalized.mcpConfigPath),
+      captureSnapshot("config", normalized.configPath, undefined, environmentId),
+      captureSnapshot("panel", normalized.panelSettingsPath, undefined, environmentId),
+      captureSnapshot("mcp", normalized.mcpConfigPath, undefined, environmentId),
     ]);
 
     await saveAppState(tauriFileAccess, state);
@@ -420,10 +451,11 @@ export const kimiSwitchTauri = {
     }
 
     // 保存前捕获快照（Kimi 标准配置 + GUI SQLite 导出）
+    const environmentId = normalized.panelSettings.active_kimi_code_environment_id ?? "";
     await Promise.all([
-      captureSnapshot("config", normalized.configPath),
-      captureSnapshot("panel", normalized.panelSettingsPath),
-      captureSnapshot("mcp", normalized.mcpConfigPath),
+      captureSnapshot("config", normalized.configPath, undefined, environmentId),
+      captureSnapshot("panel", normalized.panelSettingsPath, undefined, environmentId),
+      captureSnapshot("mcp", normalized.mcpConfigPath, undefined, environmentId),
     ]);
 
     await saveAppState(tauriFileAccess, state);
@@ -470,6 +502,91 @@ export const kimiSwitchTauri = {
       };
     }
     return { ok: true };
+  },
+  saveKimiCodeEnvironmentPreference: async (
+    environments: KimiCodeEnvironment[],
+    activeEnvironmentId: string,
+  ): Promise<KimiCodeEnvironmentPreferenceResult> => {
+    const currentSettings = (await getPanelSettings())
+      ?? currentAppState?.panelSettings
+      ?? createDefaultPanelSettings();
+    const currentActiveEnvironmentId = currentAppState?.panelSettings.active_kimi_code_environment_id
+      ?? currentSettings.active_kimi_code_environment_id;
+    const normalizedEnvironments = normalizeKimiCodeEnvironments(environments, currentSettings.kimi_code_environments)
+      .map((environment) => ({
+        ...environment,
+        homePath: getKimiCodeEnvironmentHomePath(environment.id),
+      }))
+      .map((environment) => (
+        currentAppState && environment.id === currentActiveEnvironmentId
+          ? {
+              ...environment,
+              mainConfig: currentAppState.mainConfig,
+              profiles: currentAppState.profiles,
+              activeProfile: currentAppState.activeProfile,
+              mcpServers: currentAppState.mcpConfig.mcpServers,
+            }
+          : environment
+      ));
+    const activeEnvironment = normalizedEnvironments.find((environment) => environment.id === activeEnvironmentId)
+      ?? normalizedEnvironments[0];
+    if (!activeEnvironment) {
+      throw new Error("No Kimi Code environment is available.");
+    }
+    await activateKimiCodeEnvironmentLink(activeEnvironment.id);
+    const configPath = getKimiCodeConfigPath(activeEnvironment.homePath);
+    const saved = await savePanelSettings({
+      ...currentSettings,
+      config_target: "kimi-code",
+      config_path: configPath,
+      profiles_path: "",
+      follow_config_profiles: true,
+      kimi_code_environments: normalizedEnvironments,
+      active_kimi_code_environment_id: activeEnvironment.id,
+    });
+    if (!saved) {
+      throw new Error("Failed to save Kimi Code environment preference.");
+    }
+
+    const nextState = normalizeStatePaths(await loadAppState(tauriFileAccess, {
+      configTarget: "kimi-code",
+      configPath,
+      mcpConfigPath: getKimiCodeMcpConfigPath(activeEnvironment.homePath),
+    }));
+    nextState.kimiTargetDetection = currentAppState?.kimiTargetDetection
+      ?? startupKimiCodeDetection
+      ?? createPendingKimiCodeDetection();
+    try {
+      const accountStatus = await officialAccounts.getOfficialAccountCredentialsStatus();
+      nextState.panelSettings.active_official_account_id = accountStatus.active_account_id;
+    } catch (err) {
+      console.warn("Official account status load skipped:", err);
+    }
+
+    const finalPanelSettings: PanelSettings = {
+      ...nextState.panelSettings,
+      config_target: "kimi-code",
+      config_path: nextState.configPath,
+      profiles: nextState.profiles,
+      active_profile: nextState.activeProfile,
+      mcp_servers: nextState.mcpConfig.mcpServers,
+      profiles_path: "",
+      follow_config_profiles: true,
+      kimi_code_environments: nextState.panelSettings.kimi_code_environments,
+      active_kimi_code_environment_id: activeEnvironment.id,
+      active_official_account_id: nextState.panelSettings.active_official_account_id ?? "",
+    };
+    await savePanelSettings(finalPanelSettings);
+    currentAppState = {
+      ...nextState,
+      panelSettings: finalPanelSettings,
+    };
+    const normalizedState = normalizeStatePaths(currentAppState);
+    return {
+      ok: true,
+      snapshot: await captureSnapshotForState(normalizedState),
+      doctor: buildConfigDoctorReport(normalizedState),
+    };
   },
   captureSnapshot: (state: AppState): Promise<FileSnapshotBundle> => captureSnapshotForState(state),
   runDoctor: async (state: AppState) => {
@@ -728,31 +845,32 @@ export const kimiSwitchTauri = {
   },
   usageQueryOverview: async (range: never) => {
     if (!usageOpen) return { ok: true as const, slice: { totalCalls: 0, totalTokens: 0, cacheHitRate: 0, reasoningTokens: 0, avgLatencyMs: 0, errorRate: 0 } };
-    return { ok: true as const, slice: await usageDb.queryOverview(range) };
+    return { ok: true as const, slice: await usageDb.queryOverview(range, activeKimiCodeEnvironmentId()) };
   },
   usageQueryTrend: async (args: { range: never; bucket: never; groupBy: never }) => {
     if (!usageOpen) return { ok: true as const, series: [] };
-    return { ok: true as const, series: await usageDb.queryTrend(args.range, args.bucket, args.groupBy) };
+    return { ok: true as const, series: await usageDb.queryTrend(args.range, args.bucket, args.groupBy, activeKimiCodeEnvironmentId()) };
   },
   usageQueryBreakdown: async (args: { dim: "profile" | "model"; range: never; limit: number; orderBy: never }) => {
     if (!usageOpen) return { ok: true as const, rows: [] };
-    return { ok: true as const, rows: await usageDb.queryBreakdown(args.dim, args.range, args.limit, args.orderBy) };
+    return { ok: true as const, rows: await usageDb.queryBreakdown(args.dim, args.range, args.limit, args.orderBy, activeKimiCodeEnvironmentId()) };
   },
   usageQuerySessions: async (args: { range: never; limit: number }) => {
     if (!usageOpen) return { ok: true as const, rows: [] };
-    return { ok: true as const, rows: await usageDb.queryHeaviestSessions(args.range, args.limit) };
+    return { ok: true as const, rows: await usageDb.queryHeaviestSessions(args.range, args.limit, activeKimiCodeEnvironmentId()) };
   },
   usageQueryEvents: async (args: { filter: never; cursor: string | null; pageSize: number }) => {
     if (!usageOpen) return { ok: true as const, page: { rows: [], nextCursor: null } };
-    return { ok: true as const, page: await usageDb.queryEvents(args.filter, args.cursor, args.pageSize) };
+    return { ok: true as const, page: await usageDb.queryEvents(args.filter, args.cursor, args.pageSize, activeKimiCodeEnvironmentId()) };
   },
   usageQueryCost: async (range: never) => {
     const empty = { ok: true as const, total: null as number | null, byDay: {} as Record<string, number | null>, byModel: {} as Record<string, number | null> };
     if (!usageOpen) return empty;
     const models = currentAppState?.mainConfig.models ?? {};
+    const environmentId = activeKimiCodeEnvironmentId();
     const [modelSums, modelDaySums] = await Promise.all([
-      usageDb.queryModelTokenSums(range, false),
-      usageDb.queryModelTokenSums(range, true),
+      usageDb.queryModelTokenSums(range, false, environmentId),
+      usageDb.queryModelTokenSums(range, true, environmentId),
     ]);
     const byModel = aggregateCost(modelSums, models, (r) => r.model);
     const byDay = aggregateCost(modelDaySums, models, (r) => r.day);

@@ -13,8 +13,16 @@ function exec(code: number, stdout = "", stderr = ""): { code: number; stdout: s
   return { code, stdout, stderr };
 }
 
-function settings(terminalApp: TerminalApp, configPath = "~/.kimi/config.toml"): Pick<PanelSettings, "config_path" | "terminal_app"> {
-  return { terminal_app: terminalApp, config_path: configPath };
+function settings(
+  terminalApp: TerminalApp,
+  configPath = "~/.kimi-code/config.toml",
+): Pick<PanelSettings, "config_path" | "terminal_app" | "kimi_code_environments" | "active_kimi_code_environment_id"> {
+  return {
+    terminal_app: terminalApp,
+    config_path: configPath,
+    kimi_code_environments: [{ id: "default", name: "Default", homePath: "~/.kimi-code" }],
+    active_kimi_code_environment_id: "default",
+  };
 }
 
 function appState(): AppState {
@@ -22,7 +30,7 @@ function appState(): AppState {
     configTarget: "kimi-code",
     configPath: "~/.kimi-code/config.toml",
     profilesPath: "",
-    panelSettingsPath: "~/.kimi-code/.panel/config.panel.toml",
+    panelSettingsPath: "~/.kimi-code-switch-gui/config.panel.toml",
     mcpConfigPath: "~/.kimi-code/mcp.json",
     mainConfig: {
       default_model: "base/model",
@@ -88,6 +96,8 @@ function appState(): AppState {
       backup_webdav_path: "",
       shortcuts: {},
       mcp_servers: {},
+      kimi_code_environments: [{ id: "work", name: "Work", homePath: "~/.kimi-code-work" }],
+      active_kimi_code_environment_id: "work",
     },
     mcpConfig: { mcpServers: {} },
   };
@@ -127,6 +137,7 @@ describe("openKimiInTerminal (no profile)", () => {
     expect(script).toContain("do script");
     expect(script).toContain("kimi");
     expect(script).not.toContain("--config-file");
+    expect(script).toContain("export KIMI_CODE_HOME=$HOME/");
     expect(script).toContain("cd $HOME/");
     // working directory is the config file's parent dir
     expect(script).toContain("cd ");
@@ -156,6 +167,7 @@ describe("openKimiInTerminal (no profile)", () => {
     expect(writeCall.content.startsWith("#!/bin/sh")).toBe(true);
     expect(writeCall.content).toContain("kimi");
     expect(writeCall.content).not.toContain("--config-file");
+    expect(writeCall.content).toContain("export KIMI_CODE_HOME=$HOME/");
     expect(writeCall.content).toContain("cd $HOME/");
 
     const script = osascriptLines();
@@ -195,6 +207,8 @@ describe("openKimiInTerminal (no profile)", () => {
     expect(script).toContain("--yolo");
     expect(script).toContain("--plan");
     expect(script).not.toContain("--config-file");
+    expect(script).toContain("export KIMI_CODE_HOME=$HOME/");
+    expect(script).toContain(".kimi-code-switch-gui/.env/work");
   });
 });
 

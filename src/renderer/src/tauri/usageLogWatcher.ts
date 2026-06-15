@@ -31,6 +31,7 @@ interface SessionContext {
 
 export interface UsageLogWatcherOptions {
   getActiveProfile: () => string;
+  getActiveEnvironmentId?: () => string;
   onEvent?: (event: UsageEvent) => void;
 }
 
@@ -219,6 +220,13 @@ export class UsageLogWatcher {
     return typeof value === "number" && Number.isFinite(value) ? value : 0;
   }
 
+  private withRuntimeContext(event: UsageEvent): UsageEvent {
+    return {
+      ...event,
+      kimi_code_environment_id: this.options.getActiveEnvironmentId?.() ?? "",
+    };
+  }
+
   private async parseWireJsonLine(line: string, sourcePath: string): Promise<boolean> {
     if (!line.startsWith("{")) return false;
     let payload: unknown;
@@ -232,7 +240,7 @@ export class UsageLogWatcher {
     const ts = this.numberField(payload.time) || Date.now();
     const model = typeof payload.model === "string" ? payload.model : this.currentModelAlias || this.currentModel;
     const provider = model.includes("/") ? model.split("/")[0] : this.currentProvider || "kimi";
-    const event: UsageEvent = {
+    const event: UsageEvent = this.withRuntimeContext({
       request_id: this.stableRequestId(sourcePath, ts, "usage", model),
       ts,
       ts_end: ts,
@@ -253,7 +261,7 @@ export class UsageLogWatcher {
       cost_estimate: null,
       pricing_version: null,
       metadata_json: JSON.stringify({ source: "kimi-code-wire", usageScope: payload.usageScope ?? null }),
-    };
+    });
     if (await db.insertEvent(event)) this.eventsIngested += 1;
     this.options.onEvent?.(event);
     return true;
@@ -340,7 +348,7 @@ export class UsageLogWatcher {
       const pending = this.pendingRequests.get(turnStep);
       const status = Number.parseInt(fields.statusCode ?? "0", 10);
       const model = fields.model || pending?.model || this.currentModelAlias || this.currentModel;
-      const event: UsageEvent = {
+      const event: UsageEvent = this.withRuntimeContext({
         request_id: this.stableRequestId(sourcePath, ts, "failed", turnStep),
         ts: pending?.ts ?? ts,
         ts_end: ts,
@@ -361,7 +369,7 @@ export class UsageLogWatcher {
         cost_estimate: null,
         pricing_version: null,
         metadata_json: JSON.stringify({ source: "kimi-code-log", turnStep, modelAlias: pending?.modelAlias ?? this.currentModelAlias }),
-      };
+      });
       if (await db.insertEvent(event)) this.eventsIngested += 1;
       this.options.onEvent?.(event);
       this.pendingRequests.delete(turnStep);
@@ -375,7 +383,7 @@ export class UsageLogWatcher {
       const ts = new Date(timestamp.replace(" ", "T")).getTime();
       if (Number.isNaN(ts)) return;
 
-      const event: UsageEvent = {
+      const event: UsageEvent = this.withRuntimeContext({
         request_id: this.stableRequestId(sourcePath, ts, "step", sessionId),
         ts,
         ts_end: null,
@@ -396,7 +404,7 @@ export class UsageLogWatcher {
         cost_estimate: null,
         pricing_version: null,
         metadata_json: null,
-      };
+      });
       if (await db.insertEvent(event)) this.eventsIngested += 1;
       this.options.onEvent?.(event);
     }

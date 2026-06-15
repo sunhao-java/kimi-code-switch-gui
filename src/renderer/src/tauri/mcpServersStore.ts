@@ -14,6 +14,7 @@ import type { McpServerConfig } from "../../shared/types";
 
 export interface McpServerRecord extends McpServerConfig {
   id?: number;
+  kimi_code_environment_id?: string;
   server_name: string;
   created_at?: string;
   updated_at?: string;

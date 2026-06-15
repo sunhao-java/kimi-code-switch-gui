@@ -47,6 +47,7 @@ describe("configHistory", () => {
         fileId: "config",
         filePath: "~/.kimi/config.toml",
         description: "test snapshot",
+        kimiCodeEnvironmentId: null,
       });
       expect(result).toBe(42);
     });

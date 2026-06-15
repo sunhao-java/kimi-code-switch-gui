@@ -19,6 +19,7 @@ type Params = Record<string, string | number | null>;
 type Row = Record<string, unknown>;
 
 const SCHEMA_VERSION = 1;
+const DEFAULT_ENVIRONMENT_ID = "default";
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS schema_versions (
@@ -28,6 +29,7 @@ CREATE TABLE IF NOT EXISTS schema_versions (
 );
 CREATE TABLE IF NOT EXISTS events (
   request_id TEXT NOT NULL PRIMARY KEY,
+  kimi_code_environment_id TEXT NOT NULL DEFAULT '',
   ts INTEGER NOT NULL,
   ts_end INTEGER,
   profile TEXT NOT NULL,
@@ -197,10 +199,39 @@ const ORDER_COLUMN_MAP: Record<BreakdownOrder, string> = {
   cache_hit_rate: "cache_hit_rate",
 };
 
+function addEnvironmentCondition(
+  conditions: string[],
+  params: Params,
+  environmentId?: string,
+): void {
+  if (!environmentId) {
+    return;
+  }
+  if (environmentId === DEFAULT_ENVIRONMENT_ID) {
+    conditions.push("(kimi_code_environment_id = @environment_id OR kimi_code_environment_id = '')");
+  } else {
+    conditions.push("kimi_code_environment_id = @environment_id");
+  }
+  params.environment_id = environmentId;
+}
+
+function buildRangeConditions(
+  range: TimeRange,
+  environmentId?: string,
+): { conditions: string[]; params: Params } {
+  const b = computeBounds(range);
+  const conditions = ["ts >= @from_ms", "ts < @to_ms"];
+  const params: Params = { from_ms: b.fromMs, to_ms: b.toMs };
+  addEnvironmentCondition(conditions, params, environmentId);
+  return { conditions, params };
+}
+
 // ── 公开 API ──
 
 export async function open(dbPath: string): Promise<void> {
   await invoke("usage_open", { dbPath, schemaSql: SCHEMA_SQL });
+  await exec("ALTER TABLE events ADD COLUMN kimi_code_environment_id TEXT NOT NULL DEFAULT ''").catch(() => 0);
+  await exec("CREATE INDEX IF NOT EXISTS idx_events_environment_ts ON events (kimi_code_environment_id, ts DESC)");
   const rows = await query("SELECT MAX(version) AS version FROM schema_versions");
   const current = num(rows[0]?.version, 0);
   if (current < SCHEMA_VERSION) {
@@ -217,12 +248,12 @@ export async function close(): Promise<void> {
 
 const INSERT_SQL = `
   INSERT OR IGNORE INTO events (
-    request_id, ts, ts_end, profile, provider, model,
+    request_id, kimi_code_environment_id, ts, ts_end, profile, provider, model,
     prompt_tokens, completion_tokens, cache_read_tokens, cache_creation_tokens, reasoning_tokens,
     latency_ms, proxy_overhead_ms, error_code, error_message, http_status,
     session_hint, cost_estimate, pricing_version, metadata_json, ingested_at_utc
   ) VALUES (
-    @request_id, @ts, @ts_end, @profile, @provider, @model,
+    @request_id, @kimi_code_environment_id, @ts, @ts_end, @profile, @provider, @model,
     @prompt_tokens, @completion_tokens, @cache_read_tokens, @cache_creation_tokens, @reasoning_tokens,
     @latency_ms, @proxy_overhead_ms, @error_code, @error_message, @http_status,
     @session_hint, @cost_estimate, @pricing_version, @metadata_json, @ingested_at_utc
@@ -232,6 +263,7 @@ const INSERT_SQL = `
 function eventToParams(e: UsageEvent): Params {
   return {
     request_id: e.request_id,
+    kimi_code_environment_id: e.kimi_code_environment_id ?? "",
     ts: e.ts,
     ts_end: e.ts_end,
     profile: e.profile,
@@ -258,6 +290,7 @@ function eventToParams(e: UsageEvent): Params {
 function rowToUsageEvent(row: Record<string, unknown>): UsageEvent {
   return {
     request_id: String(row.request_id ?? ''),
+    kimi_code_environment_id: String(row.kimi_code_environment_id ?? ''),
     ts: num(row.ts),
     ts_end: num(row.ts_end),
     profile: String(row.profile ?? ''),
@@ -297,8 +330,8 @@ export async function getEventCount(): Promise<number> {
   return num(rows[0]?.cnt);
 }
 
-export async function queryOverview(range: TimeRange): Promise<OverviewSlice> {
-  const b = computeBounds(range);
+export async function queryOverview(range: TimeRange, environmentId?: string): Promise<OverviewSlice> {
+  const { conditions, params } = buildRangeConditions(range, environmentId);
   const rows = await query(
     `SELECT
        COUNT(*) AS calls,
@@ -308,8 +341,8 @@ export async function queryOverview(range: TimeRange): Promise<OverviewSlice> {
        COALESCE(SUM(reasoning_tokens),0) AS reasoning,
        COALESCE(SUM(latency_ms),0) AS latency_sum,
        COALESCE(SUM(CASE WHEN error_code IS NOT NULL THEN 1 ELSE 0 END),0) AS errors
-     FROM events WHERE ts >= @from_ms AND ts < @to_ms`,
-    { from_ms: b.fromMs, to_ms: b.toMs },
+     FROM events WHERE ${conditions.join(" AND ")}`,
+    params,
   );
   const r = rows[0] ?? {};
   const calls = num(r.calls);
@@ -324,17 +357,17 @@ export async function queryOverview(range: TimeRange): Promise<OverviewSlice> {
   };
 }
 
-export async function queryTrend(range: TimeRange, bucket: Bucket, groupBy: GroupBy | null): Promise<SeriesPoint[]> {
-  const b = computeBounds(range);
+export async function queryTrend(range: TimeRange, bucket: Bucket, groupBy: GroupBy | null, environmentId?: string): Promise<SeriesPoint[]> {
+  const { conditions, params } = buildRangeConditions(range, environmentId);
   const groupCol = groupBy === "profile" ? "profile" : groupBy === "model" ? "model" : groupBy === "provider" ? "provider" : "''";
   if (bucket === "hour") {
     const rows = await query(
       `SELECT (ts/3600000)*3600000 AS bucket, ${groupCol} AS grp,
          SUM(prompt_tokens+completion_tokens+cache_read_tokens+cache_creation_tokens+reasoning_tokens) AS tokens,
          COUNT(*) AS calls
-       FROM events WHERE ts >= @from_ms AND ts < @to_ms
+       FROM events WHERE ${conditions.join(" AND ")}
        GROUP BY bucket, grp ORDER BY bucket`,
-      { from_ms: b.fromMs, to_ms: b.toMs },
+      params,
     );
     return rows.map((r) => ({ bucket: num(r.bucket), group: str(r.grp), tokens: num(r.tokens), calls: num(r.calls) }));
   }
@@ -342,25 +375,26 @@ export async function queryTrend(range: TimeRange, bucket: Bucket, groupBy: Grou
     `SELECT strftime('%Y-%m-%d', ts / 1000, 'unixepoch', 'localtime') AS bucket, ${groupCol} AS grp,
        SUM(prompt_tokens+completion_tokens+cache_read_tokens+cache_creation_tokens+reasoning_tokens) AS tokens,
        COUNT(*) AS calls
-     FROM events WHERE ts >= @from_ms AND ts < @to_ms
+     FROM events WHERE ${conditions.join(" AND ")}
      GROUP BY bucket, grp ORDER BY bucket`,
-    { from_ms: b.fromMs, to_ms: b.toMs },
+    params,
   );
   return rows.map((r) => ({ bucket: localDayStringToMs(str(r.bucket)), group: str(r.grp), tokens: num(r.tokens), calls: num(r.calls) }));
 }
 
-export async function queryBreakdown(dim: "profile" | "model", range: TimeRange, limit: number, orderBy: BreakdownOrder): Promise<BreakdownRow[]> {
-  const b = computeBounds(range);
+export async function queryBreakdown(dim: "profile" | "model", range: TimeRange, limit: number, orderBy: BreakdownOrder, environmentId?: string): Promise<BreakdownRow[]> {
+  const { conditions, params } = buildRangeConditions(range, environmentId);
   const orderCol = ORDER_COLUMN_MAP[orderBy];
+  params.limit = Math.max(1, Math.min(50, limit));
   const rows = await query(
     `SELECT ${dim} AS name, COUNT(*) AS calls,
        SUM(prompt_tokens+completion_tokens+cache_read_tokens+cache_creation_tokens+reasoning_tokens) AS tokens,
        SUM(CASE WHEN error_code IS NOT NULL THEN 1 ELSE 0 END) AS errors,
        CAST(SUM(latency_ms) AS REAL)/NULLIF(COUNT(*),0) AS avg_latency_ms,
        CAST(SUM(cache_read_tokens) AS REAL)/NULLIF(SUM(prompt_tokens+cache_read_tokens),0) AS cache_hit_rate
-     FROM events WHERE ts >= @from_ms AND ts < @to_ms
+     FROM events WHERE ${conditions.join(" AND ")}
      GROUP BY ${dim} ORDER BY ${orderCol} DESC LIMIT @limit`,
-    { from_ms: b.fromMs, to_ms: b.toMs, limit: Math.max(1, Math.min(50, limit)) },
+    params,
   );
   return rows.map((r) => ({
     name: str(r.name),
@@ -388,8 +422,8 @@ export interface ModelTokenSums {
   reasoning_tokens: number;
 }
 
-export async function queryModelTokenSums(range: TimeRange, byDay: boolean): Promise<ModelTokenSums[]> {
-  const b = computeBounds(range);
+export async function queryModelTokenSums(range: TimeRange, byDay: boolean, environmentId?: string): Promise<ModelTokenSums[]> {
+  const { conditions, params } = buildRangeConditions(range, environmentId);
   const rows = await query(
     `SELECT model AS model, ${byDay ? "strftime('%Y-%m-%d', ts / 1000, 'unixepoch', 'localtime')" : "''"} AS day,
        SUM(prompt_tokens) AS prompt_tokens,
@@ -397,9 +431,9 @@ export async function queryModelTokenSums(range: TimeRange, byDay: boolean): Pro
        SUM(cache_read_tokens) AS cache_read_tokens,
        SUM(cache_creation_tokens) AS cache_creation_tokens,
        SUM(reasoning_tokens) AS reasoning_tokens
-     FROM events WHERE ts >= @from_ms AND ts < @to_ms
+     FROM events WHERE ${conditions.join(" AND ")}
      GROUP BY model${byDay ? ", day" : ""}`,
-    { from_ms: b.fromMs, to_ms: b.toMs },
+    params,
   );
   return rows.map((r) => ({
     model: str(r.model),
@@ -412,19 +446,25 @@ export async function queryModelTokenSums(range: TimeRange, byDay: boolean): Pro
   }));
 }
 
-export async function queryHeaviestSessions(range: TimeRange, limit: number): Promise<SessionRow[]> {
-  const b = computeBounds(range);
+export async function queryHeaviestSessions(range: TimeRange, limit: number, environmentId?: string): Promise<SessionRow[]> {
+  const { conditions, params } = buildRangeConditions(range, environmentId);
+  params.limit = Math.max(1, Math.min(50, limit));
+  const environmentJoinCondition = environmentId === DEFAULT_ENVIRONMENT_ID
+    ? " AND (e2.kimi_code_environment_id = @environment_id OR e2.kimi_code_environment_id = '')"
+    : environmentId
+      ? " AND e2.kimi_code_environment_id = @environment_id"
+      : "";
   const rows = await query(
     `SELECT session_hint AS session_id, MIN(ts) AS started_utc, MAX(ts_end) AS ended_utc,
        COUNT(*) AS calls,
        SUM(prompt_tokens+completion_tokens+cache_read_tokens+cache_creation_tokens+reasoning_tokens) AS tokens,
-       (SELECT profile FROM events e2 WHERE e2.session_hint = ue.session_hint ORDER BY ts LIMIT 1) AS profile,
+       (SELECT profile FROM events e2 WHERE e2.session_hint = ue.session_hint${environmentJoinCondition} ORDER BY ts LIMIT 1) AS profile,
        GROUP_CONCAT(DISTINCT model) AS models,
        CAST(AVG(latency_ms) AS INTEGER) AS avg_latency_ms,
        SUM(CASE WHEN error_code IS NOT NULL THEN 1 ELSE 0 END) AS errors
-     FROM events ue WHERE ts >= @from_ms AND ts < @to_ms AND session_hint IS NOT NULL
+     FROM events ue WHERE ${conditions.join(" AND ")} AND session_hint IS NOT NULL
      GROUP BY session_hint ORDER BY tokens DESC LIMIT @limit`,
-    { from_ms: b.fromMs, to_ms: b.toMs, limit: Math.max(1, Math.min(50, limit)) },
+    params,
   );
   return rows.map((r) => ({
     session_id: str(r.session_id),
@@ -440,11 +480,12 @@ export async function queryHeaviestSessions(range: TimeRange, limit: number): Pr
   }));
 }
 
-export async function queryEvents(filter: EventFilter, cursor: string | null, pageSize: number): Promise<EventsPage> {
+export async function queryEvents(filter: EventFilter, cursor: string | null, pageSize: number, environmentId?: string): Promise<EventsPage> {
   const b = computeBounds(filter.range);
   const size = Math.max(1, Math.min(200, pageSize));
   const conditions = ["ts >= @from_ms", "ts < @to_ms"];
   const params: Params = { from_ms: b.fromMs, to_ms: b.toMs };
+  addEnvironmentCondition(conditions, params, environmentId);
 
   const dc = decodeCursor(cursor);
   if (dc) {

@@ -3,7 +3,7 @@
 //! 设计：Rust 持有连接，前端传 SQL + 具名参数。SQL 语句、时间计算、游标编解码、
 //! 日志解析等纯逻辑全部保留在前端 TS（usageDb 的 27 条 SQL 几乎原样下传）。
 //!
-//! 数据库文件：~/.kimi-code/.panel/app.db（全局应用数据库）
+//! 数据库文件：~/.kimi-code-switch-gui/app.db（全局应用数据库）
 //! 包含表：usage 相关表、config_history、panel_settings
 
 use std::collections::HashMap;
@@ -331,11 +331,21 @@ mod tests {
 
 /// 迁移旧数据库到新路径。
 ///
-/// 将 ~/.kimi/.panel/usage/index.db 的所有表和数据复制到当前连接的数据库。
+/// 将旧面板数据库的所有表和数据复制到当前连接的数据库。
 /// 迁移完成后，重命名旧数据库为 index.db.migrated。
 #[tauri::command]
 pub fn migrate_legacy_database(state: tauri::State<UsageState>) -> Result<String, String> {
-    let old_db_path = resolve_home("~/.kimi/.panel/usage/index.db");
+    let legacy_candidates = [
+        "~/.kimi-code/.panel/app.db",
+        "~/.kimi/.panel/usage/index.db",
+    ];
+    let Some(old_db_path) = legacy_candidates
+        .iter()
+        .map(|path| resolve_home(path))
+        .find(|path| path.exists())
+    else {
+        return Ok("No legacy database found, migration skipped".to_string());
+    };
 
     // 检查旧数据库是否存在
     if !old_db_path.exists() {
