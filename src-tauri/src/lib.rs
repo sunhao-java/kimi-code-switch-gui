@@ -74,13 +74,6 @@ pub fn run() {
             panel_settings_store::migrate_panel_settings_from_toml,
             // MCP 服务器存储
             mcp_servers_store::init_mcp_servers_store,
-            mcp_servers_store::list_mcp_servers,
-            mcp_servers_store::get_mcp_server,
-            mcp_servers_store::save_mcp_server,
-            mcp_servers_store::enable_mcp_server,
-            mcp_servers_store::disable_mcp_server,
-            mcp_servers_store::delete_mcp_server,
-            mcp_servers_store::get_enabled_mcp_servers,
             mcp_servers_store::migrate_mcp_from_json,
             // Kimi 官方账号槽位
             official_accounts::init_official_accounts_store,

@@ -174,11 +174,17 @@ export class UsageLogWatcher {
       const tail = lines.pop() ?? "";
       if (path === LOG_PATH) {
         this.tailBuffer = tail;
-      } else if (tail.trim()) {
-        lines.push(tail);
+        for (const line of lines) await this.parseLine(line, path);
+      } else {
+        // session/wire 日志没有内存 tailBuffer。仍解析未以换行结尾的 tail（覆盖已结束
+        // session 那条没有尾随换行的完整末行），但持久化的 offset 只推进到最后一个换行处——
+        // 这样若该 tail 其实是正在写入的半行，下次轮询会重读它的完整版本。重复解析依赖
+        // insertEvent 按 stable request_id 去重，不会重复入库，因此两种情况都不丢记录。
+        for (const line of lines) await this.parseLine(line, path);
+        if (tail.trim()) await this.parseLine(tail, path);
+        const consumedBytes = offset + this.byteLength(text) - this.byteLength(tail);
+        await db.setIngestState(path, consumedBytes, signature);
       }
-      for (const line of lines) await this.parseLine(line, path);
-      if (path !== LOG_PATH) await db.setIngestState(path, s.size, signature);
     } catch {
       /* log file may not exist yet */
     }

@@ -608,14 +608,21 @@ export async function migrateLegacyKimiCliConfigToKimiCode(files: FileAccess): P
   let profilesCopied = false;
   let mcpMerged = false;
 
+  // 迁移目标显式解析为「默认环境」的真实路径，而非 ~/.kimi-code 软链。
+  // 软链当前可能指向某个非默认环境，若用它做目标会把 legacy 配置错误注入到
+  // 当前激活的非默认环境；这里强制落到默认环境家目录。
+  const defaultEnvHome = getKimiCodeEnvironmentHomePath(DEFAULT_KIMI_CODE_ENVIRONMENT_ID);
+  const defaultEnvConfigPath = getKimiCodeConfigPath(defaultEnvHome);
+  const defaultEnvMcpPath = getKimiCodeMcpConfigPath(defaultEnvHome);
+
   try {
     const legacyConfig = parseDocument(legacyConfigDocument);
-    const currentConfigDocument = await safeReadText(files, DEFAULT_CONFIG_PATH);
+    const currentConfigDocument = await safeReadText(files, defaultEnvConfigPath);
     const currentConfig = parseDocument(currentConfigDocument);
     const { value, changed } = mergeLegacyMainConfig(currentConfig, legacyConfig);
     if (changed) {
-      await files.ensureDir(dirnamePath(DEFAULT_CONFIG_PATH));
-      await files.writeText(DEFAULT_CONFIG_PATH, stringify(value));
+      await files.ensureDir(dirnamePath(defaultEnvConfigPath));
+      await files.writeText(defaultEnvConfigPath, stringify(value));
       configMerged = true;
     }
   } catch (error) {
@@ -628,7 +635,7 @@ export async function migrateLegacyKimiCliConfigToKimiCode(files: FileAccess): P
   // from old files into SQLite panel settings on the next save.
   profilesCopied = false;
 
-  const targetMcpPath = getDefaultMcpConfigPath(ConfigTarget.KimiCode);
+  const targetMcpPath = defaultEnvMcpPath;
   const currentMcpDocument = await safeReadText(files, targetMcpPath);
   const legacyMcpDocument = (await safeReadText(files, LEGACY_MCP_JSON_PATH)) ?? (await safeReadText(files, LEGACY_MCP_CONFIG_PATH));
   if (legacyMcpDocument?.trim()) {

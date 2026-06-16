@@ -1,10 +1,9 @@
 //! MCP 服务器配置存储（SQLite）。
 //!
-//! 设计：结构化表存储，支持启用/禁用状态管理。
-//! 启用：同步到 ~/.kimi-code/mcp.json
-//! 禁用：从 mcp.json 删除，数据库保留（enabled=0）
-//! 删除：从数据库物理删除
+//! 说明：MCP 配置实际通过 panel_settings 的 mcp_servers JSON 列管理。
+//! 本模块只负责建表（init）与从旧 ~/.kimi-code/mcp.json 的一次性导入（migrate）。
 
+#[cfg(test)]
 use rusqlite::OptionalExtension;
 use serde_json::json;
 
@@ -92,6 +91,7 @@ fn environment_id_from_server(server: &serde_json::Value) -> String {
         .to_string()
 }
 
+#[cfg(test)]
 fn server_json_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value> {
     Ok(json!({
         "id": row.get::<_, i64>(0)?,
@@ -125,53 +125,8 @@ pub fn init_mcp_servers_store(state: tauri::State<crate::usage::UsageState>) -> 
     Ok(())
 }
 
-/// 列出所有 MCP 服务器（包括禁用的）
-#[tauri::command]
-pub fn list_mcp_servers(state: tauri::State<crate::usage::UsageState>) -> Result<String, String> {
-    let guard = lock_conn(&state)?;
-    let conn = guard.as_ref().ok_or("usage db not open")?;
-
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, kimi_code_environment_id, server_name, enabled, transport, url, command, args, headers, env, extra, created_at, updated_at
-             FROM mcp_servers ORDER BY server_name",
-        )
-        .map_err(|e| format!("prepare list: {e}"))?;
-
-    let servers: Vec<serde_json::Value> = stmt
-        .query_map([], server_json_from_row)
-        .map_err(|e| format!("query servers: {e}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("collect servers: {e}"))?;
-
-    serde_json::to_string(&servers).map_err(|e| format!("serialize: {e}"))
-}
-
-/// 获取单个 MCP 服务器
-#[tauri::command]
-pub fn get_mcp_server(
-    server_name: String,
-    state: tauri::State<crate::usage::UsageState>,
-) -> Result<Option<String>, String> {
-    let guard = lock_conn(&state)?;
-    let conn = guard.as_ref().ok_or("usage db not open")?;
-
-    let server_json: Option<String> = conn
-        .query_row(
-            "SELECT id, kimi_code_environment_id, server_name, enabled, transport, url, command, args, headers, env, extra, created_at, updated_at
-             FROM mcp_servers WHERE kimi_code_environment_id = ?1 AND server_name = ?2",
-            rusqlite::params![DEFAULT_ENVIRONMENT_ID, server_name],
-            |row| Ok(server_json_from_row(row)?.to_string()),
-        )
-        .optional()
-        .map_err(|e| format!("query server: {e}"))?;
-
-    Ok(server_json)
-}
-
-/// 创建或更新 MCP 服务器
-#[tauri::command]
-pub fn save_mcp_server(
+/// 创建或更新 MCP 服务器（仅供 migrate_mcp_from_json 内部使用）
+fn save_mcp_server(
     server_json: String,
     state: tauri::State<crate::usage::UsageState>,
 ) -> Result<(), String> {
@@ -223,118 +178,6 @@ pub fn save_mcp_server(
 
     log::info!("MCP server {} saved", server_name);
     Ok(())
-}
-
-/// 启用 MCP 服务器
-#[tauri::command]
-pub fn enable_mcp_server(
-    server_name: String,
-    state: tauri::State<crate::usage::UsageState>,
-) -> Result<(), String> {
-    let guard = lock_conn(&state)?;
-    let conn = guard.as_ref().ok_or("usage db not open")?;
-
-    let now = chrono::Utc::now().to_rfc3339();
-
-    let rows = conn
-        .execute(
-            "UPDATE mcp_servers SET enabled = 1, updated_at = ?1 WHERE kimi_code_environment_id = ?2 AND server_name = ?3",
-            rusqlite::params![now, DEFAULT_ENVIRONMENT_ID, server_name],
-        )
-        .map_err(|e| format!("enable mcp_server: {e}"))?;
-
-    if rows == 0 {
-        return Err(format!("server {} not found", server_name));
-    }
-
-    log::info!("MCP server {} enabled", server_name);
-    Ok(())
-}
-
-/// 禁用 MCP 服务器
-#[tauri::command]
-pub fn disable_mcp_server(
-    server_name: String,
-    state: tauri::State<crate::usage::UsageState>,
-) -> Result<(), String> {
-    let guard = lock_conn(&state)?;
-    let conn = guard.as_ref().ok_or("usage db not open")?;
-
-    let now = chrono::Utc::now().to_rfc3339();
-
-    let rows = conn
-        .execute(
-            "UPDATE mcp_servers SET enabled = 0, updated_at = ?1 WHERE kimi_code_environment_id = ?2 AND server_name = ?3",
-            rusqlite::params![now, DEFAULT_ENVIRONMENT_ID, server_name],
-        )
-        .map_err(|e| format!("disable mcp_server: {e}"))?;
-
-    if rows == 0 {
-        return Err(format!("server {} not found", server_name));
-    }
-
-    log::info!("MCP server {} disabled", server_name);
-    Ok(())
-}
-
-/// 删除 MCP 服务器（物理删除）
-#[tauri::command]
-pub fn delete_mcp_server(
-    server_name: String,
-    state: tauri::State<crate::usage::UsageState>,
-) -> Result<(), String> {
-    let guard = lock_conn(&state)?;
-    let conn = guard.as_ref().ok_or("usage db not open")?;
-
-    let rows = conn
-        .execute(
-            "DELETE FROM mcp_servers WHERE kimi_code_environment_id = ?1 AND server_name = ?2",
-            rusqlite::params![DEFAULT_ENVIRONMENT_ID, server_name],
-        )
-        .map_err(|e| format!("delete mcp_server: {e}"))?;
-
-    if rows == 0 {
-        return Err(format!("server {} not found", server_name));
-    }
-
-    log::info!("MCP server {} deleted", server_name);
-    Ok(())
-}
-
-/// 获取所有启用的 MCP 服务器（用于同步到 mcp.json）
-#[tauri::command]
-pub fn get_enabled_mcp_servers(
-    state: tauri::State<crate::usage::UsageState>,
-) -> Result<String, String> {
-    let guard = lock_conn(&state)?;
-    let conn = guard.as_ref().ok_or("usage db not open")?;
-
-    let mut stmt = conn
-        .prepare(
-            "SELECT server_name, transport, url, command, args, headers, env, extra
-             FROM mcp_servers WHERE kimi_code_environment_id = ?1 AND enabled = 1 ORDER BY server_name",
-        )
-        .map_err(|e| format!("prepare enabled servers: {e}"))?;
-
-    let servers: Vec<serde_json::Value> = stmt
-        .query_map([DEFAULT_ENVIRONMENT_ID], |row| {
-            Ok(json!({
-                "server_name": row.get::<_, String>(0)?,
-                "transport": row.get::<_, String>(1)?,
-                "url": row.get::<_, String>(2)?,
-                "command": row.get::<_, String>(3)?,
-                "args": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(4)?).unwrap_or(json!([])),
-                "headers": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(5)?).unwrap_or(json!({})),
-                "env": serde_json::from_str::<serde_json::Value>(&row.get::<_, String>(6)?).unwrap_or(json!({})),
-                "extra": row.get::<_, Option<String>>(7)?
-                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()),
-            }))
-        })
-        .map_err(|e| format!("query enabled servers: {e}"))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("collect enabled servers: {e}"))?;
-
-    serde_json::to_string(&servers).map_err(|e| format!("serialize: {e}"))
 }
 
 /// 从旧 MCP JSON 导入到数据库。

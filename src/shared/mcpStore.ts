@@ -123,11 +123,10 @@ function buildMcpServerDocument(server: McpServerConfig): Record<string, unknown
 }
 
 export function isUnsupportedSseServer(server: McpServerConfig): boolean {
-  return server.transport === "sse" || isSseEndpoint(server.url);
-}
-
-function isSseEndpoint(url: string): boolean {
-  return /\/sse([/?#]|$)/.test(url.trim());
+  // 仅当 transport 解析为 sse 时才视为不支持。URL 启发式（路径含 /sse）只用于
+  // normalizeMcpTransport 推断缺省 transport，不应作为过滤依据——否则显式声明为
+  // streamable-http 但 URL 恰好含 /sse 的合法端点会被静默丢弃。
+  return server.transport === "sse";
 }
 
 function sanitizeMcpExtra(extra: Record<string, unknown> | undefined): Record<string, unknown> {

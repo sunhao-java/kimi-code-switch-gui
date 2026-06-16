@@ -112,12 +112,10 @@ describe("useAppPersistence", () => {
     vi.clearAllMocks();
   });
 
-  it("loads state and preview without waiting for deferred startup work", async () => {
+  it("establishes the snapshot baseline before returning but defers heavier startup work", async () => {
     const state = createState();
-    let resolveSnapshot: ((value: FileSnapshotBundle) => void) | undefined;
-    const captureSnapshot = vi.fn(() => new Promise<FileSnapshotBundle>((resolve) => {
-      resolveSnapshot = resolve;
-    }));
+    const baselineSnapshot = createSnapshot("baseline");
+    const captureSnapshot = vi.fn().mockResolvedValue(baselineSnapshot);
     const runDoctor = vi.fn().mockResolvedValue({
       ok: true,
       generatedAt: "",
@@ -173,13 +171,12 @@ describe("useAppPersistence", () => {
       configPath: "~/.kimi-code-switch-gui/.env/default/config.toml",
     }));
     expect(setPreview).toHaveBeenCalledWith({ config: "preview" });
+    // 快照基线在 loadState 返回前同步建立（关闭外部变更检测被绕过的窗口）。
     expect(captureSnapshot).toHaveBeenCalled();
-    expect(runDoctor).toHaveBeenCalled();
-    expect(refreshSkills).not.toHaveBeenCalled();
+    expect(setFileSnapshot).toHaveBeenCalledWith(baselineSnapshot);
+    // 较重的后加载任务在后台串行执行：refreshSkills 永不 resolve，其后的备份基线
+    // 不会被触达，证明这些任务不阻塞首屏 loadState 的返回。
     expect(initBackupBaseline).not.toHaveBeenCalled();
-    expect(setFileSnapshot).not.toHaveBeenCalled();
-
-    resolveSnapshot?.(createSnapshot("deferred"));
   });
 
   it("uses the latest snapshot ref when saving after another internal write", async () => {

@@ -90,14 +90,10 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     void (async () => {
       const startedAt = startupTimingNow();
       try {
-        if (api.captureSnapshot && api.runDoctor) {
-          const snapshotStartedAt = startupTimingNow();
-          const [snapshot, doctor] = await Promise.all([
-            api.captureSnapshot(normalized),
-            api.runDoctor(normalized),
-          ]);
-          recordStartupTiming("useAppPersistence.captureSnapshotAndDoctor", snapshotStartedAt);
-          setFileSnapshot(snapshot);
+        if (api.runDoctor) {
+          const doctorStartedAt = startupTimingNow();
+          const doctor = await api.runDoctor(normalized);
+          recordStartupTiming("useAppPersistence.runDoctor", doctorStartedAt);
           setDoctorReport(doctor);
         }
       } catch (err) {
@@ -132,7 +128,7 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
         recordStartupTiming("useAppPersistence.postLoadTasks", startedAt);
       }
     })();
-  }, [refreshSkills, setDiagnostics, setDoctorReport, setFileSnapshot]);
+  }, [refreshSkills, setDiagnostics, setDoctorReport]);
 
   const loadState = useCallback(async (): Promise<void> => {
     const loadStartedAt = startupTimingNow();
@@ -182,6 +178,22 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
         previewState: "ok",
         lastError: "",
       });
+      // 在 UI 可交互前同步建立快照基线，避免首屏存在「基线未就绪 → 保存时
+      // expectedSnapshot 为空 → 外部变更检测被跳过」的窗口。其余较重的后加载任务
+      // （doctor / skills / 备份基线）仍后台异步执行，保留首屏性能优化。
+      if (api.captureSnapshot) {
+        try {
+          const snapshotStartedAt = startupTimingNow();
+          const snapshot = await api.captureSnapshot(normalized);
+          recordStartupTiming("useAppPersistence.captureSnapshot", snapshotStartedAt);
+          setFileSnapshot(snapshot);
+        } catch (err) {
+          setDiagnostics((current) => ({
+            ...current,
+            lastError: err instanceof Error ? err.message : String(err),
+          }));
+        }
+      }
       runPostLoadTasks(normalized, api);
       recordStartupTiming("useAppPersistence.loadState.total", loadStartedAt);
     } catch (loadError) {
@@ -204,6 +216,7 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     runPostLoadTasks,
     setDiagnostics,
     setError,
+    setFileSnapshot,
     setNotice,
     setPreview,
     setSavedState,

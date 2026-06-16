@@ -17,6 +17,9 @@ import {
   deleteProvider,
   exportConfig,
   getKimiCodeEnvironmentHomePath,
+  getKimiCodeConfigPath,
+  getKimiCodeMcpConfigPath,
+  migrateLegacyKimiCliConfigToKimiCode,
   formatMissingModelError,
   getImportPreview,
   importConfig,
@@ -1348,5 +1351,61 @@ max_context_size = 8192
 
     const doc = buildPanelSettingsDocument(settings);
     expect(doc).toContain('config_target = "kimi-code"');
+  });
+});
+
+describe("migrateLegacyKimiCliConfigToKimiCode", () => {
+  const defaultHome = getKimiCodeEnvironmentHomePath("default");
+  const defaultConfigPath = getKimiCodeConfigPath(defaultHome);
+  const defaultMcpPath = getKimiCodeMcpConfigPath(defaultHome);
+  const LEGACY_CONFIG = "~/.kimi/config.toml";
+  const MARKER = "~/.kimi-code-switch-gui/legacy-kimi-cli-config.migrated.json";
+
+  it("migrates legacy config into the default environment real path, not the ~/.kimi-code symlink", async () => {
+    const files = createMemoryFs({
+      [LEGACY_CONFIG]: 'default_model = "kimi/k2"\n[providers.kimi]\ntype = "kimi"\n',
+    });
+
+    const result = await migrateLegacyKimiCliConfigToKimiCode(files);
+
+    expect(result.migrated).toBe(true);
+    expect(result.configMerged).toBe(true);
+    // 落点必须是默认环境真实路径，而非 ~/.kimi-code 软链
+    expect(files.store[defaultConfigPath]).toBeTruthy();
+    expect(files.store["~/.kimi-code/config.toml"]).toBeUndefined();
+    expect(files.store[defaultConfigPath]).toContain("kimi/k2");
+  });
+
+  it("is idempotent: a second run does nothing once the marker exists", async () => {
+    const files = createMemoryFs({
+      [LEGACY_CONFIG]: 'default_model = "kimi/k2"\n',
+    });
+    await migrateLegacyKimiCliConfigToKimiCode(files);
+    expect(files.store[MARKER]).toBeTruthy();
+
+    const second = await migrateLegacyKimiCliConfigToKimiCode(files);
+    expect(second.migrated).toBe(false);
+    expect(second.reason).toBe("already-migrated");
+  });
+
+  it("records a marker and skips when there is no legacy config", async () => {
+    const files = createMemoryFs({});
+    const result = await migrateLegacyKimiCliConfigToKimiCode(files);
+    expect(result.migrated).toBe(false);
+    expect(result.reason).toBe("legacy-config-missing");
+    expect(files.store[MARKER]).toBeTruthy();
+  });
+
+  it("merges legacy MCP servers into the default environment mcp.json", async () => {
+    const files = createMemoryFs({
+      [LEGACY_CONFIG]: 'default_model = "kimi/k2"\n',
+      "~/.kimi/mcp.json": JSON.stringify({ mcpServers: { ctx: { url: "https://ctx.test/mcp" } } }),
+    });
+
+    const result = await migrateLegacyKimiCliConfigToKimiCode(files);
+
+    expect(result.mcpMerged).toBe(true);
+    expect(files.store[defaultMcpPath]).toBeTruthy();
+    expect(files.store[defaultMcpPath]).toContain("ctx.test/mcp");
   });
 });

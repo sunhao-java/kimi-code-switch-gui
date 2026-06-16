@@ -98,6 +98,26 @@ describe("mcpStore", () => {
     expect(document).not.toContain("/sse");
   });
 
+  it("keeps streamable-http servers whose URL path contains /sse", () => {
+    const document = buildMcpConfigDocument({
+      mcpServers: {
+        modelscope: {
+          enabled: true,
+          transport: "streamable-http",
+          url: "https://mcp.example.test/abc/sse",
+          headers: {},
+          command: "",
+          args: [],
+          env: {},
+        },
+      },
+    });
+
+    // 显式 streamable-http 即便 URL 含 /sse 也不应被当作 SSE 过滤掉
+    expect(document).toContain('"modelscope"');
+    expect(document).toContain('"url": "https://mcp.example.test/abc/sse"');
+  });
+
   it("preserves enabled and explicit extra fields without nesting them into extra", () => {
     const config = parseMcpConfigStrict(`{
       "mcpServers": {

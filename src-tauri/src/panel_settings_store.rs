@@ -344,6 +344,15 @@ pub fn save_panel_settings(
             Some(settings[key].to_string())
         }
     };
+    // NOT NULL 的 JSON 对象列：缺失/为 null 时落 "{}" 而非 serde_json 的 "null" 字面量，
+    // 否则读回时 from_str("null") 解析为 Value::Null（不会触发 parse 错误兜底）。
+    let get_json_object_str = |key: &str| {
+        if settings[key].is_null() {
+            "{}".to_string()
+        } else {
+            settings[key].to_string()
+        }
+    };
 
     // UPSERT
     conn.execute(
@@ -426,7 +435,7 @@ pub fn save_panel_settings(
             get_i64("version"),
             get_str("config_target"),
             get_str("config_path"),
-            settings["profiles"].to_string(),
+            get_json_object_str("profiles"),
             get_str("active_profile"),
             get_str("profiles_path"),
             get_bool("follow_config_profiles"),
@@ -452,8 +461,8 @@ pub fn save_panel_settings(
             get_str("backup_webdav_username"),
             get_str("backup_webdav_password"),
             get_str("backup_webdav_path"),
-            settings["shortcuts"].to_string(),
-            settings["mcp_servers"].to_string(),
+            get_json_object_str("shortcuts"),
+            get_json_object_str("mcp_servers"),
             get_json_str("kimi_code_environments"),
             get_str("active_kimi_code_environment_id"),
             get_str("insights_status"),
@@ -598,6 +607,13 @@ mod tests {
                 Some(settings[key].to_string())
             }
         };
+        let get_json_object_str = |key: &str| {
+            if settings[key].is_null() {
+                "{}".to_string()
+            } else {
+                settings[key].to_string()
+            }
+        };
 
         conn.execute(
             "INSERT INTO panel_settings (
@@ -679,7 +695,7 @@ mod tests {
                 get_i64("version"),
                 get_str("config_target"),
                 get_str("config_path"),
-                settings["profiles"].to_string(),
+                get_json_object_str("profiles"),
                 get_str("active_profile"),
                 get_str("profiles_path"),
                 get_bool("follow_config_profiles"),
@@ -705,8 +721,8 @@ mod tests {
                 get_str("backup_webdav_username"),
                 get_str("backup_webdav_password"),
                 get_str("backup_webdav_path"),
-                settings["shortcuts"].to_string(),
-                settings["mcp_servers"].to_string(),
+                get_json_object_str("shortcuts"),
+                get_json_object_str("mcp_servers"),
                 get_json_str("kimi_code_environments"),
                 get_str("active_kimi_code_environment_id"),
                 get_str("insights_status"),
@@ -867,6 +883,53 @@ mod tests {
         assert_eq!(loaded_json["last_display_id"], 123);
         assert_eq!(loaded_json["active_official_account_id"], "acct-test");
         assert_eq!(loaded_json["active_kimi_code_environment_id"], "default");
+    }
+
+    #[test]
+    fn omitted_json_object_columns_default_to_empty_object_not_null() {
+        let state = make_test_state();
+        // 故意不带 profiles/shortcuts/mcp_servers 字段
+        let test_settings = serde_json::json!({
+            "version": 1,
+            "config_target": "kimi-code",
+            "config_path": "~/.kimi-code/config.toml",
+            "profiles_path": "",
+            "follow_config_profiles": false,
+            "theme": "dark",
+            "appearance_theme": "cupertino",
+            "ui_font_size": "medium",
+            "locale": "zh-CN",
+            "tray_icon": true,
+            "sidebar_collapsed": false,
+            "display_open_mode": "normal",
+            "close_behavior": "minimize",
+            "terminal_app": "auto",
+            "backup_strategy": "manual",
+            "backup_frequency": "daily",
+            "backup_retention_count": 7,
+            "backup_destination_type": "local",
+            "backup_local_path": "",
+            "backup_webdav_url": "",
+            "backup_webdav_username": "",
+            "backup_webdav_password": "",
+            "backup_webdav_path": "",
+            "active_kimi_code_environment_id": "default",
+            "insights_status": "enabled",
+            "insights_retention_days": 30,
+            "insights_disk_warn_threshold_mb": 500,
+            "insights_store_prompt_preview": true,
+            "insights_display_currency": "USD"
+        });
+
+        save_test(&test_settings.to_string(), &state).unwrap();
+        let loaded = get_test(&state).unwrap().expect("settings should exist");
+        let loaded_json: serde_json::Value = serde_json::from_str(&loaded).unwrap();
+
+        // 缺失字段应读回为空对象 {}，而非 JSON null
+        assert!(loaded_json["profiles"].is_object(), "profiles should be {{}}, got {:?}", loaded_json["profiles"]);
+        assert_eq!(loaded_json["profiles"], serde_json::json!({}));
+        assert!(loaded_json["shortcuts"].is_object(), "shortcuts should be {{}}, got {:?}", loaded_json["shortcuts"]);
+        assert!(loaded_json["mcp_servers"].is_object(), "mcp_servers should be {{}}, got {:?}", loaded_json["mcp_servers"]);
     }
 
     #[test]
