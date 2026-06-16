@@ -82,7 +82,14 @@ function activeKimiCodeEnvironmentId(): string {
   return currentAppState?.panelSettings.active_kimi_code_environment_id ?? "default";
 }
 
-async function getStartupKimiCodeDetection(): Promise<AppState["kimiTargetDetection"]> {
+async function getStartupKimiCodeDetection(
+  force = false,
+): Promise<AppState["kimiTargetDetection"]> {
+  // force 时清空已完成的缓存，触发重新检测（如用户安装 Kimi Code 后点"刷新检测"）。
+  // 若已有进行中的检测任务则复用它，避免重复打断。
+  if (force) {
+    startupKimiCodeDetection = null;
+  }
   if (startupKimiCodeDetection) return startupKimiCodeDetection;
   if (startupKimiCodeDetectionTask) return startupKimiCodeDetectionTask;
   const startedAt = startupTimingNow();
@@ -136,8 +143,10 @@ function syncDetectedKimiTargetToState(detection: AppState["kimiTargetDetection"
   window.dispatchEvent(new CustomEvent("kimi-target-detection", { detail: detection }));
 }
 
-function refreshStartupKimiCodeDetection(): Promise<AppState["kimiTargetDetection"]> {
-  return getStartupKimiCodeDetection().then((detection) => {
+function refreshStartupKimiCodeDetection(
+  force = false,
+): Promise<AppState["kimiTargetDetection"]> {
+  return getStartupKimiCodeDetection(force).then((detection) => {
     syncDetectedKimiTargetToState(detection);
     return detection;
   });
@@ -660,7 +669,7 @@ export const kimiSwitchTauri = {
       checkLatest: options?.checkLatest,
       latestTimeoutMs: options?.latestTimeoutMs,
     }),
-  refreshKimiTargetDetection: () => refreshStartupKimiCodeDetection(),
+  refreshKimiTargetDetection: () => refreshStartupKimiCodeDetection(true),
   runProvidersHealthCheck: (state: AppState) => cli.runProvidersHealthCheck(state),
   upgradeKimiCli: (target?: AppState["configTarget"], options?: { install?: boolean }) =>
     cli.upgradeTargetCli(target ?? "kimi-code", options),

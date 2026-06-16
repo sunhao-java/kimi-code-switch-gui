@@ -175,7 +175,7 @@ export interface KimiOAuthLoginEvent {
 
 // GUI 期望的 Kimi Code 版本范围：低于 MIN 判定为过旧（功能可能不兼容）。
 // EXPECTED 是当前 GUI 主要对照测试过的版本，仅作展示参考。
-export const MIN_CLI_VERSION = "1.0.0";
+export const MIN_CLI_VERSION = "0.14.0";
 export const EXPECTED_CLI_VERSION = "0.14.0";
 
 export type CliCompatStatus = "compatible" | "outdated" | "unknown";
@@ -529,7 +529,7 @@ export async function runKimiMcpServerTest(
       throw new Error(`MCP server "${name}" uses stdio transport but has no command.`);
     }
     const r = currentPlatform() === "windows"
-      ? await exec("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", `Get-Command ${JSON.stringify(server.command)} -ErrorAction Stop | Out-Null`], 5000)
+      ? await exec("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", `Get-Command ${quoteForPowerShell(server.command)} -ErrorAction Stop | Out-Null`], 5000)
       : await exec("sh", ["-lc", `command -v ${quoteForShell(server.command)} >/dev/null`], 5000);
     if (r.code !== 0) {
       throw new Error(`MCP server "${name}" command is not available: ${server.command}`);
@@ -823,6 +823,12 @@ export async function callKimiMcpServerTool(
 
 function quoteForShell(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+// PowerShell 单引号字符串为字面量，不展开变量/子表达式（$()、反引号）。
+// 内部每个单引号需写成两个单引号转义。
+function quoteForPowerShell(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
 }
 
 // ── 连通性测试（非流式版：通过 Rust http_request 拿完整响应）──

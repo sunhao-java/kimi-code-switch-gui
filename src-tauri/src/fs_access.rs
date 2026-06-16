@@ -29,6 +29,19 @@ pub(crate) fn resolve_home(path: &str) -> PathBuf {
 pub(crate) fn validate_path_scope(path: &Path) -> Result<(), String> {
     let path_str = path.to_string_lossy();
 
+    // 拒绝任何包含 `..` 的路径。合法路径（前端构造的固定路径、file dialog 返回的规范路径）
+    // 都不含 `..`；带 `..` 必为路径穿越尝试（如 ~/.kimi/../../.ssh），因 starts_with 逐段
+    // 比较不解析 `..`，否则可越界写/删。
+    if path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(format!(
+            "Path '{}' contains '..' segments and is not allowed",
+            path_str
+        ));
+    }
+
     // 允许的基础路径
     let allowed_bases = [
         dirs::home_dir().map(|h| h.join(".kimi")),
@@ -263,6 +276,7 @@ pub fn write_text(path: String, content: String) -> Result<(), String> {
 #[tauri::command]
 pub fn ensure_dir(path: String) -> Result<(), String> {
     let resolved = resolve_home(&path);
+    validate_path_scope(&resolved)?;
     std::fs::create_dir_all(&resolved)
         .map_err(|e| format!("ensure_dir {}: {}", resolved.display(), e))
 }
@@ -296,6 +310,8 @@ pub fn remove_dir(path: String) -> Result<(), String> {
 pub fn move_file(from: String, to: String) -> Result<(), String> {
     let from_resolved = resolve_home(&from);
     let to_resolved = resolve_home(&to);
+    validate_path_scope(&from_resolved)?;
+    validate_path_scope(&to_resolved)?;
 
     if !from_resolved.exists() {
         return Err(format!(
@@ -428,6 +444,29 @@ mod tests {
         let home = dirs::home_dir().expect("home dir required for this test");
         let resolved = resolve_home("~/.kimi/config.toml");
         assert_eq!(resolved, home.join(".kimi/config.toml"));
+    }
+
+    #[test]
+    fn validate_path_scope_allows_kimi_dirs() {
+        let home = dirs::home_dir().expect("home dir required for this test");
+        assert!(validate_path_scope(&home.join(".kimi/config.toml")).is_ok());
+        assert!(validate_path_scope(&home.join(".kimi-code/config.toml")).is_ok());
+        assert!(validate_path_scope(&home.join(".kimi-code-switch-gui/app.db")).is_ok());
+    }
+
+    #[test]
+    fn validate_path_scope_rejects_parent_traversal() {
+        let home = dirs::home_dir().expect("home dir required for this test");
+        // ~/.kimi/../../.ssh/id_rsa 之类的穿越必含 `..`，应被拒绝
+        let traversal = home.join(".kimi/../../.ssh/id_rsa");
+        assert!(validate_path_scope(&traversal).is_err());
+        assert!(validate_path_scope(&resolve_home("~/.kimi/../.ssh/id_rsa")).is_err());
+    }
+
+    #[test]
+    fn validate_path_scope_allows_explicit_absolute_paths() {
+        // file dialog 返回的规范绝对路径（无 `..`）仍允许，用于导入/导出
+        assert!(validate_path_scope(&PathBuf::from("/tmp/export-backup.zip")).is_ok());
     }
 
     #[test]

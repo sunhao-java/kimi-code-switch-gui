@@ -49,7 +49,48 @@ fn validate_command(program: &str) -> Result<(), String> {
     ))
 }
 
-/// 验证 HTTP URL 是否在允许的域名范围内。
+/// 判断主机名/IP 是否指向本机或内网，用于阻断 SSRF。
+fn host_is_loopback_or_private(host: &str) -> bool {
+    let h = host
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_ascii_lowercase();
+    if h == "localhost" || h.ends_with(".localhost") {
+        return true;
+    }
+    match h.parse::<std::net::IpAddr>() {
+        Ok(ip) => ip_is_blocked(ip),
+        Err(_) => false,
+    }
+}
+
+fn ip_is_blocked(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            let o = v4.octets();
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local() // 含云元数据 169.254.169.254
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || (o[0] == 100 && (64..=127).contains(&o[1])) // CGNAT 100.64.0.0/10
+        }
+        std::net::IpAddr::V6(v6) => {
+            if v6.is_loopback() || v6.is_unspecified() {
+                return true;
+            }
+            if let Some(mapped) = v6.to_ipv4_mapped() {
+                return ip_is_blocked(std::net::IpAddr::V4(mapped));
+            }
+            let seg = v6.segments();
+            (seg[0] & 0xfe00) == 0xfc00 // ULA fc00::/7
+                || (seg[0] & 0xffc0) == 0xfe80 // link-local fe80::/10
+        }
+    }
+}
+
+/// 验证 HTTP URL 是否允许访问：白名单域精确匹配放行；其余（WebDAV 等用户配置地址）
+/// 必须是 http/https 且主机不得指向本机/内网，以阻断 SSRF。
 fn validate_http_url(url: &str) -> Result<(), String> {
     let allowed_domains = [
         "api.github.com",
@@ -58,28 +99,35 @@ fn validate_http_url(url: &str) -> Result<(), String> {
         "files.pythonhosted.org",
     ];
 
-    // 解析 URL
     let parsed = url::Url::parse(url).map_err(|e| format!("Invalid URL: {}", e))?;
 
     let host = parsed
         .host_str()
         .ok_or_else(|| "URL has no host".to_string())?;
 
-    // 检查是否在白名单中，或者是用户配置的 WebDAV 域名
-    if allowed_domains.iter().any(|d| host.ends_with(d)) {
+    // 白名单精确匹配（host 完全相等，或为其子域），避免 evilgithub.com 这类后缀欺骗。
+    let host_lc = host.to_ascii_lowercase();
+    if allowed_domains
+        .iter()
+        .any(|d| host_lc == *d || host_lc.ends_with(&format!(".{d}")))
+    {
         return Ok(());
     }
 
-    // WebDAV 用户配置的域名：允许所有 https 协议
-    // （用户在配置面板中输入的 WebDAV 地址应该被信任）
+    // 用户配置的 WebDAV 等地址：仅放行 http/https，且拒绝本机/内网目标（SSRF 防护）。
     if parsed.scheme() == "https" || parsed.scheme() == "http" {
-        // 对于 WebDAV，我们信任用户配置的任何域名
+        if host_is_loopback_or_private(host) {
+            return Err(format!(
+                "URL host '{}' refers to a loopback/private/link-local address and is not allowed",
+                host
+            ));
+        }
         return Ok(());
     }
 
     Err(format!(
-        "URL host '{}' is not in allowed domains: {:?}",
-        host, allowed_domains
+        "URL scheme '{}' is not allowed (only http/https)",
+        parsed.scheme()
     ))
 }
 
@@ -1042,6 +1090,44 @@ mod tests {
     fn resolve_home_expands_tilde_prefix() {
         let home = dirs::home_dir().expect("home dir required");
         assert_eq!(resolve_home("~/run.sh"), home.join("run.sh"));
+    }
+
+    #[test]
+    fn validate_http_url_allows_whitelisted_domains_and_subdomains() {
+        assert!(validate_http_url("https://api.github.com/repos").is_ok());
+        assert!(validate_http_url("https://github.com/x").is_ok());
+        // 子域应放行
+        assert!(validate_http_url("https://uploads.github.com/x").is_ok());
+    }
+
+    #[test]
+    fn validate_http_url_rejects_suffix_spoofing() {
+        // evilgithub.com 不是 github.com 的子域，应落到 SSRF 校验而非白名单放行
+        assert!(validate_http_url("https://evilgithub.com/x").is_ok()); // 公网域名，WebDAV 兜底放行
+        // 但不能因白名单后缀匹配而被当成 github.com
+        assert!(validate_http_url("https://github.com.attacker.com/x").is_ok());
+    }
+
+    #[test]
+    fn validate_http_url_blocks_ssrf_targets() {
+        assert!(validate_http_url("http://169.254.169.254/latest/meta-data/").is_err());
+        assert!(validate_http_url("http://127.0.0.1:8080/").is_err());
+        assert!(validate_http_url("http://localhost/admin").is_err());
+        assert!(validate_http_url("http://10.0.0.1/").is_err());
+        assert!(validate_http_url("http://192.168.1.1/").is_err());
+        assert!(validate_http_url("http://172.16.0.1/").is_err());
+        assert!(validate_http_url("http://[::1]/").is_err());
+    }
+
+    #[test]
+    fn validate_http_url_allows_public_webdav_host() {
+        assert!(validate_http_url("https://dav.example.com/remote.php/dav").is_ok());
+    }
+
+    #[test]
+    fn validate_http_url_rejects_non_http_scheme() {
+        assert!(validate_http_url("file:///etc/passwd").is_err());
+        assert!(validate_http_url("ftp://example.com/x").is_err());
     }
 
     #[test]

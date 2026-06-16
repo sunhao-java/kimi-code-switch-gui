@@ -1812,7 +1812,42 @@ export function getActiveKimiCodeEnvironment(settings: PanelSettings): KimiCodeE
 }
 
 function normalizeTomlIndentation(document: string): string {
-  return document.replace(/^[ \t]+(?=(\[|[A-Za-z0-9_.-]+\s*=))/gm, "");
+  const lines = document.split("\n");
+  let inMultiline = false;
+  let delim = "";
+  return lines
+    .map((line) => {
+      const startedInside = inMultiline;
+      let i = 0;
+      while (i < line.length) {
+        if (!inMultiline) {
+          if (line.startsWith('"""', i)) {
+            inMultiline = true;
+            delim = '"""';
+            i += 3;
+            continue;
+          }
+          if (line.startsWith("'''", i)) {
+            inMultiline = true;
+            delim = "'''";
+            i += 3;
+            continue;
+          }
+          i += 1;
+        } else if (line.startsWith(delim, i)) {
+          i += delim.length;
+          inMultiline = false;
+          delim = "";
+        } else {
+          i += 1;
+        }
+      }
+      // 仅对多行字符串之外的行去缩进，避免吞掉多行字符串值（如 hooks 脚本）的缩进。
+      return startedInside
+        ? line
+        : line.replace(/^[ \t]+(?=(\[|[A-Za-z0-9_.-]+\s*=))/, "");
+    })
+    .join("\n");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
