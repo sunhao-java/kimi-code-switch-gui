@@ -1,7 +1,7 @@
 import parse from "@iarna/toml/parse-string.js";
 import stringify from "@iarna/toml/stringify.js";
 
-import { redactAppStateSecrets } from "./configSafety";
+import { redactAppStateSecrets, REDACTION_MASK } from "./configSafety";
 import { ConfigResolver, ConfigTarget, parseConfigTarget } from "./configTarget";
 import { SUPPORTED_CURRENCIES } from "./currency";
 import { buildMcpConfigDocument, DEFAULT_MCP_CONFIG_PATH, loadMcpConfig, parseMcpConfigStrict } from "./mcpStore";
@@ -44,12 +44,6 @@ export const KIMI_CODE_ENVIRONMENTS_DIRECTORY = `${PANEL_APP_DIRECTORY}/.env`;
 export function getDefaultConfigPath(target: ConfigTarget): string {
   const resolver = new ConfigResolver(target);
   return `~/${resolver.getConfigPath("config.toml")}`;
-}
-
-export function getDefaultProfilesPath(target: ConfigTarget, configPath = getDefaultConfigPath(target)): string {
-  void target;
-  void configPath;
-  return "";
 }
 
 export function getDefaultMcpConfigPath(target: ConfigTarget): string {
@@ -133,7 +127,6 @@ const DEFAULTS = {
   show_thinking_stream: false,
   merge_all_available_skills: false,
 } as const;
-const REDACTION_PLACEHOLDER = "[REDACTED]";
 
 export interface FileAccess {
   readText(path: string): Promise<string | null>;
@@ -688,7 +681,7 @@ export function buildPanelSettingsDocument(settings: PanelSettings): string {
 async function restoreRedactedProviderSecrets(files: FileAccess, state: AppState): Promise<AppState> {
   const providers = state.mainConfig.providers;
   const redactedProviderNames = Object.entries(providers)
-    .filter(([, provider]) => provider.api_key === REDACTION_PLACEHOLDER)
+    .filter(([, provider]) => provider.api_key === REDACTION_MASK)
     .map(([name]) => name);
 
   if (!redactedProviderNames.length) {
@@ -1164,16 +1157,6 @@ async function writeLegacyMigrationMarker(files: FileAccess, result: LegacyKimiC
   }, null, 2));
 }
 
-function hasProfilesDocumentContent(document: string | null): boolean {
-  if (!document?.trim()) return false;
-  try {
-    const parsed = parseDocument(document);
-    return isRecord(parsed.profiles) && Object.keys(parsed.profiles).length > 0;
-  } catch {
-    return true;
-  }
-}
-
 function isEmptyRecordValue(value: unknown): boolean {
   return isRecord(value) && Object.keys(value).length === 0;
 }
@@ -1300,20 +1283,6 @@ function normalizeMainConfig(input: Record<string, unknown>): MainConfig {
     notifications: isRecord(input.notifications) ? input.notifications : {},
     services: isRecord(input.services) ? input.services : {},
     mcp: isRecord(input.mcp) ? input.mcp : {},
-  };
-}
-
-function syncMainConfigProfileLabel(state: AppState): AppState {
-  const activeProfile = state.profiles[state.activeProfile]
-    ?? state.profiles[DEFAULT_PROFILE_NAME]
-    ?? Object.values(state.profiles)[0];
-  const label = activeProfile?.label?.trim() || DEFAULTS.profile_label;
-  return {
-    ...state,
-    mainConfig: {
-      ...state.mainConfig,
-      profile_label: label,
-    },
   };
 }
 

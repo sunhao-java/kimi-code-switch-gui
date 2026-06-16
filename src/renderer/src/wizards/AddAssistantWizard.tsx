@@ -83,7 +83,10 @@ export function AddAssistantWizard(props: WizardProps): JSX.Element {
             profileName={formData.profileName}
             onBack={() => setStep(2)}
             onComplete={(profileName, activate) => {
-              const providerName = createUniqueName(profileName, Object.keys(state.mainConfig.providers));
+              // provider 名作为 model 名的前缀（provider/modelId），不能含 '/'，
+              // 否则会生成多段斜杠的畸形 model 标识。从 profileName 派生时先去掉斜杠。
+              const providerBase = profileName.replace(/\//g, "-");
+              const providerName = createUniqueName(providerBase, Object.keys(state.mainConfig.providers));
               const modelName = buildModelName(providerName, formData.modelId);
               onComplete((draft) => {
                 upsertProvider(draft, providerName, {

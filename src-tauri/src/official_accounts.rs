@@ -14,7 +14,7 @@ use crate::fs_access::{resolve_home, validate_path_scope};
 
 static ACCOUNT_SWITCH_RUNNING: AtomicBool = AtomicBool::new(false);
 
-const DB_PATH: &str = "~/.kimi-code-switch-gui/app.db";
+const DB_PATH: &str = crate::usage::APP_DB_PATH;
 const ACCOUNTS_ROOT: &str = "~/.kimi-code-switch-gui/official-accounts";
 const CREDENTIALS_PATH: &str = "~/.kimi-code/credentials";
 const KIMI_CODE_CREDENTIAL_FILENAMES: &[&str] = &[

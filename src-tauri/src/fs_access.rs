@@ -356,7 +356,8 @@ pub fn move_file(from: String, to: String) -> Result<(), String> {
     })
 }
 
-/// 递归复制目录。目标目录不存在时创建，已存在时覆盖同名文件。
+/// 递归复制目录。目标目录不存在时创建；普通文件按 std::fs::copy 覆盖同名文件，
+/// 子目录递归合并。注意：对 symlink 子项用 create_symlink_path 重建，若目标已存在同名项会报错（不覆盖）。
 #[tauri::command]
 pub fn copy_dir(from: String, to: String) -> Result<(), String> {
     let from_resolved = resolve_home(&from);

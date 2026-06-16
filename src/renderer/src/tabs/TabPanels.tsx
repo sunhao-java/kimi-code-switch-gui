@@ -580,6 +580,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   };
 
   useEffect(() => {
+    // 仅在挂载时拉取一次官方账号列表；后续变更由各操作显式调用 refreshOfficialAccounts。
     refreshOfficialAccounts();
   }, []);
 

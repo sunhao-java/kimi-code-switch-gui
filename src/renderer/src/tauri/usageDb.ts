@@ -55,24 +55,6 @@ CREATE INDEX IF NOT EXISTS idx_events_ts ON events (ts DESC);
 CREATE INDEX IF NOT EXISTS idx_events_profile_ts ON events (profile, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_events_model_ts ON events (model, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_events_error_ts ON events (error_code, ts DESC) WHERE error_code IS NOT NULL;
-CREATE TABLE IF NOT EXISTS daily_aggregate (
-  day_utc TEXT NOT NULL,
-  profile TEXT NOT NULL,
-  provider TEXT NOT NULL,
-  model TEXT NOT NULL,
-  call_count INTEGER NOT NULL DEFAULT 0,
-  error_count INTEGER NOT NULL DEFAULT 0,
-  prompt_tokens_sum INTEGER NOT NULL DEFAULT 0,
-  completion_tokens_sum INTEGER NOT NULL DEFAULT 0,
-  cache_read_tokens_sum INTEGER NOT NULL DEFAULT 0,
-  cache_creation_tokens_sum INTEGER NOT NULL DEFAULT 0,
-  reasoning_tokens_sum INTEGER NOT NULL DEFAULT 0,
-  latency_ms_sum INTEGER NOT NULL DEFAULT 0,
-  latency_ms_max INTEGER NOT NULL DEFAULT 0,
-  cost_estimate_sum REAL,
-  PRIMARY KEY (day_utc, profile, provider, model)
-) WITHOUT ROWID;
-CREATE INDEX IF NOT EXISTS idx_agg_day ON daily_aggregate (day_utc);
 CREATE TABLE IF NOT EXISTS ingest_state (
   source_path TEXT NOT NULL PRIMARY KEY,
   byte_offset INTEGER NOT NULL DEFAULT 0,
@@ -80,34 +62,6 @@ CREATE TABLE IF NOT EXISTS ingest_state (
   last_ingested_utc INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'ok'
 );
-CREATE TRIGGER IF NOT EXISTS trg_events_aggregate
-AFTER INSERT ON events
-BEGIN
-  INSERT INTO daily_aggregate (
-    day_utc, profile, provider, model,
-    call_count, error_count,
-    prompt_tokens_sum, completion_tokens_sum,
-    cache_read_tokens_sum, cache_creation_tokens_sum, reasoning_tokens_sum,
-    latency_ms_sum, latency_ms_max
-  ) VALUES (
-    strftime('%Y-%m-%d', NEW.ts / 1000, 'unixepoch'),
-    NEW.profile, NEW.provider, NEW.model,
-    1, CASE WHEN NEW.error_code IS NULL THEN 0 ELSE 1 END,
-    NEW.prompt_tokens, NEW.completion_tokens,
-    NEW.cache_read_tokens, NEW.cache_creation_tokens, NEW.reasoning_tokens,
-    NEW.latency_ms, NEW.latency_ms
-  )
-  ON CONFLICT(day_utc, profile, provider, model) DO UPDATE SET
-    call_count = call_count + 1,
-    error_count = error_count + CASE WHEN NEW.error_code IS NULL THEN 0 ELSE 1 END,
-    prompt_tokens_sum = prompt_tokens_sum + NEW.prompt_tokens,
-    completion_tokens_sum = completion_tokens_sum + NEW.completion_tokens,
-    cache_read_tokens_sum = cache_read_tokens_sum + NEW.cache_read_tokens,
-    cache_creation_tokens_sum = cache_creation_tokens_sum + NEW.cache_creation_tokens,
-    reasoning_tokens_sum = reasoning_tokens_sum + NEW.reasoning_tokens,
-    latency_ms_sum = latency_ms_sum + NEW.latency_ms,
-    latency_ms_max = MAX(latency_ms_max, NEW.latency_ms);
-END;
 `;
 
 async function query(sql: string, params?: Params): Promise<Row[]> {
@@ -232,6 +186,10 @@ export async function open(dbPath: string): Promise<void> {
   await invoke("usage_open", { dbPath, schemaSql: SCHEMA_SQL });
   await exec("ALTER TABLE events ADD COLUMN kimi_code_environment_id TEXT NOT NULL DEFAULT ''").catch(() => 0);
   await exec("CREATE INDEX IF NOT EXISTS idx_events_environment_ts ON events (kimi_code_environment_id, ts DESC)");
+  // 清理已废弃的 daily_aggregate 聚合表与触发器（查询统一改读 events 原始表）。
+  // 旧库可能残留它们，触发器仍会在每次插入时产生写开销且按 UTC 分桶与本地不一致。
+  await exec("DROP TRIGGER IF EXISTS trg_events_aggregate").catch(() => 0);
+  await exec("DROP TABLE IF EXISTS daily_aggregate").catch(() => 0);
   const rows = await query("SELECT MAX(version) AS version FROM schema_versions");
   const current = num(rows[0]?.version, 0);
   if (current < SCHEMA_VERSION) {
@@ -321,7 +279,9 @@ export async function insertEvent(event: UsageEvent): Promise<boolean> {
 export async function insertEventsBatch(events: UsageEvent[]): Promise<number> {
   if (events.length === 0) return 0;
   const now = Date.now();
-  const rows = events.map((e) => ({ ...e, ingested_at_utc: now }));
+  // 复用 eventToParams 以保证与 insertEvent 一致的默认值处理（如 kimi_code_environment_id ?? ""），
+  // 避免缺字段导致 NOT NULL 命名参数缺失；ingested_at_utc 统一为同一批次时间。
+  const rows = events.map((e) => ({ ...eventToParams(e), ingested_at_utc: now }));
   return invoke<number>("usage_exec_batch", { sql: INSERT_SQL, rows });
 }
 
@@ -523,7 +483,7 @@ export async function pruneOldEvents(retentionDays: number): Promise<number> {
 
 export async function purgeAll(): Promise<void> {
   await invoke("usage_exec_script", {
-    sql: "DELETE FROM events; DELETE FROM daily_aggregate; DELETE FROM ingest_state;",
+    sql: "DELETE FROM events; DELETE FROM ingest_state;",
   });
 }
 

@@ -73,6 +73,8 @@ describe("open", () => {
       .mockResolvedValueOnce(undefined as unknown as never) // usage_open
       .mockResolvedValueOnce(0 as unknown as never) // ALTER environment column
       .mockResolvedValueOnce(0 as unknown as never) // CREATE environment index
+      .mockResolvedValueOnce(0 as unknown as never) // DROP TRIGGER trg_events_aggregate
+      .mockResolvedValueOnce(0 as unknown as never) // DROP TABLE daily_aggregate
       .mockResolvedValueOnce([{ version: null }] as unknown as never) // SELECT MAX(version)
       .mockResolvedValueOnce(1 as unknown as never); // usage_exec INSERT
     await open("/tmp/usage.db");
@@ -88,6 +90,8 @@ describe("open", () => {
       .mockResolvedValueOnce(undefined as unknown as never)
       .mockResolvedValueOnce(0 as unknown as never)
       .mockResolvedValueOnce(0 as unknown as never)
+      .mockResolvedValueOnce(0 as unknown as never) // DROP TRIGGER trg_events_aggregate
+      .mockResolvedValueOnce(0 as unknown as never) // DROP TABLE daily_aggregate
       .mockResolvedValueOnce([{ version: 1 }] as unknown as never);
     await open("/tmp/usage.db");
     const schemaVersionInserts = mockedInvoke.mock.calls.filter((call) =>

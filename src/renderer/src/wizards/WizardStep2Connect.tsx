@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, LoaderCircle, Wifi, XCircle } from "lucide-react";
 import type { Locale } from "@shared/types";
 import type { SourcePreset } from "./sourcePresets";
@@ -34,6 +34,9 @@ export function WizardStep2Connect(props: Step2Props): JSX.Element {
   );
   const [endpointCheckState, setEndpointCheckState] = useState<EndpointCheckState>("idle");
   const [endpointCheckMessage, setEndpointCheckMessage] = useState("");
+  // 组件卸载后丢弃在途的端点检测回包，避免对已卸载组件 setState。
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   const profileName = form.profileName.trim();
   const endpointValue = form.endpoint.trim();
@@ -69,6 +72,7 @@ export function WizardStep2Connect(props: Step2Props): JSX.Element {
     setEndpointCheckMessage("");
     try {
       const result = await api.testEndpointReachability(endpointUrl.toString());
+      if (!mountedRef.current) return;
       if (result.ok) {
         setEndpointCheckState("ok");
         setEndpointCheckMessage(
@@ -81,6 +85,7 @@ export function WizardStep2Connect(props: Step2Props): JSX.Element {
         );
       }
     } catch (err) {
+      if (!mountedRef.current) return;
       setEndpointCheckState("failed");
       setEndpointCheckMessage(
         t(locale, "endpointHealthFail").replace("{message}", err instanceof Error ? err.message : String(err)),

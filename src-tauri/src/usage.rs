@@ -14,6 +14,11 @@ use rusqlite::types::{Value, ValueRef};
 use rusqlite::Connection;
 use serde_json::{Map, Number, Value as Json};
 
+/// 全局应用数据库路径（~/ 前缀由 resolve_home 展开）。
+/// 前端 usageDb 也用同一路径打开；其余 Rust 模块（如 official_accounts）应复用此常量，
+/// 避免各处硬编码字面量产生漂移。
+pub const APP_DB_PATH: &str = "~/.kimi-code-switch-gui/app.db";
+
 pub struct UsageState {
     pub conn: Mutex<Option<Connection>>,
 }
@@ -347,11 +352,6 @@ pub fn migrate_legacy_database(state: tauri::State<UsageState>) -> Result<String
         return Ok("No legacy database found, migration skipped".to_string());
     };
 
-    // 检查旧数据库是否存在
-    if !old_db_path.exists() {
-        return Ok("No legacy database found, migration skipped".to_string());
-    }
-
     let guard = lock_conn(&state)?;
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
@@ -380,6 +380,17 @@ pub fn migrate_legacy_database(state: tauri::State<UsageState>) -> Result<String
 
     // 复制每个表
     for table in &tables {
+        // 表名将被拼接进 SQL，校验其为合法标识符（仅字母数字下划线），
+        // 防御异常/构造的旧库中含引号等字符的表名破坏语句。
+        if table.is_empty()
+            || !table
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            log::warn!("Skipping table with non-identifier name: {}", table);
+            continue;
+        }
+
         // 跳过已存在的表（避免覆盖）
         let exists: bool = conn
             .query_row(

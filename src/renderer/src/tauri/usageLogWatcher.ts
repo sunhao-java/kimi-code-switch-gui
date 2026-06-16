@@ -206,7 +206,8 @@ export class UsageLogWatcher {
     for (let i = 0; i < raw.length; i += 1) {
       hash = Math.imul(31, hash) + raw.charCodeAt(i) | 0;
     }
-    return `log-${Math.abs(hash).toString(36)}-${ts}`;
+    // 用无符号右移而非 Math.abs：Math.abs(-2^31) 仍为 2^31，会把两个不同输入折叠到同一值。
+    return `log-${(hash >>> 0).toString(36)}-${ts}`;
   }
 
   private sessionHintFromPath(path: string): string | null {

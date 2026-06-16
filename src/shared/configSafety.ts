@@ -18,7 +18,7 @@ import type {
   RedactionSummary,
 } from "./types";
 
-const REDACTION_MASK = "[REDACTED]";
+export const REDACTION_MASK = "[REDACTED]";
 const SECRET_NAME_PATTERN = /token|secret|password|api[_-]?key|access[_-]?token|cookie|auth|authorization/i;
 const SECRET_QUERY_PARAM_PATTERN = /^(token|api[_-]?key|access[_-]?token|key)$/i;
 const URL_PATTERN = /https?:\/\/[^\s"'<>]+/gi;

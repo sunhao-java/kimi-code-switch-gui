@@ -81,8 +81,21 @@ fn ensure_history_dir() -> Result<PathBuf, String> {
                         };
                         let destination = target.join(file_name);
                         if !destination.exists() {
-                            let _ = std::fs::rename(&source, &destination)
-                                .or_else(|_| std::fs::copy(&source, &destination).map(|_| ()));
+                            // 优先 rename；跨设备失败时退回 copy 并删源（避免旧文件残留，
+                            // 否则每次启动都会重复尝试迁移）。失败仅告警，不中断启动。
+                            if std::fs::rename(&source, &destination).is_err() {
+                                match std::fs::copy(&source, &destination) {
+                                    Ok(_) => {
+                                        let _ = std::fs::remove_file(&source);
+                                    }
+                                    Err(e) => {
+                                        log::warn!(
+                                            "migrate history snapshot {} failed: {e}",
+                                            source.display()
+                                        );
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -267,8 +280,8 @@ pub fn capture_snapshot(
 
     let timestamp_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
 
     let snapshot_filename = format!("{}-{}.toml.gz", timestamp_ms, file_id);
     let snapshot_path = history_dir.join(&snapshot_filename);
@@ -440,11 +453,11 @@ pub fn restore_snapshot(
     let conn = guard.as_ref().ok_or("usage db not open")?;
 
     // 1. 查询快照信息
-    let (file_id, snapshot_path): (String, String) = conn
+    let (file_id, snapshot_path, snapshot_environment_id): (String, String, String) = conn
         .query_row(
-            "SELECT file_id, snapshot_path FROM config_history WHERE id = ?1",
+            "SELECT file_id, snapshot_path, kimi_code_environment_id FROM config_history WHERE id = ?1",
             [snapshot_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .map_err(|e| format!("snapshot not found: {e}"))?;
 
@@ -510,8 +523,8 @@ pub fn restore_snapshot(
 
             let timestamp_ms = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis();
+                .map(|d| d.as_millis())
+                .unwrap_or(0);
 
             let rollback_point_filename = format!("{}-{}.toml.gz", timestamp_ms, file_id);
             let rollback_point_path = history_dir.join(&rollback_point_filename);
@@ -529,7 +542,7 @@ pub fn restore_snapshot(
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 rusqlite::params![
                     snapshot_at,
-                    "",
+                    snapshot_environment_id,
                     file_id,
                     sha256,
                     size_bytes,
