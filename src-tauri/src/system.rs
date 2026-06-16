@@ -14,7 +14,15 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader as Tokio
 
 static KIMI_OAUTH_LOGIN_RUNNING: AtomicBool = AtomicBool::new(false);
 
-/// 验证命令是否在允许的白名单中。
+/// 验证命令的 **program 名** 是否在白名单中。
+///
+/// 安全边界（重要）：本函数只校验可执行文件名（basename），**不校验 args**。
+/// 白名单中的 `sh`/`python`/`python3`/`node`/`npx`/`uvx`/`osascript` 都是通用解释器，
+/// 配合任意 args（如 `sh -c "..."`、`python -c "..."`）等价于任意命令执行。
+/// 因此它无法防御"命令注入"——args 由前端完全控制，前端被注入即等同 RCE。
+/// 它能做的仅是：挡住前端 bug / 被篡改代码尝试直接拉起 *白名单之外* 的可执行文件
+/// （如 `curl`、`bash` 之外的随意二进制）。真正的信任边界是"前端代码可信"。
+/// 这些解释器是 MCP server（npx/uvx/node/python）和检测脚本（sh -lc）的刚需，不可移除。
 fn validate_command(program: &str) -> Result<(), String> {
     let allowed_commands = [
         "kimi",
@@ -875,6 +883,15 @@ async fn read_mcp_stdio_message<R: AsyncBufReadExt + AsyncReadExt + Unpin>(
                     .parse::<usize>()
                     .map_err(|e| format!("parse MCP stdio content-length: {e}"))?;
 
+                // 对子进程声明的消息体大小设上限，避免恶意/异常 MCP server 用超大
+                // Content-Length 触发一次性巨量分配（OOM）。
+                const MAX_MCP_MESSAGE_SIZE: usize = 16 * 1024 * 1024; // 16MB
+                if length > MAX_MCP_MESSAGE_SIZE {
+                    return Err(format!(
+                        "MCP stdio content-length {length} exceeds limit {MAX_MCP_MESSAGE_SIZE}"
+                    ));
+                }
+
                 loop {
                     let mut header = String::new();
                     let read = reader
@@ -1211,6 +1228,32 @@ mod tests {
         assert!(validate_command("sh").is_ok());
         assert!(validate_command("powershell.exe").is_ok());
         assert!(validate_command("/bin/sh").is_ok());
+    }
+
+    #[test]
+    fn read_mcp_stdio_message_rejects_oversized_content_length() {
+        // 声明远超上限的 Content-Length 应直接报错，而非尝试分配巨量内存。
+        let input = b"Content-Length: 999999999\r\n\r\n";
+        let result = tauri::async_runtime::block_on(async {
+            let mut reader = TokioBufReader::new(&input[..]);
+            read_mcp_stdio_message(&mut reader).await
+        });
+        let err = result.expect_err("oversized content-length must be rejected");
+        assert!(err.contains("exceeds limit"), "unexpected error: {err}");
+    }
+
+    #[test]
+    fn read_mcp_stdio_message_reads_within_limit() {
+        let body = br#"{"jsonrpc":"2.0","id":1}"#;
+        let header = format!("Content-Length: {}\r\n\r\n", body.len());
+        let mut input = header.into_bytes();
+        input.extend_from_slice(body);
+        let result = tauri::async_runtime::block_on(async {
+            let mut reader = TokioBufReader::new(&input[..]);
+            read_mcp_stdio_message(&mut reader).await
+        });
+        let value = result.expect("valid message").expect("some value");
+        assert_eq!(value["id"], 1);
     }
 
     #[test]

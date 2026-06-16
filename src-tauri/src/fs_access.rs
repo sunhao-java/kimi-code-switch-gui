@@ -148,6 +148,18 @@ fn remove_link_or_empty_dir(path: &Path) -> Result<(), String> {
     }
 }
 
+/// 把待迁移的真实目录改名为带时间戳的备份（保留而非删除），用于 copy 兜底路径，
+/// 避免"复制不完整就删除原目录"造成数据丢失。备份保留在 .env 下，用户可手动清理或恢复。
+fn backup_directory_in_env(source: &Path, env_dir: &Path) -> Result<(), String> {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let backup = env_dir.join(format!(".kimi-code-migrated-backup-{ts}"));
+    std::fs::rename(source, &backup)
+        .map_err(|e| format!("backup {} -> {}: {}", source.display(), backup.display(), e))
+}
+
 fn sanitize_environment_id(value: &str) -> Result<String, String> {
     let id = value.trim();
     if id.is_empty() {
@@ -196,10 +208,17 @@ pub fn ensure_kimi_code_environment_layout(
                 .map_err(|e| format!("create {}: {}", managed_default.display(), e))?;
         }
         Ok(metadata) if metadata.is_dir() => {
-            copy_dir_recursive(&kimi_home, &managed_default)?;
+            // 迁移真实 ~/.kimi-code 到托管 default。优先原子 rename（同文件系统下无中间态，
+            // 也不触发 symlink 子项重建问题）。若目标已存在或跨设备导致 rename 失败，
+            // 则 copy 后把原目录改名为备份保留——绝不在复制未完成/未校验时 remove_dir_all。
+            if managed_default.exists() {
+                // 托管 default 已有内容：不覆盖，改为把原目录备份保留，避免数据丢失。
+                backup_directory_in_env(&kimi_home, &env_dir)?;
+            } else if std::fs::rename(&kimi_home, &managed_default).is_err() {
+                copy_dir_recursive(&kimi_home, &managed_default)?;
+                backup_directory_in_env(&kimi_home, &env_dir)?;
+            }
             default_was_migrated = true;
-            std::fs::remove_dir_all(&kimi_home)
-                .map_err(|e| format!("remove_dir_all {}: {}", kimi_home.display(), e))?;
         }
         Ok(metadata) if metadata.is_file() => {
             return Err(format!(
@@ -467,6 +486,40 @@ mod tests {
     fn validate_path_scope_allows_explicit_absolute_paths() {
         // file dialog 返回的规范绝对路径（无 `..`）仍允许，用于导入/导出
         assert!(validate_path_scope(&PathBuf::from("/tmp/export-backup.zip")).is_ok());
+    }
+
+    #[test]
+    fn backup_directory_in_env_preserves_source_contents() {
+        let base = std::env::temp_dir().join(format!(
+            "kimi-mig-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let env_dir = base.join(".env");
+        let source = base.join(".kimi-code");
+        std::fs::create_dir_all(&env_dir).unwrap();
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("config.toml"), b"keep-me").unwrap();
+
+        backup_directory_in_env(&source, &env_dir).expect("backup should succeed");
+
+        // 原目录已被移走（rename 语义），内容完整保留在 env_dir 下的备份里。
+        assert!(!source.exists(), "source should be moved away");
+        let backup = std::fs::read_dir(&env_dir)
+            .unwrap()
+            .flatten()
+            .find(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with(".kimi-code-migrated-backup-")
+            })
+            .expect("backup dir should exist");
+        let kept = std::fs::read_to_string(backup.path().join("config.toml")).unwrap();
+        assert_eq!(kept, "keep-me");
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
