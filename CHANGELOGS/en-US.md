@@ -2,6 +2,19 @@
 
 This file records the project's notable changes. Format follows Keep a Changelog; the project uses `major.minor.patch` versioning.
 
+## [2.2.5] - 2026-06-17
+
+### Changed
+
+- **Reorganized the Kimi Code settings section**: merged the "Kimi Code Instance", "Official Accounts", and "Environments" sub-menus into a single "Kimi Code" section with horizontal tabs, removed duplicate titles and frames, replaced them with per-tab descriptions, and refined the selected-tab color in dark mode.
+- **Insights refresh is now immediate**: refreshing the Insights page first ingests the latest logs before querying, so newly produced usage shows up without waiting for the background poll.
+
+### Fixed
+
+- **Security hardening**: fixed an SSRF risk in the HTTP proxy (loopback/private addresses are now rejected), out-of-scope config file writes/deletes, and command injection in the Windows MCP test.
+- **Data safety**: fixed indentation of multi-line strings (e.g. hooks scripts) being corrupted on save, occasional loss of active-session usage records, the external-change check being bypassed by a fast first-screen save, and possible directory deletion during environment migration under abnormal conditions.
+- **Other fixes**: fixed Kimi Code always reporting as outdated, valid HTTP MCP endpoints whose path contains `/sse` being filtered out, the detection refresh button not re-detecting, and two missing accessibility labels on the Insights page.
+
 ## [2.2.4] - 2026-06-16
 
 ### Added

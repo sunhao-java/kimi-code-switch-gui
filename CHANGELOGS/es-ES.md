@@ -2,6 +2,19 @@
 
 Este archivo recoge los cambios relevantes del proyecto. El formato sigue Keep a Changelog y el proyecto adopta el esquema de versiones `major.minor.patch`.
 
+## [2.2.5] - 2026-06-17
+
+### Cambiado
+
+- **Reorganización de la sección Kimi Code en Ajustes**: se fusionaron los tres submenús «Instancia Kimi Code», «Cuentas oficiales» y «Entornos» en una única sección «Kimi Code» con pestañas horizontales; se eliminaron los títulos y marcos duplicados, reemplazados por descripciones por pestaña, y se refinó el color de la pestaña seleccionada en modo oscuro.
+- **La actualización de Insights es inmediata**: al actualizar la página de Insights se ingieren primero los registros más recientes antes de consultar, de modo que el uso recién generado aparece sin esperar al sondeo en segundo plano.
+
+### Corregido
+
+- **Refuerzo de seguridad**: se corrigió un riesgo de SSRF en el proxy HTTP (ahora se rechazan las direcciones de loopback/privadas), escrituras/eliminaciones fuera del ámbito de la ruta de configuración e inyección de comandos en la prueba de MCP en Windows.
+- **Seguridad de datos**: se corrigieron la corrupción de la sangría de cadenas multilínea (p. ej. scripts de hooks) al guardar, la pérdida ocasional de registros de uso de sesiones activas, la posibilidad de que un guardado rápido en la primera pantalla omitiera la detección de cambios externos y el posible borrado accidental de directorios durante la migración de entornos en condiciones anómalas.
+- **Otras correcciones**: se corrigieron que Kimi Code siempre apareciera como desactualizado, el filtrado de endpoints HTTP MCP válidos cuya ruta contiene `/sse`, el botón de actualización de detección que no volvía a detectar y dos etiquetas de accesibilidad ausentes en la página de Insights.
+
 ## [2.2.4] - 2026-06-16
 
 ### Añadido

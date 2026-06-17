@@ -2,6 +2,19 @@
 
 Diese Datei dokumentiert die wesentlichen Änderungen des Projekts. Das Format folgt Keep a Changelog; verwendet wird das `major.minor.patch`-Versionsschema.
 
+## [2.2.5] - 2026-06-17
+
+### Geändert
+
+- **Kimi-Code-Bereich der Einstellungen neu strukturiert**: Die drei Untermenüs „Kimi-Code-Instanz", „Offizielle Konten" und „Umgebungen" wurden zu einem einzigen Bereich „Kimi Code" mit horizontalen Tabs zusammengeführt; doppelte Titel und Rahmen wurden entfernt und durch Beschreibungen pro Tab ersetzt, zudem wurde die Farbe des ausgewählten Tabs im Dunkelmodus verfeinert.
+- **Insights-Aktualisierung wirkt sofort**: Beim Aktualisieren der Insights-Seite werden zuerst die neuesten Logs eingelesen und dann abgefragt, sodass neue Nutzung ohne Warten auf das Hintergrund-Polling erscheint.
+
+### Behoben
+
+- **Sicherheitshärtung**: SSRF-Risiko im HTTP-Proxy behoben (Loopback-/private Adressen werden nun abgelehnt), Schreib-/Löschvorgänge außerhalb des zulässigen Konfigurationspfads sowie Command Injection im MCP-Test unter Windows.
+- **Datensicherheit**: Behoben wurden die Beschädigung der Einrückung mehrzeiliger Zeichenketten (z. B. Hooks-Skripte) beim Speichern, gelegentlicher Verlust von Nutzungsdatensätzen aktiver Sitzungen, das Umgehen der Prüfung auf externe Änderungen durch ein schnelles Speichern auf dem ersten Bildschirm sowie mögliches versehentliches Löschen von Verzeichnissen bei der Umgebungsmigration unter ungewöhnlichen Bedingungen.
+- **Weitere Korrekturen**: Behoben wurden die ständige Anzeige von Kimi Code als veraltet, das Herausfiltern gültiger HTTP-MCP-Endpunkte mit `/sse` im Pfad, der Erkennungs-Aktualisierungsbutton, der keine erneute Erkennung auslöst, sowie zwei fehlende Barrierefreiheits-Labels auf der Insights-Seite.
+
 ## [2.2.4] - 2026-06-16
 
 ### Hinzugefügt
