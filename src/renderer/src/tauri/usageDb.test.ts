@@ -81,7 +81,7 @@ describe("open", () => {
 
     expect(mockedInvoke).toHaveBeenCalledWith("usage_open", { dbPath: "/tmp/usage.db", schemaSql: SCHEMA_SQL });
     const insert = lastQuery("usage_exec");
-    expect(insert.sql).toMatch(/INSERT INTO schema_versions/);
+    expect(insert.sql).toMatch(/INSERT OR IGNORE INTO schema_versions/);
     expect(insert.params).toMatchObject({ v: 1, d: "initial schema" });
   });
 
@@ -97,7 +97,7 @@ describe("open", () => {
     const schemaVersionInserts = mockedInvoke.mock.calls.filter((call) =>
       call[0] === "usage_exec"
       && typeof call[1]?.sql === "string"
-      && call[1].sql.includes("INSERT INTO schema_versions"),
+      && call[1].sql.includes("INSERT OR IGNORE INTO schema_versions"),
     );
     expect(schemaVersionInserts).toHaveLength(0);
   });

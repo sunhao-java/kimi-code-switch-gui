@@ -193,8 +193,10 @@ export async function open(dbPath: string): Promise<void> {
   const rows = await query("SELECT MAX(version) AS version FROM schema_versions");
   const current = num(rows[0]?.version, 0);
   if (current < SCHEMA_VERSION) {
+    // INSERT OR IGNORE：幂等写入，避免并发/重复 open() 时两次插入同一 version
+    // 触发 UNIQUE constraint failed（首次启动 StrictMode 双调用会复现）。
     await exec(
-      "INSERT INTO schema_versions(version, applied_at_utc, description) VALUES (@v, @t, @d)",
+      "INSERT OR IGNORE INTO schema_versions(version, applied_at_utc, description) VALUES (@v, @t, @d)",
       { v: SCHEMA_VERSION, t: Date.now(), d: "initial schema" },
     );
   }
