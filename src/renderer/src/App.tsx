@@ -123,6 +123,8 @@ export function App(): JSX.Element {
           const result = await api.saveKimiCodeEnvironmentPreference(kimiCodeEnvironments, environmentId);
           setFileSnapshot(result.snapshot);
           await loadState();
+          // 切换环境后自动刷新（loadState）并跳转到总览页。
+          setActiveTab("overview");
           setNotice(t(locale, "kimiCodeEnvironmentActivated"));
         } catch (switchError) {
           setError(switchError instanceof Error ? switchError.message : String(switchError));
@@ -135,6 +137,7 @@ export function App(): JSX.Element {
     loadState,
     locale,
     runAfterUnsavedHandled,
+    setActiveTab,
     setError,
     setExternalChange,
     setFileSnapshot,

@@ -494,6 +494,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   const activateKimiCodeEnvironment = (id: string): void => {
     void (async () => {
       await saveKimiCodeEnvironments(kimiCodeEnvironments, id);
+      // 切换环境后自动刷新界面（saveKimiCodeEnvironments 内部已 loadState），并跳转到总览页。
+      setActiveTab("overview");
       setNotice(t(locale, "kimiCodeEnvironmentActivated"));
     })().catch((error) => setError(error instanceof Error ? error.message : String(error)));
   };
