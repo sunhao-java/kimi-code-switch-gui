@@ -825,6 +825,10 @@ export const kimiSwitchTauri = {
       },
     };
   },
+  usageIngestNow: async () => {
+    await logWatcher?.ingestNow();
+    return { ok: true as const };
+  },
   usageEnable: async () => {
     await ensureUsageRuntime();
     if (currentAppState) {

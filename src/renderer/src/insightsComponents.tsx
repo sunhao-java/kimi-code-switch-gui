@@ -575,6 +575,9 @@ export function InsightsDashboard({ locale, onStateChange, onOpenSettings }: Ins
     setLoading(true);
     const range = getTimeRange() as never;
     try {
+      // 先主动摄入一次最新日志，再查询，使「刷新」能立即反映刚产生的用量，
+      // 而不必等待后台 watcher 的 5 秒轮询。
+      await window.kimiSwitch.usageIngestNow?.();
       const [overviewRes, trendRes, breakdownModelRes, breakdownProfileRes, sessionsRes, costRes] = await Promise.allSettled([
         window.kimiSwitch.usageQueryOverview(range),
         window.kimiSwitch.usageQueryTrend({ range, bucket: "day", groupBy: null }),

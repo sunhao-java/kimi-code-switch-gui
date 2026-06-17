@@ -73,6 +73,16 @@ export class UsageLogWatcher {
     return this.running;
   }
 
+  /**
+   * 立即执行一次摄入（主日志 + 各 session 日志），用于「刷新」按钮主动拉取最新用量，
+   * 而不必等待 5 秒轮询。watcher 未启动时为 no-op。
+   */
+  async ingestNow(): Promise<void> {
+    if (!this.running) return;
+    await this.readNewLines(LOG_PATH);
+    await this.readSessionLogs();
+  }
+
   getStats(): { sessionsTracked: number; eventsIngested: number } {
     return { sessionsTracked: this.sessions.size, eventsIngested: this.eventsIngested };
   }
