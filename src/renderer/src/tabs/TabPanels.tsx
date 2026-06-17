@@ -143,7 +143,8 @@ type TabPanelsProps = Pick<
   onRequestCascadeDelete: (type: "provider" | "model", name: string) => void;
 };
 
-type SettingsSubTab = "general" | "config-target" | "kimi-environment" | "official-accounts" | "shortcuts" | "backup" | "doctor" | "insights" | "history";
+type SettingsSubTab = "general" | "kimi-code" | "shortcuts" | "backup" | "doctor" | "insights" | "history";
+type KimiCodeSubTab = "instance" | "accounts" | "environment";
 
 type CreateEnvironmentDraft = {
   id: string;
@@ -559,7 +560,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   const hasProviders = Object.keys(state.mainConfig.providers).length > 0;
   const hasModels = Object.keys(state.mainConfig.models).length > 0;
 
-  const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>("config-target");
+  const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>("kimi-code");
+  const [kimiCodeSubTab, setKimiCodeSubTab] = useState<KimiCodeSubTab>("instance");
   const [importDialog, setImportDialog] = useState<{ open: boolean; preview: ImportPreview | null; data: ExportBundle | null; strategy: ImportConflictStrategy }>({ open: false, preview: null, data: null, strategy: "skip" });
   const [isMcpJsonViewerOpen, setIsMcpJsonViewerOpen] = useState(false);
   const [providerHealthResults, setProviderHealthResults] = useState<ProviderHealthResult[] | null>(null);
@@ -704,19 +706,9 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   };
   const settingsSubTabs: Array<{ id: SettingsSubTab; label: string; description: string }> = [
     {
-      id: "config-target",
-      label: t(locale, "settingsTabConfigTarget"),
-      description: t(locale, "settingsTabConfigTargetDescription"),
-    },
-    {
-      id: "kimi-environment",
-      label: t(locale, "settingsTabKimiEnvironment"),
-      description: t(locale, "settingsTabKimiEnvironmentDescription"),
-    },
-    {
-      id: "official-accounts",
-      label: t(locale, "settingsTabOfficialAccounts"),
-      description: t(locale, "settingsTabOfficialAccountsDescription"),
+      id: "kimi-code",
+      label: t(locale, "settingsTabKimiCode"),
+      description: t(locale, "settingsTabKimiCodeDescription"),
     },
     {
       id: "general",
@@ -1522,9 +1514,29 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             <div className="section-title">
               {settingsSubTabs.find((tab) => tab.id === activeSettingsSubTab)?.label ?? t(locale, "settings")}
             </div>
-            {activeSettingsSubTab === "config-target" ? (
+            {activeSettingsSubTab === "kimi-code" ? (
               <div className="settings-tab-panel">
-                <SettingsGroup title={t(locale, "settingsGroupConfigTarget")}>
+                <div className="settings-inner-tabs-nav">
+                  {([["instance", "settingsGroupConfigTarget"], ["accounts", "officialAccountsTitle"], ["environment", "kimiCodeEnvironmentTitle"]] as const).map(([tab, key]) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => setKimiCodeSubTab(tab)}
+                      className={`settings-inner-tab-button ${kimiCodeSubTab === tab ? "active" : ""}`}
+                    >
+                      {t(locale, key)}
+                    </button>
+                  ))}
+                </div>
+                <p className="settings-inner-tab-desc">
+                  {renderInlineCodeMessage(t(locale, kimiCodeSubTab === "instance"
+                    ? "kimiCodeSubTabInstanceDesc"
+                    : kimiCodeSubTab === "accounts"
+                      ? "kimiCodeSubTabAccountsDesc"
+                      : "kimiCodeSubTabEnvironmentDesc"))}
+                </p>
+                {kimiCodeSubTab === "instance" ? (
+                <SettingsGroup>
                   <div className="config-target-detection">
                     <div className="config-target-detection-main">
                       <div>
@@ -1566,10 +1578,9 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                     ) : null}
                   </div>
                 </SettingsGroup>
-              </div>
-            ) : null}
-            {activeSettingsSubTab === "official-accounts" ? (
-              <div className="settings-tab-panel">
+                ) : null}
+                {kimiCodeSubTab === "accounts" ? (
+                <>
                 <div className={`oauth-login-panel oauth-login-${kimiCodeOAuthLogin.status}`}>
                   <div className="oauth-login-copy">
                     <strong>{formatMessage(t(locale, "kimiOauthTitle"), { target: currentConfigTargetLabel })}</strong>
@@ -1614,7 +1625,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                     </div>
                   ) : null}
                 </div>
-                <SettingsGroup title={t(locale, "officialAccountsTitle")}>
+                <SettingsGroup>
                   <div className="official-account-panel">
                     <div className="official-account-toolbar">
                       <div>
@@ -1671,11 +1682,10 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                     </div>
                   </div>
                 </SettingsGroup>
-              </div>
-            ) : null}
-            {activeSettingsSubTab === "kimi-environment" ? (
-              <div className="settings-tab-panel">
-                <SettingsGroup title={t(locale, "kimiCodeEnvironmentTitle")}>
+                </>
+                ) : null}
+                {kimiCodeSubTab === "environment" ? (
+                <SettingsGroup>
                   <div className="kimi-environment-panel">
                     <div className="kimi-environment-summary">
                       <div>
@@ -1838,6 +1848,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                     </div>
                   </div>
                 </SettingsGroup>
+                ) : null}
               </div>
             ) : null}
             {activeSettingsSubTab === "general" ? (

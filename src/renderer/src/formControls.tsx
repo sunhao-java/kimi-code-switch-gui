@@ -8,16 +8,21 @@ import { labelForLocale } from "./appOptions";
 import { t } from "./i18n";
 import { eventToAccelerator } from "./useShortcuts";
 
-export function SettingsGroup(props: { title: string; children: ReactNode; className?: string }): JSX.Element {
+export function SettingsGroup(props: { title?: string; children: ReactNode; className?: string }): JSX.Element {
+  const classes = ["settings-group"];
+  if (!props.title) classes.push("settings-group-plain");
+  if (props.className) classes.push(props.className);
   return (
-    <section className={props.className ? `settings-group ${props.className}` : "settings-group"}>
-      <div className="settings-group-header">
-        <div className="settings-group-title">
-          <span className="settings-group-dot" aria-hidden="true" />
-          <span>{props.title}</span>
+    <section className={classes.join(" ")}>
+      {props.title ? (
+        <div className="settings-group-header">
+          <div className="settings-group-title">
+            <span className="settings-group-dot" aria-hidden="true" />
+            <span>{props.title}</span>
+          </div>
+          <div className="settings-group-rule" aria-hidden="true" />
         </div>
-        <div className="settings-group-rule" aria-hidden="true" />
-      </div>
+      ) : null}
       <div className="settings-group-body">{props.children}</div>
     </section>
   );
