@@ -16,6 +16,16 @@ import {
   deleteProfile,
   deleteProvider,
   exportConfig,
+  bundleContainsRedactedSecrets,
+  buildFullBackup,
+  extractEnvConfigsFromBackup,
+  fullBackupContainsRedactedSecrets,
+  isFullBackupBundle,
+  projectEnabledMainConfig,
+  rebuildPanelSettingsFromBackup,
+  setModelEnabled,
+  setProviderEnabled,
+  validateFullBackup,
   getKimiCodeEnvironmentHomePath,
   getKimiCodeConfigPath,
   getKimiCodeMcpConfigPath,
@@ -736,14 +746,55 @@ function createMemoryFs(initial: Record<string, string>) {
   };
 }
 
+/** 带 env-config hook 的内存 FS，模拟 SQLite 为 Provider/Model 真源的生产路径。 */
+function createMemoryFsWithEnvHooks(initial: Record<string, string>) {
+  const base = createMemoryFs(initial);
+  const envDb: Record<string, { providers: Record<string, unknown>; models: Record<string, unknown> }> = {};
+  return {
+    ...base,
+    envDb,
+    async readEnvConfig(environmentId: string) {
+      return envDb[environmentId] ?? null;
+    },
+    async writeEnvConfig(environmentId: string, data: { providers: Record<string, unknown>; models: Record<string, unknown> }) {
+      envDb[environmentId] = structuredClone(data) as typeof data;
+    },
+  };
+}
+
+describe("saveAppState with env-config hooks (SQLite source of truth)", () => {
+  it("writes full providers/models to DB and projects only enabled items to config.toml", async () => {
+    const state = createState();
+    state.mainConfig.providers.kimi_gateway.enabled = true;
+    state.mainConfig.providers.disabled_prov = { type: "openai", base_url: "https://d", api_key: "dk", enabled: false };
+    state.mainConfig.models["kimi_gateway/kimi-k2.5"].enabled = true;
+    state.mainConfig.models["disabled_prov/m1"] = { provider: "disabled_prov", model: "m1", max_context_size: 1000, capabilities: [], enabled: true };
+
+    const files = createMemoryFsWithEnvHooks({});
+    await saveAppState(files as never, state);
+
+    const normalized = normalizeStatePaths(state);
+    const envId = state.panelSettings.active_kimi_code_environment_id;
+    // DB 保留全量（含禁用）
+    expect(Object.keys(files.envDb[envId].providers)).toContain("disabled_prov");
+    expect(Object.keys(files.envDb[envId].models)).toContain("disabled_prov/m1");
+
+    // config.toml 仅含启用项；禁用 provider 及其 model 被剔除
+    const configDoc = files.store[normalized.configPath];
+    expect(configDoc).toContain("kimi_gateway");
+    expect(configDoc).not.toContain("disabled_prov");
+  });
+});
+
+
 describe("exportConfig", () => {
-  it("redacts API keys in exported providers", () => {
+  it("includes real API keys so the backup can be fully restored", () => {
     const state = createState();
     const bundle = exportConfig(state);
     expect(bundle.version).toBe(1);
     expect(bundle.source).toBe("kimi-code-switch-gui");
     expect(bundle.exportedAt).toBeTruthy();
-    expect(bundle.providers.kimi_gateway.api_key).toBe("[REDACTED]");
+    expect(bundle.providers.kimi_gateway.api_key).toBe("sk-test");
     expect(bundle.providers.kimi_gateway.type).toBe("kimi");
   });
 
@@ -833,6 +884,58 @@ describe("importConfig", () => {
     const data = { version: 1, exportedAt: "", source: "t", providers: { extra: { type: "openai", base_url: "https://e", api_key: "k" } }, models: {}, profiles: {}, mcpServers: {} };
     importConfig(state, data, "skip");
     expect(Object.keys(state.mainConfig.providers).length).toBe(origCount);
+  });
+
+  it("replace strategy clears existing items then loads backup in full", () => {
+    const state = createState();
+    const data = {
+      version: 1,
+      exportedAt: "",
+      source: "t",
+      providers: { only_prov: { type: "openai", base_url: "https://o", api_key: "k" } },
+      models: {},
+      profiles: {},
+      mcpServers: {},
+    };
+    const next = importConfig(state, data, "replace");
+    expect(Object.keys(next.mainConfig.providers)).toEqual(["only_prov"]);
+    expect(next.mainConfig.providers.kimi_gateway).toBeUndefined();
+    expect(Object.keys(next.mainConfig.models)).toEqual([]);
+    expect(Object.keys(next.profiles)).toEqual([]);
+    expect(Object.keys(next.mcpConfig.mcpServers)).toEqual([]);
+  });
+
+  it("replace strategy is a full round-trip with exportConfig", () => {
+    const state = createState();
+    const bundle = exportConfig(state);
+    const next = importConfig(state, bundle, "replace");
+    expect(next.mainConfig.providers.kimi_gateway.api_key).toBe("sk-test");
+    expect(next.mainConfig.models["kimi_gateway/kimi-k2.5"]).toBeTruthy();
+    expect(next.profiles.default).toBeTruthy();
+    expect(next.mcpConfig.mcpServers.context7).toBeTruthy();
+  });
+
+  it("replace strategy does not mutate original state", () => {
+    const state = createState();
+    const origCount = Object.keys(state.mainConfig.providers).length;
+    const data = { version: 1, exportedAt: "", source: "t", providers: {}, models: {}, profiles: {}, mcpServers: {} };
+    importConfig(state, data, "replace");
+    expect(Object.keys(state.mainConfig.providers).length).toBe(origCount);
+  });
+});
+
+describe("bundleContainsRedactedSecrets", () => {
+  it("returns false for a backup with real secrets", () => {
+    const state = createState();
+    const bundle = exportConfig(state);
+    expect(bundleContainsRedactedSecrets(bundle)).toBe(false);
+  });
+
+  it("detects a redacted provider api_key", () => {
+    const state = createState();
+    const bundle = exportConfig(state);
+    bundle.providers.kimi_gateway.api_key = "[REDACTED]";
+    expect(bundleContainsRedactedSecrets(bundle)).toBe(true);
   });
 });
 
@@ -1407,5 +1510,197 @@ describe("migrateLegacyKimiCliConfigToKimiCode", () => {
     expect(result.mcpMerged).toBe(true);
     expect(files.store[defaultMcpPath]).toBeTruthy();
     expect(files.store[defaultMcpPath]).toContain("ctx.test/mcp");
+  });
+});
+
+describe("projectEnabledMainConfig", () => {
+  function baseConfig(): ReturnType<typeof createState>["mainConfig"] {
+    return createState().mainConfig;
+  }
+
+  it("includes enabled provider and its enabled model", () => {
+    const config = baseConfig();
+    config.providers.kimi_gateway.enabled = true;
+    config.models["kimi_gateway/kimi-k2.5"].enabled = true;
+    const projected = projectEnabledMainConfig(config);
+    expect(projected.providers.kimi_gateway).toBeTruthy();
+    expect(projected.models["kimi_gateway/kimi-k2.5"]).toBeTruthy();
+    // enabled 标记被剥离
+    expect((projected.providers.kimi_gateway as { enabled?: boolean }).enabled).toBeUndefined();
+  });
+
+  it("drops a disabled provider", () => {
+    const config = baseConfig();
+    config.providers.kimi_gateway.enabled = false;
+    const projected = projectEnabledMainConfig(config);
+    expect(projected.providers.kimi_gateway).toBeUndefined();
+  });
+
+  it("drops a model whose provider is disabled, even if the model itself is enabled", () => {
+    const config = baseConfig();
+    config.providers.kimi_gateway.enabled = false;
+    config.models["kimi_gateway/kimi-k2.5"].enabled = true;
+    const projected = projectEnabledMainConfig(config);
+    expect(projected.models["kimi_gateway/kimi-k2.5"]).toBeUndefined();
+  });
+
+  it("drops a disabled model while keeping its enabled provider", () => {
+    const config = baseConfig();
+    config.providers.kimi_gateway.enabled = true;
+    config.models["kimi_gateway/kimi-k2.5"].enabled = false;
+    const projected = projectEnabledMainConfig(config);
+    expect(projected.providers.kimi_gateway).toBeTruthy();
+    expect(projected.models["kimi_gateway/kimi-k2.5"]).toBeUndefined();
+  });
+
+  it("treats missing enabled flag as enabled (backward compat)", () => {
+    const config = baseConfig();
+    delete (config.providers.kimi_gateway as { enabled?: boolean }).enabled;
+    delete (config.models["kimi_gateway/kimi-k2.5"] as { enabled?: boolean }).enabled;
+    const projected = projectEnabledMainConfig(config);
+    expect(projected.providers.kimi_gateway).toBeTruthy();
+    expect(projected.models["kimi_gateway/kimi-k2.5"]).toBeTruthy();
+  });
+});
+
+describe("setProviderEnabled / setModelEnabled", () => {
+  it("toggles provider enabled flag", () => {
+    const state = createState();
+    setProviderEnabled(state, "kimi_gateway", false);
+    expect(state.mainConfig.providers.kimi_gateway.enabled).toBe(false);
+    setProviderEnabled(state, "kimi_gateway", true);
+    expect(state.mainConfig.providers.kimi_gateway.enabled).toBe(true);
+  });
+
+  it("toggles model enabled flag", () => {
+    const state = createState();
+    setModelEnabled(state, "kimi_gateway/kimi-k2.5", false);
+    expect(state.mainConfig.models["kimi_gateway/kimi-k2.5"].enabled).toBe(false);
+  });
+
+  it("is a no-op for unknown names", () => {
+    const state = createState();
+    expect(() => setProviderEnabled(state, "missing", false)).not.toThrow();
+    expect(() => setModelEnabled(state, "missing", false)).not.toThrow();
+  });
+});
+
+describe("full backup", () => {
+  it("buildFullBackup captures active env from state with real secrets", () => {
+    const state = createState();
+    const bundle = buildFullBackup(state, {});
+    expect(bundle.kind).toBe("full-backup");
+    expect(bundle.environments.length).toBeGreaterThan(0);
+    const active = bundle.environments.find((e) => e.environment.id === bundle.activeEnvironmentId);
+    expect(active?.providers.kimi_gateway.api_key).toBe("sk-test");
+  });
+
+  it("buildFullBackup uses DB data for non-active environments", () => {
+    const state = createState();
+    const allEnvConfigs = {
+      work: {
+        providers: { work_prov: { type: "openai", base_url: "https://w", api_key: "wk", enabled: true } },
+        models: {},
+      },
+    };
+    // 把 work 环境加入面板设置环境列表
+    state.panelSettings.kimi_code_environments = [
+      ...state.panelSettings.kimi_code_environments,
+      { id: "work", name: "Work", homePath: getKimiCodeEnvironmentHomePath("work") },
+    ];
+    const bundle = buildFullBackup(state, allEnvConfigs);
+    const work = bundle.environments.find((e) => e.environment.id === "work");
+    expect(work?.providers.work_prov).toBeTruthy();
+  });
+
+  it("buildFullBackup falls back to panel snapshot when a non-active env has no DB row", () => {
+    const state = createState();
+    // work 环境只有面板快照（mainConfig），DB 中无记录（模拟旧版复制环境的遗留数据）
+    state.panelSettings.kimi_code_environments = [
+      ...state.panelSettings.kimi_code_environments,
+      {
+        id: "work",
+        name: "Work",
+        homePath: getKimiCodeEnvironmentHomePath("work"),
+        mainConfig: {
+          ...createState().mainConfig,
+          providers: { snap_prov: { type: "kimi", base_url: "https://s", api_key: "sk", enabled: true } },
+          models: { "snap_prov/m": { provider: "snap_prov", model: "m", max_context_size: 1, capabilities: [], enabled: true } },
+        },
+      },
+    ];
+    const bundle = buildFullBackup(state, {}); // DB 为空
+    const work = bundle.environments.find((e) => e.environment.id === "work");
+    expect(work?.providers.snap_prov).toBeTruthy();
+    expect(work?.models["snap_prov/m"]).toBeTruthy();
+  });
+
+  it("validateFullBackup accepts a built bundle and rejects junk", () => {
+    const state = createState();
+    const bundle = buildFullBackup(state, {});
+    expect(validateFullBackup(bundle).valid).toBe(true);
+    expect(validateFullBackup({ version: 1 }).valid).toBe(false);
+    expect(validateFullBackup("nope").valid).toBe(false);
+  });
+
+  it("isFullBackupBundle discriminates", () => {
+    const state = createState();
+    expect(isFullBackupBundle(buildFullBackup(state, {}))).toBe(true);
+    expect(isFullBackupBundle(exportConfig(state))).toBe(false);
+  });
+
+  it("extractEnvConfigsFromBackup yields per-env providers/models", () => {
+    const state = createState();
+    const bundle = buildFullBackup(state, {});
+    const envConfigs = extractEnvConfigsFromBackup(bundle);
+    const activeId = bundle.activeEnvironmentId;
+    expect(envConfigs[activeId].providers.kimi_gateway.api_key).toBe("sk-test");
+  });
+
+  it("rebuildPanelSettingsFromBackup restores environment list + active id", () => {
+    const state = createState();
+    const bundle = buildFullBackup(state, {});
+    const panel = rebuildPanelSettingsFromBackup(bundle);
+    expect(panel.active_kimi_code_environment_id).toBe(bundle.activeEnvironmentId);
+    expect(panel.kimi_code_environments.length).toBe(bundle.environments.length);
+  });
+
+  it("fullBackupContainsRedactedSecrets detects masked keys", () => {
+    const state = createState();
+    const bundle = buildFullBackup(state, {});
+    expect(fullBackupContainsRedactedSecrets(bundle)).toBe(false);
+    bundle.environments[0].providers.kimi_gateway.api_key = "[REDACTED]";
+    expect(fullBackupContainsRedactedSecrets(bundle)).toBe(true);
+  });
+});
+
+describe("buildConfigDocument projection (external-change false-positive guard)", () => {
+  it("never writes the GUI-only enabled flag to config.toml", () => {
+    const state = createState();
+    state.mainConfig.providers.kimi_gateway.enabled = true;
+    state.mainConfig.models["kimi_gateway/kimi-k2.5"].enabled = true;
+    const doc = buildConfigDocument(state);
+    expect(doc).not.toContain("enabled");
+  });
+
+  it("omits disabled providers and their models from config.toml", () => {
+    const state = createState();
+    state.mainConfig.providers.kimi_gateway.enabled = false;
+    const doc = buildConfigDocument(state);
+    // 投影后 providers/models 表应为空（default_model 标量引用不算条目定义）
+    expect(doc).not.toContain("[providers.");
+    expect(doc).not.toContain("[models.");
+    expect(doc).not.toMatch(/api_key/);
+  });
+
+  it("draft document matches what saveAppState writes to disk (no spurious diff)", async () => {
+    const state = createState();
+    state.mainConfig.providers.disabled_prov = { type: "openai", base_url: "https://d", api_key: "dk", enabled: false };
+    const files = createMemoryFs({});
+    await saveAppState(files as never, state);
+    const normalized = normalizeStatePaths(state);
+    const onDisk = files.store[normalized.configPath];
+    const draft = buildConfigDocument(normalized);
+    expect(draft).toBe(onDisk);
   });
 });

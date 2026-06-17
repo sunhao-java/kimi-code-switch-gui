@@ -38,6 +38,11 @@ export interface ProviderConfig {
   type: string;
   base_url: string;
   api_key: string;
+  /**
+   * 是否启用。SQLite 为唯一真源，此开关决定是否投影写入 Kimi Code config.toml。
+   * 缺省（旧数据）视为 true。
+   */
+  enabled?: boolean;
 }
 
 export interface ModelPricing {
@@ -61,6 +66,11 @@ export interface ModelConfig {
   auth_mode?: ModelAuthMode;
   official_account_scope?: "global";
   pricing?: ModelPricing;
+  /**
+   * 是否启用。仅当自身启用且其 Provider 也启用时，才投影写入 config.toml。
+   * 缺省（旧数据）视为 true。
+   */
+  enabled?: boolean;
 }
 
 export interface OfficialAccount {
@@ -427,7 +437,7 @@ export interface BackupRecord {
   itemCount?: number;
 }
 
-export type ImportConflictStrategy = "skip" | "overwrite" | "rename";
+export type ImportConflictStrategy = "skip" | "overwrite" | "rename" | "replace";
 
 export interface ImportConflict {
   name: string;
@@ -454,4 +464,31 @@ export interface ExportBundle {
   profiles: Record<string, Profile>;
   mcpServers: Record<string, McpServerConfig>;
   panelSettings?: PanelSettings; // 可选：面板设置（字体、主题等）
+}
+
+/**
+ * 单个 Kimi Code 环境的配置（用于全量备份的 environments[] 元素）。
+ * Provider/Model/MCP/Profile 均按环境隔离，含真实密钥与 enabled 状态。
+ */
+export interface EnvironmentConfigBundle {
+  environment: KimiCodeEnvironment;
+  providers: Record<string, ProviderConfig>;
+  models: Record<string, ModelConfig>;
+  mcpServers: Record<string, McpServerConfig>;
+  profiles: Record<string, Profile>;
+  activeProfile: string;
+}
+
+/**
+ * 全量备份包：覆盖所有环境的配置 + 全局面板设置。
+ * 单文件可移植，含真实密钥，可完整还原。
+ */
+export interface FullBackupBundle {
+  version: number;
+  kind: "full-backup";
+  exportedAt: string;
+  source: string;
+  environments: EnvironmentConfigBundle[];
+  activeEnvironmentId: string;
+  panelSettings: PanelSettings;
 }

@@ -1,7 +1,7 @@
 import parse from "@iarna/toml/parse-string.js";
 import stringify from "@iarna/toml/stringify.js";
 
-import { redactAppStateSecrets, REDACTION_MASK } from "./configSafety";
+import { REDACTION_MASK } from "./configSafety";
 import { ConfigResolver, ConfigTarget, parseConfigTarget } from "./configTarget";
 import { SUPPORTED_CURRENCIES } from "./currency";
 import { buildMcpConfigDocument, DEFAULT_MCP_CONFIG_PATH, loadMcpConfig, parseMcpConfigStrict } from "./mcpStore";
@@ -12,7 +12,9 @@ import type {
   BackupDestinationType,
   BackupStrategy,
   DisplayCurrency,
+  EnvironmentConfigBundle,
   ExportBundle,
+  FullBackupBundle,
   ImportConflict,
   ImportConflictStrategy,
   ImportPreview,
@@ -128,6 +130,11 @@ const DEFAULTS = {
   merge_all_available_skills: false,
 } as const;
 
+export interface EnvConfigData {
+  providers: Record<string, ProviderConfig>;
+  models: Record<string, ModelConfig>;
+}
+
 export interface FileAccess {
   readText(path: string): Promise<string | null>;
   writeText(path: string, content: string): Promise<void>;
@@ -136,6 +143,49 @@ export interface FileAccess {
   // 若未提供，回退到 readText/writeText + TOML
   readPanelSettings?(path: string): Promise<PanelSettings | null>;
   writePanelSettings?(path: string, settings: PanelSettings): Promise<void>;
+  // 可选：环境级 Provider/Model 读写（SQLite 为唯一真源）
+  // 若未提供（如测试环境），回退到 config.toml 解析与写入
+  readEnvConfig?(environmentId: string): Promise<EnvConfigData | null>;
+  writeEnvConfig?(environmentId: string, data: EnvConfigData): Promise<void>;
+}
+
+/**
+ * 把一组配置全部标记为 enabled:true（用于从 config.toml 一次性迁移到 DB）。
+ */
+function markAllEnabled<T extends { enabled?: boolean }>(
+  record: Record<string, T>,
+): Record<string, T> {
+  const out: Record<string, T> = {};
+  for (const [name, value] of Object.entries(record)) {
+    out[name] = { ...value, enabled: value.enabled ?? true };
+  }
+  return out;
+}
+
+/**
+ * 投影：返回仅含「启用」Provider 与「自身启用且其 Provider 也启用」Model 的 mainConfig。
+ * 用于写入 config.toml（Kimi Code 实际读取的文件）。内部的 `enabled` 标记会被剥离。
+ */
+export function projectEnabledMainConfig(config: MainConfig): MainConfig {
+  const projected = cloneMainConfig(config);
+  const enabledProviders = new Set<string>();
+  const providers: Record<string, ProviderConfig> = {};
+  for (const [name, provider] of Object.entries(config.providers)) {
+    if (provider.enabled === false) continue;
+    enabledProviders.add(name);
+    const { enabled: _enabled, ...rest } = provider;
+    providers[name] = rest;
+  }
+  const models: Record<string, ModelConfig> = {};
+  for (const [name, model] of Object.entries(config.models)) {
+    if (model.enabled === false) continue;
+    if (!enabledProviders.has(model.provider)) continue;
+    const { enabled: _enabled, ...rest } = model;
+    models[name] = rest;
+  }
+  projected.providers = providers;
+  projected.models = models;
+  return projected;
 }
 
 export function createDefaultPanelSettings(
@@ -223,6 +273,25 @@ export async function loadAppState(
   const mainConfig = shouldUseEnvironmentMainConfig(activeEnvironment, fileMainConfig)
     ? cloneMainConfig(activeEnvironment.mainConfig!)
     : fileMainConfig;
+
+  // SQLite 为 Provider/Model 唯一真源：若提供了 env-config hook，则用 DB 数据覆盖文件解析结果。
+  // DB 为空（尚未迁移）时，把文件解析出的 providers/models 写入 DB 作为一次性迁移（全部默认启用）。
+  if (files.readEnvConfig) {
+    const dbConfig = await files.readEnvConfig(activeEnvironment.id);
+    if (dbConfig) {
+      mainConfig.providers = dbConfig.providers;
+      mainConfig.models = dbConfig.models;
+    } else if (files.writeEnvConfig) {
+      const migratedProviders = markAllEnabled(mainConfig.providers);
+      const migratedModels = markAllEnabled(mainConfig.models);
+      mainConfig.providers = migratedProviders;
+      mainConfig.models = migratedModels;
+      await files.writeEnvConfig(activeEnvironment.id, {
+        providers: migratedProviders,
+        models: migratedModels,
+      });
+    }
+  }
   const fileMcpConfig = await loadMcpConfig(files, mcpConfigPath);
   const environments = parseKimiCodeEnvironments(
     panelSettings.kimi_code_environments,
@@ -561,7 +630,23 @@ export async function saveAppState(files: FileAccess, state: AppState): Promise<
   await files.ensureDir(dirnamePath(normalizedState.panelSettingsPath));
   await files.ensureDir(dirnamePath(normalizedState.mcpConfigPath));
   const stateForConfig = await restoreRedactedProviderSecrets(files, stateToPersist);
-  await files.writeText(normalizedState.configPath, buildConfigDocument(stateForConfig));
+
+  // SQLite 为 Provider/Model 唯一真源：先把全量（含禁用）写入 DB，
+  // 再把「启用项」投影写入 config.toml（Kimi Code 实际读取的文件）。
+  if (files.writeEnvConfig) {
+    await files.writeEnvConfig(normalizedState.panelSettings.active_kimi_code_environment_id, {
+      providers: stateForConfig.mainConfig.providers,
+      models: stateForConfig.mainConfig.models,
+    });
+    const projectedConfig: AppState = {
+      ...stateForConfig,
+      mainConfig: projectEnabledMainConfig(stateForConfig.mainConfig),
+    };
+    await files.writeText(normalizedState.configPath, buildConfigDocument(projectedConfig));
+  } else {
+    // 回退（测试环境）：直接把全量 mainConfig 写入 config.toml。
+    await files.writeText(normalizedState.configPath, buildConfigDocument(stateForConfig));
+  }
 
   // Panel settings：优先使用 SQLite（若 writePanelSettings 存在）
   if (files.writePanelSettings) {
@@ -651,7 +736,11 @@ export async function migrateLegacyKimiCliConfigToKimiCode(files: FileAccess): P
 }
 
 export function buildConfigDocument(state: AppState): string {
-  return normalizeTomlIndentation(stringify(state.mainConfig as unknown as Record<string, unknown>));
+  // config.toml 是 Kimi Code 实际读取的文件，只应包含「启用」项，且不写入 GUI 专用的
+  // enabled 标记。这里统一投影，保证「写盘内容 / 预览 / 外部变更检测的 draft」三者一致，
+  // 避免 enabled 标记或禁用项造成 draft 与磁盘不一致而误报外部修改。
+  const projected = projectEnabledMainConfig(state.mainConfig);
+  return normalizeTomlIndentation(stringify(projected as unknown as Record<string, unknown>));
 }
 
 export function buildProfilesDocument(state: AppState): string {
@@ -747,9 +836,18 @@ export function applyProfile(state: AppState, profileName: string): void {
 export function upsertProvider(
   state: AppState,
   name: string,
-  provider: { type: string; base_url: string; api_key: string },
+  provider: { type: string; base_url: string; api_key: string; enabled?: boolean },
 ): void {
-  state.mainConfig.providers[name] = provider;
+  // 保留已有的 enabled 状态；新建默认启用。
+  const existing = state.mainConfig.providers[name];
+  const enabled = provider.enabled ?? existing?.enabled ?? true;
+  state.mainConfig.providers[name] = { ...provider, enabled };
+}
+
+export function setProviderEnabled(state: AppState, name: string, enabled: boolean): void {
+  const provider = state.mainConfig.providers[name];
+  if (!provider) return;
+  provider.enabled = enabled;
 }
 
 export function deleteProvider(state: AppState, name: string): void {
@@ -769,7 +867,16 @@ export function upsertModel(
   if (!state.mainConfig.providers[model.provider]) {
     throw new Error(`Provider not found: ${model.provider}`);
   }
-  state.mainConfig.models[name] = model;
+  // 保留已有的 enabled 状态；新建默认启用。
+  const existing = state.mainConfig.models[name];
+  const enabled = model.enabled ?? existing?.enabled ?? true;
+  state.mainConfig.models[name] = { ...model, enabled };
+}
+
+export function setModelEnabled(state: AppState, name: string, enabled: boolean): void {
+  const model = state.mainConfig.models[name];
+  if (!model) return;
+  model.enabled = enabled;
 }
 
 export function deleteModel(state: AppState, name: string): void {
@@ -1477,16 +1584,17 @@ export function normalizeStatePaths(state: AppState): AppState {
 }
 
 export function exportConfig(state: AppState): ExportBundle {
-  const { state: redacted } = redactAppStateSecrets(state);
+  // 完整备份：包含真实密钥，确保可完整还原。
+  const source = normalizeStatePaths(state);
   return {
     version: 1,
     exportedAt: new Date().toISOString(),
     source: "kimi-code-switch-gui",
-    providers: structuredClone(redacted.mainConfig.providers),
-    models: structuredClone(redacted.mainConfig.models),
-    profiles: structuredClone(redacted.profiles),
-    mcpServers: structuredClone(redacted.mcpConfig.mcpServers),
-    panelSettings: structuredClone(redacted.panelSettings),
+    providers: structuredClone(source.mainConfig.providers),
+    models: structuredClone(source.mainConfig.models),
+    profiles: structuredClone(source.profiles),
+    mcpServers: structuredClone(source.mcpConfig.mcpServers),
+    panelSettings: structuredClone(source.panelSettings),
   };
 }
 
@@ -1507,6 +1615,12 @@ export function validateImportData(data: unknown): ValidationResult {
     errors.push("Data must contain at least one of: providers, models, profiles, mcpServers.");
   }
   return { valid: errors.length === 0, errors };
+}
+
+export function bundleContainsRedactedSecrets(data: ExportBundle): boolean {
+  return Object.values(data.providers ?? {}).some(
+    (provider) => provider.api_key === REDACTION_MASK,
+  );
 }
 
 export function getImportPreview(state: AppState, data: ExportBundle): ImportPreview {
@@ -1541,6 +1655,29 @@ export function importConfig(
   strategy: ImportConflictStrategy,
 ): AppState {
   const next = cloneState(state);
+  // 清空后导入：先清掉受管的四类条目，再整体载入备份，实现完整还原语义。
+  if (strategy === "replace") {
+    next.mainConfig.providers = {};
+    next.mainConfig.models = {};
+    next.profiles = {};
+    next.mcpConfig.mcpServers = {};
+    for (const [name, provider] of Object.entries(data.providers ?? {})) {
+      next.mainConfig.providers[name] = structuredClone(provider);
+    }
+    for (const [name, model] of Object.entries(data.models ?? {})) {
+      next.mainConfig.models[name] = structuredClone(model);
+    }
+    for (const [name, profile] of Object.entries(data.profiles ?? {})) {
+      next.profiles[name] = { ...structuredClone(profile), name };
+    }
+    for (const [name, server] of Object.entries(data.mcpServers ?? {})) {
+      next.mcpConfig.mcpServers[name] = structuredClone(server);
+    }
+    if (data.panelSettings) {
+      next.panelSettings = structuredClone(data.panelSettings);
+    }
+    return next;
+  }
   for (const [name, provider] of Object.entries(data.providers ?? {})) {
     const exists = Boolean(next.mainConfig.providers[name]);
     if (exists && strategy === "skip") continue;
@@ -1570,6 +1707,143 @@ export function importConfig(
     next.panelSettings = structuredClone(data.panelSettings);
   }
   return next;
+}
+
+export const FULL_BACKUP_VERSION = 1;
+
+/**
+ * 组装全量备份包：覆盖所有环境的 Provider/Model（来自 DB）+ 每个环境的 MCP/Profile（来自 panelSettings 环境快照）
+ * + 全局面板设置。含真实密钥。
+ *
+ * @param state 当前 AppState（提供 panelSettings 与环境列表）
+ * @param allEnvConfigs 各环境的 { providers, models }，来自 DB 的 exportAllEnvConfigs
+ */
+export function buildFullBackup(
+  state: AppState,
+  allEnvConfigs: Record<string, EnvConfigData>,
+): FullBackupBundle {
+  const environments = parseKimiCodeEnvironments(
+    state.panelSettings.kimi_code_environments,
+    [createDefaultKimiCodeEnvironment()],
+  );
+  const activeId = state.panelSettings.active_kimi_code_environment_id;
+
+  const bundles: EnvironmentConfigBundle[] = environments.map((environment) => {
+    // 当前激活环境的 Provider/Model 以内存 state 为准（可能含未保存编辑）；
+    // 其余环境优先用 DB 快照，DB 为空时回退到面板设置中的环境快照（mainConfig）。
+    const dbConfig = allEnvConfigs[environment.id];
+    const dbHasProviders = dbConfig && Object.keys(dbConfig.providers ?? {}).length > 0;
+    const dbHasModels = dbConfig && Object.keys(dbConfig.models ?? {}).length > 0;
+    const providers = environment.id === activeId
+      ? structuredClone(state.mainConfig.providers)
+      : structuredClone((dbHasProviders ? dbConfig!.providers : environment.mainConfig?.providers) ?? {});
+    const models = environment.id === activeId
+      ? structuredClone(state.mainConfig.models)
+      : structuredClone((dbHasModels ? dbConfig!.models : environment.mainConfig?.models) ?? {});
+    const mcpServers = environment.id === activeId
+      ? cloneMcpServers(state.mcpConfig.mcpServers)
+      : cloneMcpServers(environment.mcpServers ?? {});
+    const profiles = environment.id === activeId
+      ? sanitizeProfilesRecord(state.profiles)
+      : sanitizeProfilesRecord(environment.profiles ?? {});
+    const activeProfile = environment.id === activeId
+      ? state.activeProfile
+      : (environment.activeProfile ?? DEFAULT_PROFILE_NAME);
+    return {
+      environment: { id: environment.id, name: environment.name, homePath: environment.homePath, description: environment.description },
+      providers,
+      models,
+      mcpServers,
+      profiles,
+      activeProfile,
+    };
+  });
+
+  return {
+    version: FULL_BACKUP_VERSION,
+    kind: "full-backup",
+    exportedAt: new Date().toISOString(),
+    source: "kimi-code-switch-gui",
+    environments: bundles,
+    activeEnvironmentId: activeId,
+    panelSettings: structuredClone(state.panelSettings),
+  };
+}
+
+export function isFullBackupBundle(data: unknown): data is FullBackupBundle {
+  return (
+    isRecord(data)
+    && (data as { kind?: unknown }).kind === "full-backup"
+    && Array.isArray((data as { environments?: unknown }).environments)
+  );
+}
+
+export function validateFullBackup(data: unknown): ValidationResult {
+  const errors: string[] = [];
+  if (!isRecord(data)) {
+    return { valid: false, errors: ["Data must be a JSON object."] };
+  }
+  if ((data as { kind?: unknown }).kind !== "full-backup") {
+    errors.push("Not a full backup file (missing kind: 'full-backup').");
+  }
+  if (typeof (data as { version?: unknown }).version !== "number") {
+    errors.push("Missing or invalid 'version' field.");
+  }
+  if (!Array.isArray((data as { environments?: unknown }).environments)) {
+    errors.push("Missing 'environments' array.");
+  }
+  if (!isRecord((data as { panelSettings?: unknown }).panelSettings)) {
+    errors.push("Missing 'panelSettings'.");
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+export function fullBackupContainsRedactedSecrets(data: FullBackupBundle): boolean {
+  return data.environments.some((env) =>
+    Object.values(env.providers ?? {}).some((p) => p.api_key === REDACTION_MASK),
+  );
+}
+
+/**
+ * 从全量备份包提取各环境的 { providers, models }，用于写回 DB（importAllEnvConfigs）。
+ */
+export function extractEnvConfigsFromBackup(data: FullBackupBundle): Record<string, EnvConfigData> {
+  const out: Record<string, EnvConfigData> = {};
+  for (const env of data.environments) {
+    out[env.environment.id] = {
+      providers: structuredClone(env.providers ?? {}),
+      models: structuredClone(env.models ?? {}),
+    };
+  }
+  return out;
+}
+
+/**
+ * 从全量备份包重建 panelSettings（含每个环境的 MCP/Profile 快照），用于写回 SQLite。
+ * 保留备份中的全局面板设置，但把环境列表的 mcpServers/profiles/activeProfile 用备份内容覆盖。
+ */
+export function rebuildPanelSettingsFromBackup(data: FullBackupBundle): PanelSettings {
+  const panelSettings = structuredClone(data.panelSettings);
+  const environments: KimiCodeEnvironment[] = data.environments.map((env) => ({
+    id: env.environment.id,
+    name: env.environment.name,
+    homePath: getKimiCodeEnvironmentHomePath(env.environment.id),
+    description: env.environment.description,
+    mcpServers: cloneMcpServers(env.mcpServers ?? {}),
+    profiles: sanitizeProfilesRecord(env.profiles ?? {}),
+    activeProfile: env.activeProfile,
+  }));
+  panelSettings.kimi_code_environments = environments;
+  panelSettings.active_kimi_code_environment_id = data.activeEnvironmentId;
+  // 同步顶层 mcp_servers / profiles 为激活环境的快照。
+  const active = data.environments.find((e) => e.environment.id === data.activeEnvironmentId)
+    ?? data.environments[0];
+  if (active) {
+    panelSettings.mcp_servers = cloneMcpServers(active.mcpServers ?? {});
+    panelSettings.profiles = sanitizeProfilesRecord(active.profiles ?? {});
+    panelSettings.active_profile = active.activeProfile;
+  }
+  return panelSettings;
 }
 
 export function toggleFavorite(

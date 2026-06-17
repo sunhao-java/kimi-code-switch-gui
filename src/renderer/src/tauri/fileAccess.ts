@@ -2,7 +2,8 @@
 // 对应 Electron 侧 src/main/modules/fileAccess.ts，但运行在 renderer 进程。
 import { invoke } from "@tauri-apps/api/core";
 
-import type { FileAccess, PanelSettings } from "@shared/configStore";
+import type { EnvConfigData, FileAccess, PanelSettings } from "@shared/configStore";
+import { getEnvConfig, saveEnvConfig } from "./envConfigStore";
 import { getPanelSettings, savePanelSettings } from "./panelSettingsStore";
 
 export const tauriFileAccess: FileAccess = {
@@ -22,6 +23,12 @@ export const tauriFileAccess: FileAccess = {
   async writePanelSettings(_path: string, settings: PanelSettings): Promise<void> {
     // 忽略 path 参数，直接写入 SQLite
     await savePanelSettings(settings);
+  },
+  async readEnvConfig(environmentId: string): Promise<EnvConfigData | null> {
+    return getEnvConfig(environmentId);
+  },
+  async writeEnvConfig(environmentId: string, data: EnvConfigData): Promise<void> {
+    await saveEnvConfig(environmentId, data);
   },
 };
 

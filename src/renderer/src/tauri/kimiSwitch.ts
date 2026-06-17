@@ -22,12 +22,15 @@ import {
   saveAppState,
   cloneState,
   applyProfile,
+  buildFullBackup,
+  extractEnvConfigsFromBackup,
+  rebuildPanelSettingsFromBackup,
 } from "@shared/configStore";
 import { buildConfigDoctorReport, buildManagedDocuments, buildRedactedPreviewBundle } from "@shared/configSafety";
 import { scanSkills } from "@shared/skillsStore";
 import { compareReleaseVersions } from "@shared/versionUtils";
 import { computeEventCost, resolveModelPricing } from "@shared/pricing";
-import type { AppState, KimiCodeEnvironment, KimiCodeEnvironmentPreferenceResult, ManagedFileId, ModelConfig, PanelSettings, PreviewBundle, OpenKimiTerminalRequest, FileSnapshotBundle, SaveStateConflictResult, SaveStateResult } from "@shared/types";
+import type { AppState, FullBackupBundle, KimiCodeEnvironment, KimiCodeEnvironmentPreferenceResult, ManagedFileId, ModelConfig, PanelSettings, PreviewBundle, OpenKimiTerminalRequest, FileSnapshotBundle, SaveStateConflictResult, SaveStateResult } from "@shared/types";
 
 import { tauriFileAccess, pathExists, ensureKimiCodeEnvironmentLayout, activateKimiCodeEnvironmentLink } from "./fileAccess";
 import * as usageDb from "./usageDb";
@@ -55,6 +58,9 @@ const USAGE_DB_PATH = `${PANEL_APP_DIR}/app.db`;
 const USAGE_JSONL_DIR = `${PANEL_APP_DIR}/usage`;
 let logWatcher: UsageLogWatcher | null = null;
 let usageOpen = false;
+// 单飞守卫：避免并发/重复 loadState 同时跑数据库打开与建表迁移
+// （首次启动 React.StrictMode 双调用会触发 schema_versions UNIQUE 等并发写冲突）。
+let storesInitTask: Promise<void> | null = null;
 let currentAppState: AppState | null = null;
 let shortcutSyncTask: Promise<void> = Promise.resolve();
 let startupKimiCodeDetection: AppState["kimiTargetDetection"] | null = null;
@@ -188,50 +194,59 @@ async function runPostLoadMaintenance(
     } catch (err) {
       console.warn("MCP migration skipped:", err);
     }
-
-    const currentSettings = await getPanelSettings();
-    if (!currentSettings) {
-      await savePanelSettings({
-        ...state.panelSettings,
-        config_target: state.panelSettings.config_target,
-        config_path: state.panelSettings.config_path,
-        profiles: state.profiles,
-        active_profile: state.activeProfile,
-        mcp_servers: state.mcpConfig.mcpServers,
-        kimi_code_environments: state.panelSettings.kimi_code_environments,
-        active_kimi_code_environment_id: state.panelSettings.active_kimi_code_environment_id,
-        active_official_account_id: state.panelSettings.active_official_account_id ?? "",
-        profiles_path: "",
-        follow_config_profiles: true,
-      });
-      return;
-    }
-    const needsPanelSync =
-      currentSettings.config_target !== state.panelSettings.config_target ||
-      currentSettings.config_path !== state.panelSettings.config_path ||
-      currentSettings.active_profile !== state.activeProfile ||
-      JSON.stringify(currentSettings.profiles ?? {}) !== JSON.stringify(state.profiles ?? {}) ||
-      JSON.stringify(currentSettings.mcp_servers ?? {}) !== JSON.stringify(state.mcpConfig.mcpServers ?? {}) ||
-      JSON.stringify(currentSettings.kimi_code_environments ?? []) !== JSON.stringify(state.panelSettings.kimi_code_environments ?? []) ||
-      (currentSettings.active_kimi_code_environment_id ?? "") !== (state.panelSettings.active_kimi_code_environment_id ?? "") ||
-      (currentSettings.active_official_account_id ?? "") !== (state.panelSettings.active_official_account_id ?? "");
-    if (needsPanelSync) {
-      await savePanelSettings({
-        ...currentSettings,
-        config_target: state.panelSettings.config_target,
-        config_path: state.panelSettings.config_path,
-        profiles: state.profiles,
-        active_profile: state.activeProfile,
-        mcp_servers: state.mcpConfig.mcpServers,
-        kimi_code_environments: state.panelSettings.kimi_code_environments,
-        active_kimi_code_environment_id: state.panelSettings.active_kimi_code_environment_id,
-        active_official_account_id: state.panelSettings.active_official_account_id ?? "",
-        profiles_path: "",
-        follow_config_profiles: true,
-      });
-    }
   } finally {
     recordStartupTiming("kimiSwitch.runPostLoadMaintenance", startedAt);
+  }
+}
+
+/**
+ * 把内存 state 同步回 panel_settings（SQLite）。
+ *
+ * 必须在 loadState 返回前 await 完成：它会写 SQLite 改变 panel 文档，
+ * 若放到后台异步执行，会在「快照基线已捕获」之后再改盘，导致首次保存时
+ * 误判 panel 配置被外部修改（首次启动复现）。
+ */
+async function syncPanelSettingsAfterLoad(state: AppState): Promise<void> {
+  const currentSettings = await getPanelSettings();
+  if (!currentSettings) {
+    await savePanelSettings({
+      ...state.panelSettings,
+      config_target: state.panelSettings.config_target,
+      config_path: state.panelSettings.config_path,
+      profiles: state.profiles,
+      active_profile: state.activeProfile,
+      mcp_servers: state.mcpConfig.mcpServers,
+      kimi_code_environments: state.panelSettings.kimi_code_environments,
+      active_kimi_code_environment_id: state.panelSettings.active_kimi_code_environment_id,
+      active_official_account_id: state.panelSettings.active_official_account_id ?? "",
+      profiles_path: "",
+      follow_config_profiles: true,
+    });
+    return;
+  }
+  const needsPanelSync =
+    currentSettings.config_target !== state.panelSettings.config_target ||
+    currentSettings.config_path !== state.panelSettings.config_path ||
+    currentSettings.active_profile !== state.activeProfile ||
+    JSON.stringify(currentSettings.profiles ?? {}) !== JSON.stringify(state.profiles ?? {}) ||
+    JSON.stringify(currentSettings.mcp_servers ?? {}) !== JSON.stringify(state.mcpConfig.mcpServers ?? {}) ||
+    JSON.stringify(currentSettings.kimi_code_environments ?? []) !== JSON.stringify(state.panelSettings.kimi_code_environments ?? []) ||
+    (currentSettings.active_kimi_code_environment_id ?? "") !== (state.panelSettings.active_kimi_code_environment_id ?? "") ||
+    (currentSettings.active_official_account_id ?? "") !== (state.panelSettings.active_official_account_id ?? "");
+  if (needsPanelSync) {
+    await savePanelSettings({
+      ...currentSettings,
+      config_target: state.panelSettings.config_target,
+      config_path: state.panelSettings.config_path,
+      profiles: state.profiles,
+      active_profile: state.activeProfile,
+      mcp_servers: state.mcpConfig.mcpServers,
+      kimi_code_environments: state.panelSettings.kimi_code_environments,
+      active_kimi_code_environment_id: state.panelSettings.active_kimi_code_environment_id,
+      active_official_account_id: state.panelSettings.active_official_account_id ?? "",
+      profiles_path: "",
+      follow_config_profiles: true,
+    });
   }
 }
 
@@ -301,6 +316,53 @@ async function ensureUsageRuntime(): Promise<void> {
   }
 }
 
+/**
+ * 打开数据库 + 初始化所有 SQLite store（单飞）。
+ * 并发或重复的 loadState 共享同一次初始化，避免首次启动 StrictMode 双调用时
+ * 两路同时建表/写 schema_versions 触发 UNIQUE 冲突。
+ */
+function ensureStoresInitialized(): Promise<void> {
+  if (!storesInitTask) {
+    storesInitTask = (async () => {
+      // 迁移旧数据库文件到独立 GUI 目录，避免和 Kimi Code 运行时数据混在一起。
+      const oldDbPaths = ["~/.kimi-code/.panel/app.db", "~/.kimi/app.db"];
+      const newDbPath = USAGE_DB_PATH;
+      const { pathExists, ensureDir, moveFile, removeFile } = await import("./fileAccess");
+      try {
+        await ensureDir(PANEL_APP_DIR);
+        for (const oldDbPath of oldDbPaths) {
+          if (await pathExists(oldDbPath)) {
+            console.log(`Migrating app.db from ${oldDbPath} to ${newDbPath}...`);
+            if (!(await pathExists(newDbPath))) {
+              await moveFile(oldDbPath, newDbPath);
+            } else {
+              await removeFile(oldDbPath);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Database file migration skipped:", err);
+      }
+
+      if (!usageOpen) {
+        await usageDb.open(USAGE_DB_PATH);
+        await initConfigHistory();
+        usageOpen = true;
+      }
+
+      await initPanelSettingsStore();
+      const { initMcpServersStore } = await import("./mcpServersStore");
+      await initMcpServersStore();
+      const { initEnvConfigStore } = await import("./envConfigStore");
+      await initEnvConfigStore();
+      await officialAccounts.initOfficialAccountsStore();
+    })();
+    // 失败时清空 task，允许下次 loadState 重试初始化。
+    storesInitTask.catch(() => { storesInitTask = null; });
+  }
+  return storesInitTask;
+}
+
 function stopUsageRuntime(): void {
   logWatcher?.stop();
   logWatcher = null;
@@ -329,45 +391,10 @@ export const kimiSwitchTauri = {
   // ── 核心状态链路 ──
   loadState: async (paths?: LoadStatePaths): Promise<AppState> => {
     const loadStartedAt = startupTimingNow();
-    // 确保数据库打开（panel_settings 依赖数据库连接）
-    if (!usageOpen) {
-      const dbStartedAt = startupTimingNow();
-      // 迁移旧数据库文件到独立 GUI 目录，避免和 Kimi Code 运行时数据混在一起。
-      const oldDbPaths = ["~/.kimi-code/.panel/app.db", "~/.kimi/app.db"];
-      const newDbPath = USAGE_DB_PATH;
-      const { pathExists, ensureDir, moveFile, removeFile } = await import("./fileAccess");
-
-      try {
-        await ensureDir(PANEL_APP_DIR);
-        for (const oldDbPath of oldDbPaths) {
-          if (await pathExists(oldDbPath)) {
-            console.log(`Migrating app.db from ${oldDbPath} to ${newDbPath}...`);
-            if (!(await pathExists(newDbPath))) {
-              await moveFile(oldDbPath, newDbPath);
-            } else {
-              await removeFile(oldDbPath);
-            }
-          }
-        }
-      } catch (err) {
-        console.warn("Database file migration skipped:", err);
-      }
-
-      await usageDb.open(USAGE_DB_PATH);
-      await initConfigHistory();
-
-      usageOpen = true;
-      recordStartupTiming("kimiSwitch.loadState.database", dbStartedAt);
-    }
-
-    // 初始化 panel_settings_store 表
+    // 打开数据库 + 初始化所有 store（单飞，防并发重复初始化）。
     const storeStartedAt = startupTimingNow();
-    await initPanelSettingsStore();
-
-    // 初始化 mcp_servers_store 表
-    const { initMcpServersStore, migrateMcpFromJson } = await import("./mcpServersStore");
-    await initMcpServersStore();
-    await officialAccounts.initOfficialAccountsStore();
+    await ensureStoresInitialized();
+    const { migrateMcpFromJson } = await import("./mcpServersStore");
     recordStartupTiming("kimiSwitch.loadState.stores", storeStartedAt);
 
     const currentSettingsBeforeLoad = await getPanelSettings();
@@ -393,6 +420,14 @@ export const kimiSwitchTauri = {
       console.warn("Official account status load skipped:", err);
     }
     currentAppState = state;
+
+    // 在快照基线捕获前，先 await 同步 panel_settings，确保返回的 state 与盘上一致，
+    // 避免首次启动时后台改盘导致误报「配置被外部修改」。
+    try {
+      await syncPanelSettingsAfterLoad(state);
+    } catch (err) {
+      console.warn("Panel settings sync after load skipped:", err);
+    }
 
     void runPostLoadMaintenance(state, effectivePaths, migrateMcpFromJson)
       .catch((err) => console.warn("Post-load maintenance skipped:", err));
@@ -922,6 +957,25 @@ export const kimiSwitchTauri = {
   restoreBackupSafe: (state: AppState, backupName: string, options?: { expectedSnapshot?: FileSnapshotBundle; allowOverwrite?: boolean }) => backup.restoreBackupSafe(state, backupName, options),
   restoreBackupDryRun: (state: AppState, backupName: string) => backup.restoreBackupDryRun(state, backupName),
   testBackupWebdav: (state: AppState) => backup.testBackupWebdav(state),
+
+  // ── 全量导出/导入（所有环境的 Provider/Model/MCP/Profile + 全局面板设置）──
+  exportFullBackup: async (state: AppState): Promise<FullBackupBundle> => {
+    const { exportAllEnvConfigs } = await import("./envConfigStore");
+    const allEnvConfigs = await exportAllEnvConfigs();
+    return buildFullBackup(state, allEnvConfigs);
+  },
+  importFullBackup: async (bundle: FullBackupBundle): Promise<AppState> => {
+    const { importAllEnvConfigs } = await import("./envConfigStore");
+    // 1) 写回各环境的 Provider/Model 到 DB（先清空再整体写入）
+    await importAllEnvConfigs(extractEnvConfigsFromBackup(bundle));
+    // 2) 写回面板设置（含每个环境的 MCP/Profile 快照）到 SQLite
+    await savePanelSettings(rebuildPanelSettingsFromBackup(bundle));
+    // 3) 重新加载完整状态（会据此投影 config.toml / mcp.json）
+    const reloaded = await loadAppState(tauriFileAccess);
+    await saveAppState(tauriFileAccess, reloaded);
+    currentAppState = reloaded;
+    return reloaded;
+  },
 
   void: () => { void USAGE_JSONL_DIR; void notImplemented; },
 };

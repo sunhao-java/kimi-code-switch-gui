@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Activity, Braces, Bug, CircleCheckBig, Copy, Download, ExternalLink, FileInput, FolderOpen, History, LoaderCircle, LogIn, Plus, Power, RefreshCw, RotateCcw, Save, Star, Terminal, Trash2, Upload, X } from "lucide-react";
-import { applyProfile, cloneProfile, createDefaultKimiCodeEnvironment, deleteModel, deleteProfile, deleteProvider, exportConfig, getImportPreview, getKimiCodeConfigPath, getKimiCodeMcpConfigPath, getKimiCodeSkillsPath, getKimiCodeEnvironmentHomePath, importConfig, normalizeKimiCodeEnvironments, toggleFavorite, validateImportData, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
+import { applyProfile, cloneProfile, createDefaultKimiCodeEnvironment, deleteModel, deleteProfile, deleteProvider, fullBackupContainsRedactedSecrets, getKimiCodeConfigPath, getKimiCodeMcpConfigPath, getKimiCodeSkillsPath, getKimiCodeEnvironmentHomePath, normalizeKimiCodeEnvironments, setModelEnabled, setProviderEnabled, toggleFavorite, validateFullBackup, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
 import { buildMcpConfigDocument } from "@shared/mcpStore";
 import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
 import { getCascadePreview } from "@shared/configRelations";
@@ -21,9 +21,7 @@ import type {
   BackupStrategy,
   CloseBehavior,
   DisplayOpenMode,
-  ExportBundle,
-  ImportConflictStrategy,
-  ImportPreview,
+  FullBackupBundle,
   KimiCodeInstallSource,
   KimiCodeEnvironment,
   Locale,
@@ -421,6 +419,25 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             mcpServers: state.mcpConfig.mcpServers,
           }
         : sourceEnvironment;
+      // Provider/Model 以 SQLite 为唯一真源：复制环境时必须显式复制 DB 行，
+      // 否则新环境的 env_config 为空（copyDir 只搬运文件投影，不含 DB）。
+      if (sourceEnvironment) {
+        const { getEnvConfig, saveEnvConfig } = await import("../tauri/envConfigStore");
+        let providers = sourceSnapshot?.mainConfig?.providers;
+        let models = sourceSnapshot?.mainConfig?.models;
+        // 来源非激活环境：内存快照可能为空，回退读取来源环境的 DB 行。
+        if (!providers || Object.keys(providers).length === 0) {
+          const sourceDb = await getEnvConfig(sourceEnvironment.id);
+          if (sourceDb) {
+            providers = sourceDb.providers;
+            models = sourceDb.models;
+          }
+        }
+        await saveEnvConfig(id, {
+          providers: providers ? structuredClone(providers) : {},
+          models: models ? structuredClone(models) : {},
+        });
+      }
       const nextEnvironment: KimiCodeEnvironment = {
         id,
         name: draft.name.trim(),
@@ -564,7 +581,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
 
   const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>("kimi-code");
   const [kimiCodeSubTab, setKimiCodeSubTab] = useState<KimiCodeSubTab>("instance");
-  const [importDialog, setImportDialog] = useState<{ open: boolean; preview: ImportPreview | null; data: ExportBundle | null; strategy: ImportConflictStrategy }>({ open: false, preview: null, data: null, strategy: "skip" });
+  const [fullBackupImportDialog, setFullBackupImportDialog] = useState<{ open: boolean; data: FullBackupBundle | null; envCount: number; hasRedactedSecrets: boolean }>({ open: false, data: null, envCount: 0, hasRedactedSecrets: false });
+  const [isImportingFullBackup, setIsImportingFullBackup] = useState(false);
   const [isMcpJsonViewerOpen, setIsMcpJsonViewerOpen] = useState(false);
   const [providerHealthResults, setProviderHealthResults] = useState<ProviderHealthResult[] | null>(null);
   const [isProviderHealthChecking, setIsProviderHealthChecking] = useState(false);
@@ -803,7 +821,35 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             dirtyItems={dirtyProviders}
             dirtyLabel={t(locale, "editedBadge")}
             selectedItem={selectedProviderName}
-            itemClassName={() => "provider-list-row"}
+            itemClassName={(name) =>
+              state.mainConfig.providers[name]?.enabled === false ? "provider-list-row disabled" : "provider-list-row"
+            }
+            renderItemAction={(name) => {
+              const provider = state.mainConfig.providers[name];
+              if (!provider) return null;
+              const isEnabled = provider.enabled !== false;
+              return (
+                <button
+                  className={isEnabled ? "list-toggle-button" : "list-toggle-button disabled"}
+                  type="button"
+                  aria-label={isEnabled ? t(locale, "disableProvider") : t(locale, "enableProvider")}
+                  title={isEnabled ? t(locale, "disableProvider") : t(locale, "enableProvider")}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    updateState((draft) => {
+                      setProviderEnabled(draft, name, !isEnabled);
+                    }, {
+                      historySummary: formatMessage(
+                        t(locale, isEnabled ? "historyDisableProvider" : "historyEnableProvider"),
+                        { name },
+                      ),
+                    });
+                  }}
+                >
+                  <Power size={15} />
+                </button>
+              );
+            }}
             onSelect={(item) => setSelectedProvider(item)}
             copyLabel={t(locale, "clone")}
             onCopy={(name) =>
@@ -893,6 +939,44 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             dirtyItems={dirtyModels}
             dirtyLabel={t(locale, "editedBadge")}
             selectedItem={selectedModelName}
+            itemClassName={(name) => {
+              const model = state.mainConfig.models[name];
+              if (!model) return null;
+              const providerEnabled = state.mainConfig.providers[model.provider]?.enabled !== false;
+              return model.enabled === false || !providerEnabled ? "disabled" : null;
+            }}
+            renderItemAction={(name) => {
+              const model = state.mainConfig.models[name];
+              if (!model) return null;
+              const providerEnabled = state.mainConfig.providers[model.provider]?.enabled !== false;
+              const isEnabled = model.enabled !== false;
+              const title = !providerEnabled
+                ? t(locale, "modelProviderDisabled")
+                : isEnabled ? t(locale, "disableModel") : t(locale, "enableModel");
+              return (
+                <button
+                  className={isEnabled && providerEnabled ? "list-toggle-button" : "list-toggle-button disabled"}
+                  type="button"
+                  disabled={!providerEnabled}
+                  aria-label={title}
+                  title={title}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (!providerEnabled) return;
+                    updateState((draft) => {
+                      setModelEnabled(draft, name, !isEnabled);
+                    }, {
+                      historySummary: formatMessage(
+                        t(locale, isEnabled ? "historyDisableModel" : "historyEnableModel"),
+                        { name },
+                      ),
+                    });
+                  }}
+                >
+                  <Power size={15} />
+                </button>
+              );
+            }}
             onSelect={(item) => setSelectedModel(item)}
             copyLabel={t(locale, "clone")}
             onCopy={(name) =>
@@ -2121,17 +2205,24 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
             {activeSettingsSubTab === "backup" ? (
               <>
                 <SettingsGroup title={t(locale, "settingsGroupExportImport")} className="settings-group-export-import">
+                  <p className="settings-group-description">{t(locale, "exportImportSecretsHint")}</p>
                   <div className="button-row settings-action-row">
                     <button
                       className="action-button"
                       type="button"
                       onClick={async () => {
-                        const bundle = exportConfig(state);
-                        const json = JSON.stringify(bundle, null, 2);
                         const api = getApi();
                         if (!api) { setError(t(locale, "openInTerminalUnavailable")); return; }
-                        const result = await api.saveFile(json, { defaultPath: "kimi-config-export.json" });
-                        if (!result.canceled) { setNotice(t(locale, "exportSuccess")); }
+                        if (typeof api.exportFullBackup !== "function") { setError(t(locale, "backupRuntimeOutdated")); return; }
+                        try {
+                          const bundle = await api.exportFullBackup(state);
+                          const json = JSON.stringify(bundle, null, 2);
+                          const result = await api.saveFile(json, { defaultPath: "kimi-full-backup.json" });
+                          if (!result.canceled) { setError(""); setNotice(t(locale, "exportSuccessWithSecrets")); }
+                        } catch (err) {
+                          setNotice("");
+                          setError(err instanceof Error ? err.message : String(err));
+                        }
                       }}
                     >
                       <Download size={16} />
@@ -2143,18 +2234,22 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
                       onClick={async () => {
                         const api = getApi();
                         if (!api) { setError(t(locale, "openInTerminalUnavailable")); return; }
+                        if (typeof api.importFullBackup !== "function") { setError(t(locale, "backupRuntimeOutdated")); return; }
                         const fileResult = await api.pickFile({ filters: [{ name: "JSON", extensions: ["json"] }] });
                         if (fileResult.canceled || !fileResult.filePath) return;
                         try {
                           const readResult = await api.readFile(fileResult.filePath);
                           if (!readResult.ok || !readResult.content) { setError(readResult.error ?? t(locale, "importInvalidFile")); return; }
                           const parsed = JSON.parse(readResult.content);
-                          const validation = validateImportData(parsed);
+                          const validation = validateFullBackup(parsed);
                           if (!validation.valid) { setError(validation.errors.join(" ")); return; }
-                          const data = parsed as ExportBundle;
-                          const preview = getImportPreview(state, data);
-                          if (preview.conflicts.length === 0 && preview.newItems.length === 0) { setNotice(t(locale, "importNoItems")); return; }
-                          setImportDialog({ open: true, preview, data, strategy: "skip" });
+                          const data = parsed as FullBackupBundle;
+                          setFullBackupImportDialog({
+                            open: true,
+                            data,
+                            envCount: data.environments.length,
+                            hasRedactedSecrets: fullBackupContainsRedactedSecrets(data),
+                          });
                         } catch { setError(t(locale, "importInvalidFile")); }
                       }}
                     >
@@ -2323,40 +2418,38 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
           </SplitLayout>
         ) : null}
         {activeTab === "about" ? <AboutPage locale={locale} /> : null}
-        {importDialog.open && importDialog.preview && importDialog.data ? (
-          <ImportPreviewDialog
+        {fullBackupImportDialog.open && fullBackupImportDialog.data ? (
+          <FullBackupImportDialog
             locale={locale}
-            preview={importDialog.preview}
-            data={importDialog.data}
-            strategy={importDialog.strategy}
-            onStrategyChange={(strategy) => setImportDialog((prev) => ({ ...prev, strategy }))}
+            envCount={fullBackupImportDialog.envCount}
+            hasRedactedSecrets={fullBackupImportDialog.hasRedactedSecrets}
+            isImporting={isImportingFullBackup}
             onConfirm={() => {
-              const next = importConfig(state, importDialog.data!, importDialog.strategy);
-              const hasPanelSettings = Boolean(importDialog.data?.panelSettings);
-
-              updateState((draft) => {
-                draft.mainConfig.providers = next.mainConfig.providers;
-                draft.mainConfig.models = next.mainConfig.models;
-                draft.profiles = next.profiles;
-                draft.mcpConfig.mcpServers = next.mcpConfig.mcpServers;
-                // 导入面板设置
-                if (next.panelSettings) {
-                  draft.panelSettings = next.panelSettings;
+              void (async () => {
+                const api = getApi();
+                if (!api || typeof api.importFullBackup !== "function") {
+                  setError(t(locale, "backupRuntimeOutdated"));
+                  return;
                 }
-              }, {
-                persist: true,
-                historySummary: t(locale, "historyImportConfig"),
-              });
-              setImportDialog({ open: false, preview: null, data: null, strategy: "skip" });
-
-              // 如果导入了面板设置，提示重启生效
-              if (hasPanelSettings) {
-                setNotice(t(locale, "importSuccessWithPanelSettings"));
-              } else {
-                setNotice(t(locale, "importSuccess"));
-              }
+                setIsImportingFullBackup(true);
+                try {
+                  await api.importFullBackup(fullBackupImportDialog.data!);
+                  setFullBackupImportDialog({ open: false, data: null, envCount: 0, hasRedactedSecrets: false });
+                  setError("");
+                  setNotice(t(locale, "importSuccessWithPanelSettings"));
+                  await loadState();
+                } catch (err) {
+                  setNotice("");
+                  setError(err instanceof Error ? err.message : String(err));
+                } finally {
+                  setIsImportingFullBackup(false);
+                }
+              })();
             }}
-            onCancel={() => setImportDialog({ open: false, preview: null, data: null, strategy: "skip" })}
+            onCancel={() => {
+              if (isImportingFullBackup) return;
+              setFullBackupImportDialog({ open: false, data: null, envCount: 0, hasRedactedSecrets: false });
+            }}
           />
         ) : null}
         </div>
@@ -2426,86 +2519,45 @@ function DoctorReportPanel(props: {
 }
 
 
-function ImportPreviewDialog(props: {
+function FullBackupImportDialog(props: {
   locale: Locale;
-  preview: ImportPreview;
-  data: ExportBundle;
-  strategy: ImportConflictStrategy;
-  onStrategyChange: (strategy: ImportConflictStrategy) => void;
+  envCount: number;
+  hasRedactedSecrets: boolean;
+  isImporting: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }): JSX.Element {
-  const { locale, preview, strategy, onStrategyChange, onConfirm, onCancel } = props;
-  const typeLabels: Record<string, string> = {
-    provider: "Provider",
-    model: "Model",
-    profile: "Profile",
-    mcp_server: "MCP",
-  };
+  const { locale, envCount, hasRedactedSecrets, isImporting, onConfirm, onCancel } = props;
   return (
     <div className="dialog-overlay" onClick={onCancel}>
       <div className="dialog import-preview-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="dialog-header">
-          <h3>{t(locale, "importPreview")}</h3>
+          <h3>{t(locale, "fullBackupImportTitle")}</h3>
           <button className="icon-button" type="button" onClick={onCancel} aria-label={t(locale, "close")}>
             <X size={16} />
           </button>
         </div>
         <div className="dialog-body import-preview-body">
-          {preview.conflicts.length > 0 ? (
-            <div className="import-preview-section conflict-section">
-              <div className="section-header">
-                <h4>{t(locale, "importConflict")} ({preview.conflicts.length})</h4>
-                <div className="import-preview-strategy-inline">
-                  <label>{t(locale, "importStrategy")}</label>
-                  <CompactSelect
-                    ariaLabel={t(locale, "importStrategy")}
-                    value={strategy}
-                    onChange={(value) => onStrategyChange(value as ImportConflictStrategy)}
-                    options={[
-                      { value: "skip", label: t(locale, "importStrategySkip") },
-                      { value: "overwrite", label: t(locale, "importStrategyOverwrite") },
-                      { value: "rename", label: t(locale, "importStrategyRename") },
-                    ]}
-                  />
-                </div>
-              </div>
-              <div className="import-preview-list">
-                {preview.conflicts.map((item) => (
-                  <div key={`${item.type}-${item.name}`} className="import-preview-item conflict">
-                    <span className="import-preview-type">{typeLabels[item.type] ?? item.type}</span>
-                    <span className="import-preview-name">{item.name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-          {preview.newItems.length > 0 ? (
-            <div className="import-preview-section new-section">
-              <h4>{t(locale, "importNew")} ({preview.newItems.length})</h4>
-              <div className="import-preview-list">
-                {preview.newItems.map((item) => (
-                  <div key={`${item.type}-${item.name}`} className="import-preview-item new">
-                    <span className="import-preview-type">{typeLabels[item.type] ?? item.type}</span>
-                    <span className="import-preview-name">{item.name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
+          <div className="import-preview-warning" role="alert">
+            {formatMessage(t(locale, "fullBackupImportWarning"), { count: envCount })}
+          </div>
+          {hasRedactedSecrets ? (
+            <div className="import-preview-warning" role="alert">{t(locale, "importRedactedWarning")}</div>
           ) : null}
         </div>
         <div className="dialog-footer">
-          <button className="action-button secondary" type="button" onClick={onCancel}>
+          <button className="action-button secondary" type="button" onClick={onCancel} disabled={isImporting}>
             {t(locale, "cancel")}
           </button>
-          <button className="action-button primary" type="button" onClick={onConfirm}>
-            {t(locale, "importConfirm")}
+          <button className="action-button primary" type="button" onClick={onConfirm} disabled={isImporting}>
+            {isImporting ? t(locale, "fullBackupImporting") : t(locale, "importConfirm")}
           </button>
         </div>
       </div>
     </div>
   );
 }
+
 
 function CreateKimiCodeEnvironmentDialog(props: {
   locale: Locale;

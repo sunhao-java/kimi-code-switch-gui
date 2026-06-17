@@ -6510,6 +6510,13 @@ textarea:focus-visible {
   gap: 14px;
 }
 
+.settings-group-description {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
 .settings-group-body .field {
   gap: 6px;
 }
@@ -10059,6 +10066,28 @@ textarea:focus-visible {
   font-size: 13px;
   color: var(--fg-2);
   white-space: nowrap;
+}
+
+.import-preview-strategy-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.import-preview-strategy-row label {
+  font-size: 13px;
+  color: var(--fg-2);
+  white-space: nowrap;
+}
+
+.import-preview-warning {
+  padding: 10px 12px;
+  border: 1px solid rgba(var(--primary-rgb), 0.28);
+  border-radius: 12px;
+  background: rgba(var(--primary-rgb), 0.08);
+  color: var(--text);
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .import-preview-list {

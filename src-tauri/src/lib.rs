@@ -6,6 +6,7 @@
 //! 继续跑在前端 renderer，后端只暴露 I/O 和系统集成的原子能力。
 
 mod config_history;
+mod env_config_store;
 mod fs_access;
 mod mcp_servers_store;
 mod official_accounts;
@@ -75,6 +76,14 @@ pub fn run() {
             // MCP 服务器存储
             mcp_servers_store::init_mcp_servers_store,
             mcp_servers_store::migrate_mcp_from_json,
+            // 环境级配置存储（Provider / Model）
+            env_config_store::init_env_config_store,
+            env_config_store::get_env_config,
+            env_config_store::save_env_config,
+            env_config_store::delete_env_config,
+            env_config_store::export_all_env_configs,
+            env_config_store::import_all_env_configs,
+            env_config_store::migrate_env_config_from_toml,
             // Kimi 官方账号槽位
             official_accounts::init_official_accounts_store,
             official_accounts::list_official_accounts,
