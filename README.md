@@ -2,7 +2,7 @@
 
 面向 `kimi-code-cli` 的桌面配置工作台。它把 Provider、Model、Profile、MCP、Skills、快捷键、备份和面板偏好集中到一个可视化界面里，减少手写 TOML / JSON 配置的风险。
 
-![总览](docs/images/总览.png)
+![总览](docs/images/overview.png)
 
 ## 为什么需要它
 
@@ -16,11 +16,17 @@
 
 ## 核心页面
 
-### Profiles
+### 总览
 
-管理不同工作场景下的默认模型、Thinking、YOLO、Plan Mode、Thinking Stream 和 Skills 合并策略。激活 Profile 后会同步更新 `kimi-code-cli` 主配置。
+进入应用后的首页，集中展示当前激活配置的运行时概览：默认模型、Thinking / YOLO / Plan Mode 等开关状态、配置文件路径，以及 Profile、Provider、Model 列表的快速入口。顶部还提供 Kimi Code 环境切换、语言和外观模式切换。
 
-![Profiles](docs/images/Profiles.png)
+![总览](docs/images/overview.png)
+
+### 模型配置 · Profile
+
+`模型配置` 分组下的 Profile 页用于管理不同工作场景下的默认模型、Thinking、YOLO、Plan Mode、Thinking Stream 和 Skills 合并策略。激活 Profile 后会同步更新 `kimi-code-cli` 主配置。
+
+![Profile](docs/images/profile.png)
 
 常用能力：
 
@@ -28,50 +34,53 @@
 - 一键激活 Profile。
 - 测试当前 Profile 连通性。
 - 在顶部“当前激活”区域直接用已激活 Profile 打开 Kimi。
-- 在 Profiles 列表行悬浮后，可用被点击的 Profile 打开 Kimi，不会改变当前激活状态。
+- 在列表行悬浮后，可用被点击的 Profile 打开 Kimi，不会改变当前激活状态。
 
-### Providers
+### 模型配置 · 提供商
 
 集中维护所有模型供应方，例如 Kimi 官方 API、OpenAI 兼容网关、内部代理或其他兼容服务。
 
-![Providers](docs/images/Providers.png)
+![提供商](docs/images/providers.png)
 
 常用能力：
 
 - 配置 Provider 类型、Base URL 和 API Key。
 - 支持新增、克隆、删除和重命名。
+- 支持启用 / 禁用：禁用的 Provider 不会写入 Kimi Code 配置文件，但仍保留在应用中。
 - 删除前检查是否仍被 Model 引用。
 
-### Models
+### 模型配置 · 模型
 
 将模型定义从 Provider 中拆出来独立维护，便于多个 Profile 复用同一模型。
 
-![Models](docs/images/Models.png)
+![模型](docs/images/models.png)
 
 常用能力：
 
-- 配置 Provider、模型 ID、上下文长度和能力标签。
+- 配置 Provider、模型 ID、上下文长度、能力标签和定价。
 - 自动维护模型命名规则。
+- 支持启用 / 禁用：仅「自身启用且其 Provider 也启用」的模型才会写入配置文件。
 - 删除前检查是否仍被 Profile 或当前默认模型引用。
 
 ### MCP
 
-可视化维护 `~/.kimi/mcp.json`，支持远程 MCP 和本地命令式 MCP。
+可视化维护 `~/.kimi-code/mcp.json`，支持远程 MCP 和本地命令式 MCP。
 
-![MCP](docs/images/MCP.png)
+![MCP](docs/images/mcp.png)
 
 常用能力：
 
 - 支持 `streamable-http`、`sse`、`stdio`。
 - 支持导入 MCP JSON。
-- 支持测试连接、触发授权、重置授权。
+- 支持工具解析、入参表单和测试连接、触发授权、重置授权。
 - 支持 headers、command、args、env 等配置。
+- 支持启用 / 禁用：禁用的 MCP 不会写入配置文件。
 
 ### Skills
 
 扫描本机 Skills 来源，查看启用状态、覆盖关系和具体内容。
 
-![Skills](docs/images/Skills.png)
+![Skills](docs/images/skills.png)
 
 常用能力：
 
@@ -80,20 +89,35 @@
 - 列表模式会根据可视区域自动分页。
 - 可查看 Skill 内容、路径来源和覆盖关系。
 
-### 设置
+### 洞察
 
-设置页收纳界面偏好、快捷键、备份、配置体检等全局能力。
+按 Kimi Code 环境采集并展示用量数据，包含总览、趋势、分组统计和会话四个维度。
 
-![设置](docs/images/设置.png)
+![洞察](docs/images/insights.png)
 
 常用能力：
 
+- 总览：调用次数、Token 量、缓存命中率、推理 Token、平均延迟、错误率和预估花费。
+- 趋势：按小时 / 天 / 周分桶，可按 Profile / Model / Provider 分组。
+- 分组统计与会话：按维度排序查看 Token、调用、错误、延迟和缓存命中。
+- 支持显示币种换算、按天保留清理和磁盘占用告警。
+
+### 设置
+
+设置页收纳 Kimi Code 实例与环境、界面偏好、快捷键、备份、配置体检等全局能力。
+
+![设置](docs/images/settings.png)
+
+常用能力：
+
+- Kimi Code 实例检测、官方账号登录、多环境托管（创建 / 复制 / 激活 / 删除）。
 - 语言、外观模式、主题配色、字体大小。
 - 状态栏图标、关闭按钮行为、启动显示器策略。
 - 终端应用选择：系统终端或 iTerm2。
 - 全局快捷键和窗口内快捷键录制、启停、冲突提示。
 - 本地 / WebDAV 备份，支持手动、定时、修改后备份。
 - 配置体检，发现缺失引用、风险配置和路径问题。
+- 配置的全量导出与导入（覆盖所有环境，含真实密钥，可完整还原）。
 
 ## 配置文件
 
