@@ -15,13 +15,7 @@ src-tauri/gen
 *.tsbuildinfo
 
 # Workflow runtime files
-.workflow/.maestro/
-.workflow/.scratchpad/
-.workflow/.team/
-.workflow/scratch/
-.workflow/state.json
-.workflow/wiki-index.json
-.workflow/specs/.hit-log.jsonl
+.workflow/*
 
 # Workflow runtime files in src/
 src/.workflow/spec-analytics.jsonl
