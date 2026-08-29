@@ -110,6 +110,7 @@ describe("useAppPersistence", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+    vi.useRealTimers();
   });
 
   it("establishes the snapshot baseline before returning but defers heavier startup work", async () => {
@@ -174,7 +175,7 @@ describe("useAppPersistence", () => {
     // 快照基线在 loadState 返回前同步建立（关闭外部变更检测被绕过的窗口）。
     expect(captureSnapshot).toHaveBeenCalled();
     expect(setFileSnapshot).toHaveBeenCalledWith(baselineSnapshot);
-    // 较重的后加载任务在后台串行执行：refreshSkills 永不 resolve，其后的备份基线
+    // 较重的后加载任务在后台执行：refreshSkills 永不 resolve，其后的备份基线
     // 不会被触达，证明这些任务不阻塞首屏 loadState 的返回。
     expect(initBackupBaseline).not.toHaveBeenCalled();
   });
@@ -225,5 +226,55 @@ describe("useAppPersistence", () => {
     expect(saveStateSafe).toHaveBeenCalledWith(expect.any(Object), {
       expectedSnapshot: latestSnapshot,
     });
+  });
+
+  it("coalesces consecutive persistence requests into the latest state", async () => {
+    vi.useFakeTimers();
+    const first = createState();
+    const latest = createState();
+    latest.activeProfile = "latest";
+    latest.panelSettings.active_profile = "latest";
+    latest.mainConfig.default_thinking = false;
+    const saveStateSafe = vi.fn().mockResolvedValue({ ok: true });
+    const previewState = vi.fn().mockResolvedValue({});
+    vi.stubGlobal("kimiSwitch", { saveStateSafe, previewState });
+
+    const { result } = renderHook(() => useAppPersistence({
+      state: latest,
+      savedState: first,
+      locale: "zh-CN",
+      setState: vi.fn(),
+      setSavedState: vi.fn(),
+      setPreview: vi.fn(),
+      setError: vi.fn(),
+      setNotice: vi.fn(),
+      setDiagnostics: vi.fn(),
+      fileSnapshot: null,
+      setFileSnapshot: vi.fn(),
+      setDoctorReport: vi.fn(),
+      confirmExternalOverwrite: vi.fn(),
+      refreshPreview: vi.fn(),
+      refreshSkills: vi.fn(),
+      currentSelections: { provider: "", model: "", profile: "", mcpServer: "" },
+      setSelectedProvider: vi.fn(),
+      setSelectedModel: vi.fn(),
+      setSelectedProfile: vi.fn(),
+      setSelectedMcpServer: vi.fn(),
+    }));
+
+    let firstRequest: Promise<void>;
+    let latestRequest: Promise<void>;
+    act(() => {
+      firstRequest = result.current.persistState(first);
+      latestRequest = result.current.persistState(latest);
+    });
+    expect(saveStateSafe).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+      await Promise.all([firstRequest, latestRequest]);
+    });
+    expect(saveStateSafe).toHaveBeenCalledTimes(1);
+    expect(saveStateSafe.mock.calls[0]?.[0].mainConfig.default_thinking).toBe(false);
   });
 });

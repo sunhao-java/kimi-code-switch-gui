@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { MutableRefObject } from "react";
 
@@ -67,6 +67,10 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     setSelectedMcpServer,
   } = ctx;
 
+  const pendingPersistRef = useRef<AppState | null>(null);
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const persistWaitersRef = useRef<Array<() => void>>([]);
+
   useEffect(() => {
     const onKimiTargetDetection = (event: Event): void => {
       const detection = (event as CustomEvent<AppState["kimiTargetDetection"]>).detail;
@@ -89,29 +93,29 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
   const runPostLoadTasks = useCallback((normalized: AppState, api: NonNullable<ReturnType<typeof getApi>>): void => {
     void (async () => {
       const startedAt = startupTimingNow();
-      try {
-        if (api.runDoctor) {
-          const doctorStartedAt = startupTimingNow();
-          const doctor = await api.runDoctor(normalized);
-          recordStartupTiming("useAppPersistence.runDoctor", doctorStartedAt);
+      // doctor 与 skills 互不依赖，并行执行以缩短启动后的后台准备时间。
+      const doctorTask = api.runDoctor
+        ? (async () => {
+          const taskStartedAt = startupTimingNow();
+          const doctor = await api.runDoctor!(normalized);
+          recordStartupTiming("useAppPersistence.runDoctor", taskStartedAt);
           setDoctorReport(doctor);
-        }
-      } catch (err) {
-        setDiagnostics((current) => ({
-          ...current,
-          lastError: err instanceof Error ? err.message : String(err),
-        }));
-      }
-
-      try {
-        const skillsStartedAt = startupTimingNow();
+        })()
+        : Promise.resolve();
+      const skillsTask = (async () => {
+        const taskStartedAt = startupTimingNow();
         await refreshSkills(normalized, { silent: true });
-        recordStartupTiming("useAppPersistence.refreshSkills", skillsStartedAt);
-      } catch (err) {
-        setDiagnostics((current) => ({
-          ...current,
-          lastError: err instanceof Error ? err.message : String(err),
-        }));
+        recordStartupTiming("useAppPersistence.refreshSkills", taskStartedAt);
+      })();
+      const taskResults = await Promise.allSettled([doctorTask, skillsTask]);
+      for (const result of taskResults) {
+        if (result.status === "rejected") {
+          const err = result.reason;
+          setDiagnostics((current) => ({
+            ...current,
+            lastError: err instanceof Error ? err.message : String(err),
+          }));
+        }
       }
 
       try {
@@ -227,7 +231,7 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     setState,
   ]);
 
-  const persistState = useCallback(async (nextState: AppState): Promise<void> => {
+  const persistStateNow = useCallback(async (nextState: AppState): Promise<void> => {
     const api = getApi();
     if (!api) {
       const message = "Electron preload API is unavailable. Save operation cannot continue.";
@@ -299,6 +303,52 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     setState,
   ]);
 
+  // 普通编辑采用尾部 debounce，连续修改只落盘最后一个状态；需要立即落盘的
+  // 删除、环境切换等操作仍通过 persistImmediateState 执行，不受此队列影响。
+  const persistState = useCallback((nextState: AppState): Promise<void> => {
+    pendingPersistRef.current = nextState;
+    if (persistTimerRef.current) {
+      clearTimeout(persistTimerRef.current);
+    }
+    const promise = new Promise<void>((resolve) => {
+      persistWaitersRef.current.push(resolve);
+    });
+    persistTimerRef.current = setTimeout(() => {
+      persistTimerRef.current = null;
+      const pending = pendingPersistRef.current;
+      pendingPersistRef.current = null;
+      if (!pending) {
+        const waiters = persistWaitersRef.current.splice(0);
+        waiters.forEach((resolve) => resolve());
+        return;
+      }
+      void persistStateNow(pending).finally(() => {
+        const waiters = persistWaitersRef.current.splice(0);
+        waiters.forEach((resolve) => resolve());
+      });
+    }, 150);
+    return promise;
+  }, [persistStateNow]);
+
+  const flushPendingPersist = useCallback(async (): Promise<void> => {
+    if (persistTimerRef.current) {
+      clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
+    }
+    const pending = pendingPersistRef.current;
+    pendingPersistRef.current = null;
+    if (pending) {
+      await persistStateNow(pending);
+    }
+    const waiters = persistWaitersRef.current.splice(0);
+    waiters.forEach((resolve) => resolve());
+  }, [persistStateNow]);
+
+  useEffect(() => () => {
+    // 组件卸载（例如窗口关闭）时仍把最后一次编辑写入磁盘，避免 debounce 丢失。
+    void flushPendingPersist();
+  }, [flushPendingPersist]);
+
   const onSave = useCallback(async (): Promise<void> => {
     if (!state) {
       return;
@@ -330,6 +380,7 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     nextVisibleState: AppState,
     nextSavedStateOverride?: AppState,
   ): Promise<void> => {
+    await flushPendingPersist();
     const api = getApi();
     if (!api) {
       const message = "Electron preload API is unavailable. Save operation cannot continue.";
@@ -419,6 +470,7 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     setPreview,
     setSavedState,
     setState,
+    flushPendingPersist,
   ]);
 
   const restoreSavedState = useCallback((nextSavedState: AppState): void => {
