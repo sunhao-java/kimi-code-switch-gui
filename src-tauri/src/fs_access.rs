@@ -287,8 +287,47 @@ pub fn write_text(path: String, content: String) -> Result<(), String> {
                 .map_err(|e| format!("ensure parent {}: {}", parent.display(), e))?;
         }
     }
-    std::fs::write(&resolved, content)
-        .map_err(|e| format!("write_text {}: {}", resolved.display(), e))
+
+    // 先写入同目录临时文件，再替换目标，避免进程中断时留下半写入配置。
+    // 临时文件放在同一目录可确保 rename 保持原子性（Unix）且不跨设备。
+    let parent = resolved
+        .parent()
+        .ok_or_else(|| format!("write_text {}: missing parent", resolved.display()))?;
+    let file_name = resolved
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("write_text {}: invalid file name", resolved.display()))?;
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let temp_path = parent.join(format!(".{file_name}.tmp-{}-{nonce}", std::process::id()));
+    let write_result = (|| -> Result<(), std::io::Error> {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&temp_path)?;
+        file.write_all(content.as_bytes())?;
+        file.sync_all()?;
+        drop(file);
+
+        // Unix rename 覆盖目标是原子的；Windows 需要先删除目标再重命名。
+        if let Err(rename_error) = std::fs::rename(&temp_path, &resolved) {
+            if cfg!(windows) && resolved.exists() {
+                std::fs::remove_file(&resolved)?;
+                std::fs::rename(&temp_path, &resolved)?;
+            } else {
+                return Err(rename_error);
+            }
+        }
+        Ok(())
+    })();
+    if write_result.is_err() {
+        let _ = std::fs::remove_file(&temp_path);
+    }
+    write_result.map_err(|e| format!("write_text {}: {}", resolved.display(), e))
 }
 
 /// 递归创建目录。
