@@ -29,7 +29,7 @@ import {
 } from "./dialogs";
 import { t } from "./i18n";
 import { McpImportDialog, formatMessage } from "./tabComponents";
-import { SummaryCard } from "./overviewDashboard";
+import { SummaryCard } from "./summaryCard";
 import { TopbarControls } from "./topbarControls";
 import { ToastContainer } from "./Toast";
 import { useToast } from "./useToast";

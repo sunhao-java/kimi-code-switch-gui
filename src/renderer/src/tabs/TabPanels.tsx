@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Activity, Braces, Bug, CircleCheckBig, Copy, Download, ExternalLink, FileInput, FolderOpen, History, LoaderCircle, LogIn, Plus, Power, RefreshCw, RotateCcw, Save, Star, Terminal, Trash2, Upload, X } from "lucide-react";
 import { applyProfile, cloneProfile, createDefaultKimiCodeEnvironment, deleteModel, deleteProfile, deleteProvider, fullBackupContainsRedactedSecrets, getKimiCodeConfigPath, getKimiCodeMcpConfigPath, getKimiCodeSkillsPath, getKimiCodeEnvironmentHomePath, normalizeKimiCodeEnvironments, setModelEnabled, setProviderEnabled, toggleFavorite, validateFullBackup, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
@@ -44,11 +44,8 @@ import { useDialogEscape, useFocusTrap } from "../dialogs";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { CompactSelect, Field, FontSizeSliderField, SelectField, SettingsGroup, ShortcutRecorderField } from "../formControls";
 import { t, translateError } from "../i18n";
-import { InsightsSettingsPanel, InsightsDashboard } from "../insightsComponents";
 import { EmptyState, SplitLayout } from "../layoutComponents";
 import { ProviderHealthBanner } from "../providerHealthBanner";
-import { OverviewDashboard } from "../overviewDashboard";
-import { SkillsWorkspace } from "../skillsWorkspace";
 import type { KimiOAuthLoginEvent, ProviderHealthResult } from "../tauri/cli";
 import type { AppContext } from "./appContext";
 import {
@@ -56,6 +53,24 @@ import {
   SecretField, PathField, createCopyName, createLocalizedCopyName, createDefaultMcpServer,
   formatMessage, formatSkillPathLabel, renderSkillPathLabel, DoctorDriftList, McpJsonViewerDialog,
 } from "../tabComponents";
+
+// 洞察页面依赖较多图表与数据访问逻辑，仅在用户打开时加载。
+const InsightsDashboard = lazy(async () => {
+  const module = await import("../insightsComponents");
+  return { default: module.InsightsDashboard };
+});
+const InsightsSettingsPanel = lazy(async () => {
+  const module = await import("../insightsComponents");
+  return { default: module.InsightsSettingsPanel };
+});
+const OverviewDashboard = lazy(async () => {
+  const module = await import("../overviewDashboard");
+  return { default: module.OverviewDashboard };
+});
+const SkillsWorkspace = lazy(async () => {
+  const module = await import("../skillsWorkspace");
+  return { default: module.SkillsWorkspace };
+});
 
 type TabPanelsProps = Pick<
   AppContext,
@@ -773,20 +788,22 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
       <>
         <div className={isSplitLayoutTab ? "tab-panel-shell tab-panel-shell-split" : "tab-panel-shell"}>
         {activeTab === "overview" ? (
-          <OverviewDashboard
-            state={state}
-            locale={locale}
-            diagnostics={diagnostics}
-            onActivateProfile={(name) =>
-              updateState((draft) => {
-                applyProfile(draft, name);
-              }, {
-                persist: true,
-                historySummary: formatMessage(t(locale, "historyActivateProfile"), { name }),
-              })
-            }
-            onNavigate={(tab) => runAfterUnsavedHandled(() => setActiveTab(tab))}
-          />
+          <Suspense fallback={<LoaderCircle size={24} className="button-spinner" aria-label={t(locale, "loading")} />}>
+            <OverviewDashboard
+              state={state}
+              locale={locale}
+              diagnostics={diagnostics}
+              onActivateProfile={(name) =>
+                updateState((draft) => {
+                  applyProfile(draft, name);
+                }, {
+                  persist: true,
+                  historySummary: formatMessage(t(locale, "historyActivateProfile"), { name }),
+                })
+              }
+              onNavigate={(tab) => runAfterUnsavedHandled(() => setActiveTab(tab))}
+            />
+          </Suspense>
         ) : null}
 
         {activeTab === "providers" ? (
@@ -1553,29 +1570,33 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               );
             }}
           >
-            <SkillsWorkspace
-              locale={locale}
-              report={skillsReport}
-              selectedPath={selectedSkillPathData}
-              visibleSkills={visibleSkillEntries}
-              selectedSkill={selectedSkillData}
-              viewMode={skillsViewMode}
-              onViewModeChange={setSkillsViewMode}
-              onSelectSkill={setSelectedSkill}
-              isLoading={isSkillsLoading}
-            />
+            <Suspense fallback={<LoaderCircle size={24} className="button-spinner" aria-label={t(locale, "loading")} />}>
+              <SkillsWorkspace
+                locale={locale}
+                report={skillsReport}
+                selectedPath={selectedSkillPathData}
+                visibleSkills={visibleSkillEntries}
+                selectedSkill={selectedSkillData}
+                viewMode={skillsViewMode}
+                onViewModeChange={setSkillsViewMode}
+                onSelectSkill={setSelectedSkill}
+                isLoading={isSkillsLoading}
+              />
+            </Suspense>
           </SplitLayout>
         ) : null}
 
         {activeTab === "insights" ? (
-          <InsightsDashboard
-            locale={locale}
-            onStateChange={() => void loadState()}
-            onOpenSettings={() => runAfterUnsavedHandled(() => {
-              setActiveSettingsSubTab("insights");
-              setActiveTab("settings");
-            })}
-          />
+          <Suspense fallback={<LoaderCircle size={24} className="button-spinner" aria-label={t(locale, "loading")} />}>
+            <InsightsDashboard
+              locale={locale}
+              onStateChange={() => void loadState()}
+              onOpenSettings={() => runAfterUnsavedHandled(() => {
+                setActiveSettingsSubTab("insights");
+                setActiveTab("settings");
+              })}
+            />
+          </Suspense>
         ) : null}
 
         {activeTab === "settings" ? (
@@ -2412,7 +2433,9 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               </SettingsGroup>
             ) : null}
             {activeSettingsSubTab === "insights" ? (
-              <InsightsSettingsPanel locale={locale} onStateChange={() => void loadState()} />
+              <Suspense fallback={<LoaderCircle size={20} className="button-spinner" aria-label={t(locale, "loading")} />}>
+                <InsightsSettingsPanel locale={locale} onStateChange={() => void loadState()} />
+              </Suspense>
             ) : null}
           </section>
           </SplitLayout>
