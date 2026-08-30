@@ -32,7 +32,15 @@ import { compareReleaseVersions } from "@shared/versionUtils";
 import { computeEventCost, resolveModelPricing } from "@shared/pricing";
 import type { AppState, FullBackupBundle, KimiCodeEnvironment, KimiCodeEnvironmentPreferenceResult, ManagedFileId, ModelConfig, PanelSettings, PreviewBundle, OpenKimiTerminalRequest, FileSnapshotBundle, SaveStateConflictResult, SaveStateResult } from "@shared/types";
 
-import { tauriFileAccess, pathExists, ensureKimiCodeEnvironmentLayout, activateKimiCodeEnvironmentLink } from "./fileAccess";
+import {
+  activateKimiCodeEnvironmentLink,
+  ensureDir,
+  ensureKimiCodeEnvironmentLayout,
+  moveFile,
+  pathExists,
+  removeFile,
+  tauriFileAccess,
+} from "./fileAccess";
 import * as usageDb from "./usageDb";
 import { UsageLogWatcher } from "./usageLogWatcher";
 import * as cli from "./cli";
@@ -40,6 +48,7 @@ import { openKimiInTerminal, openSessionTerminal } from "./terminal";
 import { captureSnapshotForState, detectExternalChangeConflict, readManagedDocuments } from "./fileSnapshots";
 import { initConfigHistory, captureSnapshot, cleanupOldSnapshots } from "./configHistory";
 import { getPanelSettings, initPanelSettingsStore, savePanelSettings } from "./panelSettingsStore";
+import { exportAllEnvConfigs, importAllEnvConfigs, initEnvConfigStore } from "./envConfigStore";
 import * as backup from "./backup";
 import { setupTray, teardownTray } from "./tray";
 import * as officialAccounts from "./officialAccounts";
@@ -327,7 +336,6 @@ function ensureStoresInitialized(): Promise<void> {
       // 迁移旧数据库文件到独立 GUI 目录，避免和 Kimi Code 运行时数据混在一起。
       const oldDbPaths = ["~/.kimi-code/.panel/app.db", "~/.kimi/app.db"];
       const newDbPath = USAGE_DB_PATH;
-      const { pathExists, ensureDir, moveFile, removeFile } = await import("./fileAccess");
       try {
         await ensureDir(PANEL_APP_DIR);
         for (const oldDbPath of oldDbPaths) {
@@ -353,7 +361,6 @@ function ensureStoresInitialized(): Promise<void> {
       await initPanelSettingsStore();
       const { initMcpServersStore } = await import("./mcpServersStore");
       await initMcpServersStore();
-      const { initEnvConfigStore } = await import("./envConfigStore");
       await initEnvConfigStore();
       await officialAccounts.initOfficialAccountsStore();
     })();
@@ -960,12 +967,10 @@ export const kimiSwitchTauri = {
 
   // ── 全量导出/导入（所有环境的 Provider/Model/MCP/Profile + 全局面板设置）──
   exportFullBackup: async (state: AppState): Promise<FullBackupBundle> => {
-    const { exportAllEnvConfigs } = await import("./envConfigStore");
     const allEnvConfigs = await exportAllEnvConfigs();
     return buildFullBackup(state, allEnvConfigs);
   },
   importFullBackup: async (bundle: FullBackupBundle): Promise<AppState> => {
-    const { importAllEnvConfigs } = await import("./envConfigStore");
     // 1) 写回各环境的 Provider/Model 到 DB（先清空再整体写入）
     await importAllEnvConfigs(extractEnvConfigsFromBackup(bundle));
     // 2) 写回面板设置（含每个环境的 MCP/Profile 快照）到 SQLite

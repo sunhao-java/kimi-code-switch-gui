@@ -1,9 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { Activity, Braces, Bug, CircleCheckBig, Copy, Download, ExternalLink, FileInput, FolderOpen, History, LoaderCircle, LogIn, Plus, Power, RefreshCw, RotateCcw, Save, Star, Terminal, Trash2, Upload } from "lucide-react";
-import { applyProfile, cloneProfile, createDefaultKimiCodeEnvironment, deleteModel, deleteProfile, deleteProvider, fullBackupContainsRedactedSecrets, getKimiCodeConfigPath, getKimiCodeMcpConfigPath, getKimiCodeSkillsPath, getKimiCodeEnvironmentHomePath, normalizeKimiCodeEnvironments, setModelEnabled, setProviderEnabled, toggleFavorite, validateFullBackup, upsertModel, upsertProfile, upsertProvider } from "@shared/configStore";
-import { buildMcpConfigDocument } from "@shared/mcpStore";
-import { buildModelName, ensureUniqueEntryName, normalizeEntryName } from "@shared/nameRules";
-import { getCascadePreview } from "@shared/configRelations";
+import { Bug, CircleCheckBig, Download, ExternalLink, FolderOpen, History, LoaderCircle, LogIn, Plus, Power, RefreshCw, RotateCcw, Save, Trash2, Upload } from "lucide-react";
+import { applyProfile, createDefaultKimiCodeEnvironment, fullBackupContainsRedactedSecrets, getKimiCodeConfigPath, getKimiCodeMcpConfigPath, getKimiCodeSkillsPath, getKimiCodeEnvironmentHomePath, normalizeKimiCodeEnvironments, validateFullBackup } from "@shared/configStore";
 import {
   formatAcceleratorForPlatform,
   getBrowserShortcutPlatform,
@@ -31,7 +28,7 @@ import type {
 } from "@shared/types";
 
 import { AboutPage } from "../aboutPage";
-import { getApi, getMcpAction, getMcpActionNotice, getResourceLabel, createUniqueName, renameModelInState, renameProviderInState } from "../appHelpers";
+import { getApi } from "../appHelpers";
 import {
   APPEARANCE_THEME_OPTIONS,
   BACKUP_DESTINATION_OPTIONS, BACKUP_FREQUENCY_OPTIONS, BACKUP_STRATEGY_OPTIONS,
@@ -41,9 +38,10 @@ import { useDialogEscape, useFocusTrap } from "../dialogs";
 import { ErrorBoundary } from "../ErrorBoundary";
 import { CompactSelect, Field, FontSizeSliderField, SelectField, SettingsGroup, ShortcutRecorderField } from "../formControls";
 import { t, translateError } from "../i18n";
-import { EmptyState, SplitLayout } from "../layoutComponents";
-import { ProviderHealthBanner } from "../providerHealthBanner";
+import { SplitLayout } from "../layoutComponents";
 import type { KimiOAuthLoginEvent, ProviderHealthResult } from "../tauri/cli";
+import { getEnvConfig, saveEnvConfig } from "../tauri/envConfigStore";
+import { copyDir, removeDir } from "../tauri/fileAccess";
 import type { AppContext } from "./appContext";
 import {
   CreateKimiCodeEnvironmentDialog,
@@ -53,9 +51,7 @@ import {
   HistoryPanel,
 } from "./tabPanelOverlays";
 import {
-  ProviderForm, ModelForm, ProfileForm, McpServerForm,
-  SecretField, PathField, createCopyName, createLocalizedCopyName, createDefaultMcpServer,
-  formatMessage, formatSkillPathLabel, renderSkillPathLabel, McpJsonViewerDialog,
+  SecretField, PathField, formatMessage, formatSkillPathLabel, renderSkillPathLabel,
 } from "../tabComponents";
 
 // 洞察页面依赖较多图表与数据访问逻辑，仅在用户打开时加载。
@@ -76,7 +72,25 @@ const SkillsWorkspace = lazy(async () => {
   return { default: module.SkillsWorkspace };
 });
 
-type TabPanelsProps = Pick<
+const ProvidersTab = lazy(async () => {
+  const module = await import("./providersTab");
+  return { default: module.ProvidersTab };
+});
+const ModelsTab = lazy(async () => {
+  const module = await import("./modelsTab");
+  return { default: module.ModelsTab };
+});
+
+const ProfilesTab = lazy(async () => {
+  const module = await import("./profilesTab");
+  return { default: module.ProfilesTab };
+});
+const McpTab = lazy(async () => {
+  const module = await import("./mcpTab");
+  return { default: module.McpTab };
+});
+
+export type TabPanelsProps = Pick<
   AppContext,
   | "state"
   | "activeTab"
@@ -420,7 +434,6 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
         ? kimiCodeEnvironments.find((environment) => environment.id === draft.sourceEnvironmentId)
         : undefined;
       if (sourceEnvironment) {
-        const { copyDir } = await import("../tauri/fileAccess");
         await copyDir(sourceEnvironment.homePath, homePath);
       }
       const sourceSnapshot = sourceEnvironment?.id === activeKimiCodeEnvironment.id
@@ -434,7 +447,6 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
       // Provider/Model 以 SQLite 为唯一真源：复制环境时必须显式复制 DB 行，
       // 否则新环境的 env_config 为空（copyDir 只搬运文件投影，不含 DB）。
       if (sourceEnvironment) {
-        const { getEnvConfig, saveEnvConfig } = await import("../tauri/envConfigStore");
         let providers = sourceSnapshot?.mainConfig?.providers;
         let models = sourceSnapshot?.mainConfig?.models;
         // 来源非激活环境：内存快照可能为空，回退读取来源环境的 DB 行。
@@ -554,7 +566,6 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
         ? (next[0]?.id ?? "default")
         : activeKimiCodeEnvironment.id;
       await saveKimiCodeEnvironments(next, nextActiveId);
-      const { removeDir } = await import("../tauri/fileAccess");
       await removeDir(environment.homePath);
       setNotice(t(locale, "kimiCodeEnvironmentDeleted"));
     })().catch((error) => setError(error instanceof Error ? error.message : String(error)));
@@ -587,10 +598,6 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
       actions: SHORTCUT_ACTIONS.filter((definition) => definition.scope === "window"),
     },
   ];
-  // 空状态检查
-  const hasProviders = Object.keys(state.mainConfig.providers).length > 0;
-  const hasModels = Object.keys(state.mainConfig.models).length > 0;
-
   const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>("kimi-code");
   const [kimiCodeSubTab, setKimiCodeSubTab] = useState<KimiCodeSubTab>("instance");
   const [fullBackupImportDialog, setFullBackupImportDialog] = useState<{ open: boolean; data: FullBackupBundle | null; envCount: number; hasRedactedSecrets: boolean }>({ open: false, data: null, envCount: 0, hasRedactedSecrets: false });
@@ -699,43 +706,6 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     })().catch((error) => setError(error instanceof Error ? error.message : String(error)));
   };
 
-  const runProvidersHealthCheck = (): void => {
-    const api = getApi();
-    if (!api || typeof api.runProvidersHealthCheck !== "function" || isProviderHealthChecking) {
-      return;
-    }
-    setIsProviderHealthChecking(true);
-    void Promise.resolve(api.runProvidersHealthCheck(state))
-      .then((results) => setProviderHealthResults(results))
-      .catch(() => setProviderHealthResults([]))
-      .finally(() => {
-        setIsProviderHealthChecking(false);
-        // key++ 让提示条重挂载以重置自动关闭计时；open=true 重新展示。
-        setProviderHealthBannerKey((key) => key + 1);
-        setProviderHealthBannerOpen(true);
-      });
-  };
-
-  const providerHealthReasonLabel = (result: ProviderHealthResult): string => {
-    switch (result.reason) {
-      case "ok":
-        return result.latencyMs != null
-          ? `${t(locale, "providerHealthOk")} · ${result.latencyMs}ms`
-          : t(locale, "providerHealthOk");
-      case "no-model":
-        return t(locale, "providerHealthNoModel");
-      case "missing-base-url":
-        return t(locale, "providerHealthMissingBaseUrl");
-      case "missing-api-key":
-        return t(locale, "providerHealthMissingApiKey");
-      case "rate-limited":
-        return t(locale, "providerHealthRateLimited");
-      case "http-error":
-        return formatMessage(t(locale, "providerHealthHttpError"), { status: result.status ?? 0 });
-      default:
-        return t(locale, "providerHealthNetworkError");
-    }
-  };
   const settingsSubTabs: Array<{ id: SettingsSubTab; label: string; description: string }> = [
     {
       id: "kimi-code",
@@ -804,716 +774,41 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
         ) : null}
 
         {activeTab === "providers" ? (
-          <SplitLayout
-            headerActions={
-              <button
-                className={isProviderHealthChecking ? "action-button compact icon-only is-loading" : "action-button compact icon-only"}
-                type="button"
-                disabled={isProviderHealthChecking || providerEntries.length === 0}
-                aria-label={t(locale, "providerHealthCheck")}
-                title={t(locale, "providerHealthCheck")}
-                onClick={runProvidersHealthCheck}
-              >
-                {isProviderHealthChecking ? <LoaderCircle size={15} className="button-spinner" /> : <Activity size={15} />}
-              </button>
-            }
-            listBanner={
-              providerHealthBannerOpen && providerHealthResults ? (
-                <ProviderHealthBanner
-                  key={providerHealthBannerKey}
-                  results={providerHealthResults}
-                  emptyLabel={t(locale, "providerHealthEmpty")}
-                  failLabel={t(locale, "providerHealthFail")}
-                  reasonLabel={providerHealthReasonLabel}
-                  closeLabel={t(locale, "close")}
-                  onClose={() => setProviderHealthBannerOpen(false)}
-                />
-              ) : null
-            }
-            listTitle={t(locale, "providers")}
-            listItems={providerEntries.map(([name]) => name)}
-            dirtyItems={dirtyProviders}
-            dirtyLabel={t(locale, "editedBadge")}
-            selectedItem={selectedProviderName}
-            itemClassName={(name) =>
-              state.mainConfig.providers[name]?.enabled === false ? "provider-list-row disabled" : "provider-list-row"
-            }
-            renderItemAction={(name) => {
-              const provider = state.mainConfig.providers[name];
-              if (!provider) return null;
-              const isEnabled = provider.enabled !== false;
-              return (
-                <button
-                  className={isEnabled ? "list-toggle-button" : "list-toggle-button disabled"}
-                  type="button"
-                  aria-label={isEnabled ? t(locale, "disableProvider") : t(locale, "enableProvider")}
-                  title={isEnabled ? t(locale, "disableProvider") : t(locale, "enableProvider")}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    updateState((draft) => {
-                      setProviderEnabled(draft, name, !isEnabled);
-                    }, {
-                      historySummary: formatMessage(
-                        t(locale, isEnabled ? "historyDisableProvider" : "historyEnableProvider"),
-                        { name },
-                      ),
-                    });
-                  }}
-                >
-                  <Power size={15} />
-                </button>
-              );
-            }}
-            onSelect={(item) => setSelectedProvider(item)}
-            copyLabel={t(locale, "clone")}
-            onCopy={(name) =>
-              updateState((draft) => {
-                const provider = draft.mainConfig.providers[name];
-                if (!provider) return;
-                const copyName = createCopyName(name, draft.mainConfig.providers);
-                draft.mainConfig.providers[copyName] = { ...provider };
-                setSelectedProvider(copyName);
-              }, {
-                persist: false,
-                recordHistory: true,
-                historySummary: formatMessage(t(locale, "historyCloneProvider"), { name }),
-              })
-            }
-            addLabel={t(locale, "newProvider")}
-            addButtonClassName="action-button compact icon-only"
-            addButtonTitle={t(locale, "newProvider")}
-            addButtonContent={<Plus size={15} />}
-            onAdd={() =>
-              updateState((draft) => {
-                const name = createUniqueName("provider", Object.keys(draft.mainConfig.providers));
-                upsertProvider(draft, name, {
-                  type: "kimi",
-                  base_url: "https://api.example.com/v1",
-                  api_key: "",
-                });
-                setSelectedProvider(name);
-              }, {
-                persist: false,
-                recordHistory: true,
-                historySummary: formatMessage(t(locale, "historyNewProvider"), { name }),
-              })
-            }
-          >
-            {selectedProviderData ? (
-              <ProviderForm
-                locale={locale}
-                name={selectedProviderName}
-                nameEditable={isProviderNameEditable}
-                value={selectedProviderData}
-                onChange={(name, patch) =>
-                  updateState((draft) => {
-                    const currentName = selectedProviderName;
-                    const currentProvider = draft.mainConfig.providers[currentName];
-                    if (!currentProvider) return;
-                    const nextProvider = { ...currentProvider, ...patch };
-                    const nextName = isProviderNameEditable
-                      ? renameProviderInState(draft, currentName, name, nextProvider)
-                      : currentName;
-
-                    if (!isProviderNameEditable) {
-                      draft.mainConfig.providers[currentName] = nextProvider;
-                    }
-                    setSelectedProvider(nextName);
-                  }, { persist: false })
-                }
-                onSave={() => void onSave()}
-                onDelete={() => {
-                  void (async () => {
-                    // 有引用时弹级联删除对话框（影响预览 + 一并删除/仅删此项）；无引用直接确认删除
-                    const impact = getCascadePreview(state, { type: "provider", name: selectedProviderName });
-                    if (impact.affectedModels.length > 0 || impact.affectedProfiles.length > 0) {
-                      onRequestCascadeDelete("provider", selectedProviderName);
-                      return;
-                    }
-                    if (!(await confirmDeleteResource(getResourceLabel(locale, "provider"), selectedProviderName))) return;
-                    updateState((draft) => {
-                      deleteProvider(draft, selectedProviderName);
-                      setSelectedProvider(Object.keys(draft.mainConfig.providers)[0] ?? "");
-                    }, {
-                      historySummary: formatMessage(t(locale, "historyDeleteProvider"), { name: selectedProviderName }),
-                    });
-                  })();
-                }}
-              />
-            ) : (
-              <EmptyState locale={locale} />
-            )}
-          </SplitLayout>
+          <Suspense fallback={<LoaderCircle size={24} className="button-spinner" aria-label={t(locale, "loading")} />}>
+            <ProvidersTab
+              {...props}
+              providerHealthResults={providerHealthResults}
+              setProviderHealthResults={setProviderHealthResults}
+              isProviderHealthChecking={isProviderHealthChecking}
+              setIsProviderHealthChecking={setIsProviderHealthChecking}
+              providerHealthBannerOpen={providerHealthBannerOpen}
+              setProviderHealthBannerOpen={setProviderHealthBannerOpen}
+              providerHealthBannerKey={providerHealthBannerKey}
+              setProviderHealthBannerKey={setProviderHealthBannerKey}
+            />
+          </Suspense>
         ) : null}
 
         {activeTab === "models" ? (
-          <SplitLayout
-            listTitle={t(locale, "models")}
-            listItems={modelEntries.map(([name]) => name)}
-            dirtyItems={dirtyModels}
-            dirtyLabel={t(locale, "editedBadge")}
-            selectedItem={selectedModelName}
-            itemClassName={(name) => {
-              const model = state.mainConfig.models[name];
-              if (!model) return null;
-              const providerEnabled = state.mainConfig.providers[model.provider]?.enabled !== false;
-              return model.enabled === false || !providerEnabled ? "disabled" : null;
-            }}
-            renderItemAction={(name) => {
-              const model = state.mainConfig.models[name];
-              if (!model) return null;
-              const providerEnabled = state.mainConfig.providers[model.provider]?.enabled !== false;
-              const isEnabled = model.enabled !== false;
-              const title = !providerEnabled
-                ? t(locale, "modelProviderDisabled")
-                : isEnabled ? t(locale, "disableModel") : t(locale, "enableModel");
-              return (
-                <button
-                  className={isEnabled && providerEnabled ? "list-toggle-button" : "list-toggle-button disabled"}
-                  type="button"
-                  disabled={!providerEnabled}
-                  aria-label={title}
-                  title={title}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    if (!providerEnabled) return;
-                    updateState((draft) => {
-                      setModelEnabled(draft, name, !isEnabled);
-                    }, {
-                      historySummary: formatMessage(
-                        t(locale, isEnabled ? "historyDisableModel" : "historyEnableModel"),
-                        { name },
-                      ),
-                    });
-                  }}
-                >
-                  <Power size={15} />
-                </button>
-              );
-            }}
-            onSelect={(item) => setSelectedModel(item)}
-            copyLabel={t(locale, "clone")}
-            onCopy={(name) =>
-              updateState((draft) => {
-                const model = draft.mainConfig.models[name];
-                if (!model) return;
-                const copyModelId = createUniqueName(`${model.model}-copy`, Object.values(draft.mainConfig.models)
-                  .filter((entry) => entry.provider === model.provider)
-                  .map((entry) => entry.model));
-                const copyName = buildModelName(model.provider, copyModelId);
-                draft.mainConfig.models[copyName] = {
-                  ...model,
-                  model: copyModelId,
-                  capabilities: [...model.capabilities],
-                };
-                setSelectedModel(copyName);
-              }, {
-                persist: false,
-                recordHistory: true,
-                historySummary: formatMessage(t(locale, "historyCloneModel"), { name }),
-              })
-            }
-            addLabel={t(locale, "newModel")}
-            addButtonClassName="action-button compact icon-only"
-            addButtonTitle={!hasProviders ? t(locale, "tooltipAddProviderFirst") : t(locale, "newModel")}
-            addButtonContent={<Plus size={15} />}
-            addButtonDisabled={!hasProviders}
-            onAdd={() =>
-              updateState((draft) => {
-                const providerName = Object.keys(draft.mainConfig.providers)[0];
-                if (!providerName) {
-                  throw new Error(t(locale, "errorCreateProviderFirst"));
-                }
-                const modelId = createUniqueName(
-                  "new-model",
-                  Object.values(draft.mainConfig.models)
-                    .filter((model) => model.provider === providerName)
-                    .map((model) => model.model),
-                );
-                const name = buildModelName(providerName, modelId);
-                upsertModel(draft, name, {
-                  provider: providerName,
-                  model: modelId,
-                  max_context_size: 128000,
-                  capabilities: [],
-                });
-                setSelectedModel(name);
-              }, {
-                persist: false,
-                recordHistory: true,
-                historySummary: formatMessage(t(locale, "historyNewModel"), { name }),
-              })
-            }
-          >
-            {selectedModelData ? (
-              <ModelForm
-                locale={locale}
-                providers={Object.keys(state.mainConfig.providers)}
-                officialAccounts={officialAccounts}
-                activeOfficialAccountId={state.panelSettings.active_official_account_id}
-                name={selectedModelName}
-                value={selectedModelData}
-                onChange={(_name, patch) =>
-                  updateState((draft) => {
-                    const currentName = selectedModelName;
-                    const currentModel = draft.mainConfig.models[currentName];
-                    if (!currentModel) return;
-                    const nextModel = {
-                      ...currentModel,
-                      ...patch,
-                      provider: normalizeEntryName(patch.provider ?? currentModel.provider),
-                      model: normalizeEntryName(patch.model ?? currentModel.model),
-                    };
-                    if (nextModel.auth_mode !== "official-account") {
-                      delete nextModel.official_account_scope;
-                    }
-                    const nextName = renameModelInState(draft, currentName, nextModel);
-                    setSelectedModel(nextName);
-                  }, { persist: false })
-                }
-                onSave={() => void onSave()}
-                onDelete={() => {
-                  void (async () => {
-                    // 有引用时弹级联删除对话框；无引用直接确认删除
-                    const impact = getCascadePreview(state, { type: "model", name: selectedModelName });
-                    if (impact.affectedProfiles.length > 0) {
-                      onRequestCascadeDelete("model", selectedModelName);
-                      return;
-                    }
-                    if (!(await confirmDeleteResource(getResourceLabel(locale, "model"), selectedModelName))) return;
-                    updateState((draft) => {
-                      deleteModel(draft, selectedModelName);
-                      setSelectedModel(Object.keys(draft.mainConfig.models)[0] ?? "");
-                    }, {
-                      historySummary: formatMessage(t(locale, "historyDeleteModel"), { name: selectedModelName }),
-                    });
-                  })();
-                }}
-              />
-            ) : (
-              <EmptyState locale={locale} />
-            )}
-          </SplitLayout>
+          <Suspense fallback={<LoaderCircle size={24} className="button-spinner" aria-label={t(locale, "loading")} />}>
+            <ModelsTab {...props} officialAccounts={officialAccounts} />
+          </Suspense>
         ) : null}
 
         {activeTab === "profiles" ? (
-          <SplitLayout
-            hideList
-            listTitle={t(locale, "profiles")}
-            listItems={profileEntries.map(([name]) => name)}
-            dirtyItems={dirtyProfiles}
-            dirtyLabel={t(locale, "editedBadge")}
-            selectedItem={selectedProfileName}
-            highlightedItem={state.activeProfile}
-            renderItemLabel={(name) => {
-              const profile = state.profiles[name];
-              const displayName = profile?.label?.trim() || name;
-              return (
-                <span className="list-label-stack">
-                  <strong>{displayName}</strong>
-                  <small>{name}</small>
-                </span>
-              );
-            }}
-            itemTitle={(name) => state.profiles[name]?.label?.trim() || name}
-            itemClassName={() => "profile-list-row"}
-            onSelect={(item) => setSelectedProfile(item)}
-            addLabel={t(locale, "newProfile")}
-            addButtonClassName="action-button compact icon-only"
-            addButtonTitle={!hasModels ? t(locale, "tooltipAddModelFirst") : t(locale, "newProfile")}
-            addButtonContent={<Plus size={15} />}
-            addButtonDisabled={!hasModels}
-            onAdd={() =>
-              updateState((draft) => {
-                const firstModel = Object.keys(draft.mainConfig.models)[0];
-                if (!firstModel) {
-                  throw new Error(t(locale, "errorCreateModelFirst"));
-                }
-                const name = createUniqueName("profile", Object.keys(draft.profiles));
-                upsertProfile(draft, {
-                  name,
-                  label: t(locale, "newProfileLabel"),
-                  default_model: firstModel,
-                  default_thinking: true,
-                  default_yolo: false,
-                  default_plan_mode: false,
-                  default_editor: "",
-                  theme: "dark",
-                  show_thinking_stream: false,
-                  merge_all_available_skills: false,
-                });
-                setSelectedProfile(name);
-              }, {
-                persist: false,
-                recordHistory: true,
-                historySummary: formatMessage(t(locale, "historyNewProfile"), { name }),
-              })
-            }
-            renderItemAction={(name) =>
-              (
-                <span className="list-row-action-set profile-actions">
-                  <span className="list-hover-actions">
-                    <button
-                      className={state.panelSettings.favorites?.profiles?.includes(name) ? "list-toggle-button active" : "list-toggle-button"}
-                      type="button"
-                      aria-label={state.panelSettings.favorites?.profiles?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
-                      title={state.panelSettings.favorites?.profiles?.includes(name) ? t(locale, "favoriteRemove") : t(locale, "favoriteAdd")}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        const isFavorite = state.panelSettings.favorites?.profiles?.includes(name) ?? false;
-                        updateImmediateState((draft) => { toggleFavorite(draft, "profile", name); }, {
-                          recordHistory: true,
-                          historySummary: formatMessage(
-                            t(locale, isFavorite ? "historyUnfavoriteProfile" : "historyFavoriteProfile"),
-                            { name },
-                          ),
-                        });
-                      }}
-                    >
-                      <Star size={14} fill={state.panelSettings.favorites?.profiles?.includes(name) ? "currentColor" : "none"} />
-                    </button>
-                    <button
-                      className="list-copy-button"
-                      type="button"
-                      aria-label={`${t(locale, "clone")} ${name}`}
-                      title={t(locale, "clone")}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        updateState((draft) => {
-                          const profile = draft.profiles[name];
-                          if (!profile) return;
-                          const copyName = createLocalizedCopyName(name, draft.profiles, t(locale, "copySuffix"));
-                          cloneProfile(draft, name, copyName, `${profile.label} ${t(locale, "copySuffix")}`);
-                          setSelectedProfile(copyName);
-                        }, {
-                          persist: false,
-                          recordHistory: true,
-                          historySummary: formatMessage(t(locale, "historyCloneProfile"), { name }),
-                        });
-                      }}
-                    >
-                      <Copy size={15} />
-                    </button>
-                    <button
-                      className="list-terminal-button"
-                      type="button"
-                      aria-label={t(locale, "openInTerminal")}
-                      title={t(locale, "openInTerminal")}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void openKimiInTerminal(name);
-                      }}
-                    >
-                      <Terminal size={15} />
-                    </button>
-                  </span>
-                  {name === state.activeProfile ? (
-                    <span className="list-current-badge" aria-label={t(locale, "summaryActive")} title={t(locale, "summaryActive")}>
-                      {t(locale, "active")}
-                    </span>
-                  ) : (
-                    <span className="list-hover-actions">
-                      <button
-                        className="list-activate-button"
-                        type="button"
-                        aria-label={`${t(locale, "activate")} ${name}`}
-                        title={t(locale, "activate")}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          updateState((draft) => {
-                            applyProfile(draft, name);
-                          }, {
-                            historySummary: formatMessage(t(locale, "historyActivateProfile"), { name }),
-                          });
-                        }}
-                      >
-                        {t(locale, "activate")}
-                      </button>
-                    </span>
-                  )}
-                </span>
-              )
-            }
-          >
-            {selectedProfileData ? (
-              <ProfileForm
-                locale={locale}
-                models={Object.keys(state.mainConfig.models)}
-                name={selectedProfileName}
-                nameEditable={isProfileNameEditable}
-                value={selectedProfileData}
-                isActive={selectedProfileName === state.activeProfile}
-                isTesting={profileTestingName === selectedProfileName}
-                onChange={(name, nextProfile) =>
-                  updateState((draft) => {
-                    const currentName = selectedProfileName;
-                    const normalizedName = isProfileNameEditable
-                      ? ensureUniqueEntryName({
-                          kind: "Profile",
-                          name,
-                          currentName,
-                          existingNames: Object.keys(draft.profiles),
-                        })
-                      : currentName;
-                    const normalizedProfile = {
-                      ...nextProfile,
-                      default_editor: "",
-                      theme: "dark",
-                    };
-                    const nextProfiles = { ...draft.profiles };
-                    delete nextProfiles[currentName];
-                    nextProfiles[normalizedName] = { ...normalizedProfile, name: normalizedName };
-                    if (draft.activeProfile === currentName) {
-                      draft.activeProfile = normalizedName;
-                    }
-                    draft.profiles = nextProfiles;
-                    setSelectedProfile(normalizedName);
-                  }, { persist: false })
-                }
-                onSave={() => void onSave()}
-                onTest={async (modelName) => {
-                  const api = getApi();
-                  if (!api || typeof api.testProfileConnectivity !== "function") {
-                    setNotice("");
-                    throw new Error(t(locale, "profileRuntimeOutdated"));
-                  }
-                  try {
-                    setProfileTestingName(selectedProfileName);
-                    const result = await api.testProfileConnectivity(state, selectedProfileName, modelName);
-                    setError("");
-                    setNotice("");
-                    return result;
-                  } catch (testError) {
-                    const message = testError instanceof Error ? testError.message : String(testError);
-                    const translatedMessage = translateError(locale, message);
-                    setNotice("");
-                    throw new Error(translatedMessage);
-                  } finally {
-                    setProfileTestingName("");
-                  }
-                }}
-                onActivate={() =>
-                  updateState((draft) => {
-                    applyProfile(draft, selectedProfileName);
-                  }, {
-                    historySummary: formatMessage(t(locale, "historyActivateProfile"), { name: selectedProfileName }),
-                  })
-                }
-                onClone={() =>
-                  updateState((draft) => {
-                    const source = selectedProfileName;
-                    cloneProfile(draft, source, `${source}-copy`, `${selectedProfileData.label} ${t(locale, "copySuffix")}`);
-                    setSelectedProfile(`${source}-copy`);
-                  }, {
-                    persist: false,
-                    recordHistory: true,
-                    historySummary: formatMessage(t(locale, "historyCloneProfile"), { name: selectedProfileName }),
-                  })
-                }
-                onDelete={() => {
-                  void (async () => {
-                    if (!(await confirmDeleteResource(getResourceLabel(locale, "profile"), selectedProfileName))) return;
-                    updateState((draft) => {
-                      deleteProfile(draft, selectedProfileName);
-                      setSelectedProfile(Object.keys(draft.profiles)[0] ?? "");
-                    }, {
-                      historySummary: formatMessage(t(locale, "historyDeleteProfile"), { name: selectedProfileName }),
-                    });
-                  })();
-                }}
-              />
-            ) : (
-              <EmptyState locale={locale} />
-            )}
-          </SplitLayout>
+          <Suspense fallback={<LoaderCircle size={24} className="button-spinner" aria-label={t(locale, "loading")} />}>
+            <ProfilesTab {...props} />
+          </Suspense>
         ) : null}
 
         {activeTab === "mcp" ? (
-          <SplitLayout
-            listTitle={t(locale, "mcpServers")}
-            listItems={mcpEntries.map(([name]) => name)}
-            dirtyItems={dirtyMcpServers}
-            dirtyLabel={t(locale, "editedBadge")}
-            selectedItem={selectedMcpServerName}
-            onSelect={(item) => setSelectedMcpServer(item)}
-            addLabel={t(locale, "newMcpServer")}
-            onAdd={() =>
-              updateState((draft) => {
-                const name = createUniqueName("mcp", Object.keys(draft.mcpConfig.mcpServers));
-                draft.mcpConfig.mcpServers[name] = createDefaultMcpServer();
-                setSelectedMcpServer(name);
-              }, {
-                persist: false,
-                recordHistory: true,
-                historySummary: formatMessage(t(locale, "historyNewMcpServer"), { name }),
-              })
-            }
-            headerActions={
-              <>
-                <button
-                  className="action-button compact icon-only"
-                  type="button"
-                  aria-label={t(locale, "mcpViewFullJson")}
-                  title={t(locale, "mcpViewFullJson")}
-                  onClick={() => setIsMcpJsonViewerOpen(true)}
-                >
-                  <Braces size={15} />
-                </button>
-                <button
-                  className="action-button compact icon-only"
-                  type="button"
-                  aria-label={t(locale, "importMcpJson")}
-                  title={t(locale, "importMcpJson")}
-                  onClick={() => {
-                    const initialDraft = t(locale, "mcpImportPlaceholder");
-                    setIsMcpImportOpen(true);
-                    setMcpImportDraft(initialDraft);
-                    setMcpImportInitialDraft(initialDraft);
-                  }}
-                >
-                  <FileInput size={15} />
-                </button>
-              </>
-            }
-            addButtonClassName="action-button compact icon-only"
-            addButtonTitle={t(locale, "newMcpServer")}
-            addButtonContent={<Plus size={15} />}
-            itemClassName={(name) =>
-              state.mcpConfig.mcpServers[name]?.enabled === false ? "disabled" : null
-            }
-            renderItemAction={(name) => {
-              const server = state.mcpConfig.mcpServers[name];
-              if (!server) {
-                return null;
-              }
-              return (
-                <>
-                  <button
-                    className={server.enabled ? "list-toggle-button" : "list-toggle-button disabled"}
-                    type="button"
-                    aria-label={server.enabled ? t(locale, "disableMcp") : t(locale, "enableMcp")}
-                    title={server.enabled ? t(locale, "disableMcp") : t(locale, "enableMcp")}
-                    onClick={() =>
-                      updateState((draft) => {
-                        const target = draft.mcpConfig.mcpServers[name];
-                        if (!target) return;
-                        target.enabled = !target.enabled;
-                      }, {
-                        historySummary: formatMessage(
-                          t(locale, server.enabled ? "historyDisableMcpServer" : "historyEnableMcpServer"),
-                          { name },
-                        ),
-                      })
-                    }
-                  >
-                    <Power size={15} />
-                  </button>
-                  <button
-                    className="list-delete-button"
-                    type="button"
-                    aria-label={`${t(locale, "delete")} ${name}`}
-                    title={t(locale, "delete")}
-                    onClick={() => {
-                      void (async () => {
-                        if (!(await confirmDeleteResource(getResourceLabel(locale, "mcp"), name))) return;
-                        updateState((draft) => {
-                          delete draft.mcpConfig.mcpServers[name];
-                          if (selectedMcpServer === name) {
-                            setSelectedMcpServer(Object.keys(draft.mcpConfig.mcpServers)[0] ?? "");
-                          }
-                        }, {
-                          historySummary: formatMessage(t(locale, "historyDeleteMcpServer"), { name }),
-                        });
-                      })();
-                    }}
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </>
-              );
-            }}
-          >
-            <div className="mcp-workspace">
-              {selectedMcpServerData ? (
-                <McpServerForm
-                  locale={locale}
-                  name={selectedMcpServerName}
-                  nameEditable={isMcpServerNameEditable}
-                  value={selectedMcpServerData}
-                  isTesting={mcpTestingName === selectedMcpServerName}
-                  onRunAction={async (action, serverName) => {
-                    const api = getApi();
-                    const runAction = getMcpAction(api, action);
-                    if (!api) {
-                      setError("Electron preload API is unavailable. MCP command cannot continue.");
-                      return;
-                    }
-                    if (!runAction) {
-                      setNotice("");
-                      setError(t(locale, "mcpRuntimeOutdated"));
-                      return;
-                    }
-                    try {
-                      if (action === "test") {
-                        setMcpTestingName(serverName);
-                      }
-                      await persistState(state);
-                      await runAction(serverName);
-                      setError("");
-                      setNotice(getMcpActionNotice(locale, action));
-                    } catch (commandError) {
-                      const message = commandError instanceof Error ? commandError.message : String(commandError);
-                      setNotice("");
-                      setError(translateError(locale, message));
-                    } finally {
-                      if (action === "test") {
-                        setMcpTestingName("");
-                      }
-                    }
-                  }}
-                  onChange={(name, nextServer) =>
-                    updateState((draft) => {
-                      const currentName = selectedMcpServerName;
-                      const normalizedName = isMcpServerNameEditable
-                        ? ensureUniqueEntryName({
-                            kind: "MCP server",
-                            name,
-                            currentName,
-                            existingNames: Object.keys(draft.mcpConfig.mcpServers),
-                          })
-                        : currentName;
-                      const nextServers = { ...draft.mcpConfig.mcpServers };
-                      delete nextServers[currentName];
-                      nextServers[normalizedName] = nextServer;
-                      draft.mcpConfig.mcpServers = nextServers;
-                      setSelectedMcpServer(normalizedName);
-                    }, { persist: false })
-                  }
-                  onSave={() => void onSave()}
-                  onDelete={() => {
-                    void (async () => {
-                      if (!(await confirmDeleteResource(getResourceLabel(locale, "mcp"), selectedMcpServerName))) return;
-                      updateState((draft) => {
-                        delete draft.mcpConfig.mcpServers[selectedMcpServerName];
-                        setSelectedMcpServer(Object.keys(draft.mcpConfig.mcpServers)[0] ?? "");
-                      }, {
-                        historySummary: formatMessage(t(locale, "historyDeleteMcpServer"), { name: selectedMcpServerName }),
-                      });
-                    })();
-                  }}
-                />
-              ) : (
-                <EmptyState locale={locale} />
-              )}
-              {isMcpJsonViewerOpen ? (
-                <McpJsonViewerDialog
-                  locale={locale}
-                  value={buildMcpConfigDocument(state.mcpConfig)}
-                  onClose={() => setIsMcpJsonViewerOpen(false)}
-                />
-              ) : null}
-            </div>
-          </SplitLayout>
+          <Suspense fallback={<LoaderCircle size={24} className="button-spinner" aria-label={t(locale, "loading")} />}>
+            <McpTab
+              {...props}
+              isMcpJsonViewerOpen={isMcpJsonViewerOpen}
+              setIsMcpJsonViewerOpen={setIsMcpJsonViewerOpen}
+            />
+          </Suspense>
         ) : null}
 
         {activeTab === "skills" ? (

@@ -51,8 +51,7 @@ export async function savePanelSettings(settings: PanelSettings): Promise<boolea
   // （迁移逻辑：若 TOML 存在，重命名为 .migrated）
   try {
     const tomlPath = "~/.kimi/config.panel.toml";
-    const { pathExists } = await import("./fileAccess");
-    if (await pathExists(tomlPath)) {
+    if (await invoke<boolean>("path_exists", { path: tomlPath })) {
       await invoke("migrate_panel_settings_from_toml", {
         tomlPath,
         settingsJson: json,

@@ -14,7 +14,7 @@ export const tauriFileAccess: FileAccess = {
     await invoke("write_text", { path, content });
   },
   async ensureDir(path: string): Promise<void> {
-    await invoke("ensure_dir", { path });
+    await ensureDir(path);
   },
   async readPanelSettings(_path: string): Promise<PanelSettings | null> {
     // 忽略 path 参数，直接从 SQLite 读取（单行存储）
@@ -31,6 +31,10 @@ export const tauriFileAccess: FileAccess = {
     await saveEnvConfig(environmentId, data);
   },
 };
+
+export async function ensureDir(path: string): Promise<void> {
+  await invoke("ensure_dir", { path });
+}
 
 export async function removeFile(path: string): Promise<void> {
   await invoke("remove_file", { path });
