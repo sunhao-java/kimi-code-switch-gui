@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { LoaderCircle, RefreshCw } from "lucide-react";
 import { applyProfile, createDefaultKimiCodeEnvironment, getKimiCodeEnvironmentHomePath, normalizeKimiCodeEnvironments } from "@shared/configStore";
 import {
@@ -335,12 +335,18 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     loadState,
     shortcuts,
   } = props;
-  const shortcutConflicts = getShortcutConflicts(shortcuts);
+  const shortcutConflicts = useMemo(() => getShortcutConflicts(shortcuts), [shortcuts]);
   const shortcutPlatform = getBrowserShortcutPlatform();
-  const shortcutConflictActions = new Set(shortcutConflicts.flatMap((conflict) => conflict.actions));
-  const shortcutLabels = Object.fromEntries(
-    SHORTCUT_ACTIONS.map((definition) => [definition.action, labelForLocale(definition.label, locale)]),
-  ) as Record<ShortcutAction, string>;
+  const shortcutConflictActions = useMemo(
+    () => new Set(shortcutConflicts.flatMap((conflict) => conflict.actions)),
+    [shortcutConflicts],
+  );
+  const shortcutLabels = useMemo(
+    () => Object.fromEntries(
+      SHORTCUT_ACTIONS.map((definition) => [definition.action, labelForLocale(definition.label, locale)]),
+    ) as Record<ShortcutAction, string>,
+    [locale],
+  );
   const [kimiCodeOAuthLogin, setKimiCodeOAuthLogin] = useState<KimiOAuthLoginState>({
     status: "idle",
     url: "",
@@ -380,12 +386,21 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
   const [environmentDrafts, setEnvironmentDrafts] = useState<Record<string, Pick<KimiCodeEnvironment, "name" | "homePath" | "description">>>({});
   const [createEnvironmentDraft, setCreateEnvironmentDraft] = useState<CreateEnvironmentDraft | null>(null);
   const [selectedKimiCodeEnvironmentId, setSelectedKimiCodeEnvironmentId] = useState<string | null>(null);
-  const kimiCodeEnvironments = normalizeKimiCodeEnvironments(state.panelSettings.kimi_code_environments);
-  const activeKimiCodeEnvironment = kimiCodeEnvironments.find((environment) => environment.id === state.panelSettings.active_kimi_code_environment_id)
-    ?? kimiCodeEnvironments[0]
-    ?? createDefaultKimiCodeEnvironment();
-  const selectedKimiCodeEnvironment = kimiCodeEnvironments.find((environment) => environment.id === selectedKimiCodeEnvironmentId)
-    ?? activeKimiCodeEnvironment;
+  const kimiCodeEnvironments = useMemo(
+    () => normalizeKimiCodeEnvironments(state.panelSettings.kimi_code_environments),
+    [state.panelSettings.kimi_code_environments],
+  );
+  const activeKimiCodeEnvironment = useMemo(
+    () => kimiCodeEnvironments.find((environment) => environment.id === state.panelSettings.active_kimi_code_environment_id)
+      ?? kimiCodeEnvironments[0]
+      ?? createDefaultKimiCodeEnvironment(),
+    [kimiCodeEnvironments, state.panelSettings.active_kimi_code_environment_id],
+  );
+  const selectedKimiCodeEnvironment = useMemo(
+    () => kimiCodeEnvironments.find((environment) => environment.id === selectedKimiCodeEnvironmentId)
+      ?? activeKimiCodeEnvironment,
+    [activeKimiCodeEnvironment, kimiCodeEnvironments, selectedKimiCodeEnvironmentId],
+  );
   const saveKimiCodeEnvironments = async (
     environments: KimiCodeEnvironment[],
     activeEnvironmentId = activeKimiCodeEnvironment.id,
@@ -585,7 +600,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
       </>
     );
   };
-  const shortcutGroups = [
+  const shortcutGroups = useMemo(() => [
     {
       scope: "global" as const,
       title: t(locale, "shortcutGlobalGroup"),
@@ -598,7 +613,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
       description: t(locale, "shortcutWindowDescription"),
       actions: SHORTCUT_ACTIONS.filter((definition) => definition.scope === "window"),
     },
-  ];
+  ], [locale]);
   const [activeSettingsSubTab, setActiveSettingsSubTab] = useState<SettingsSubTab>("kimi-code");
   const [kimiCodeSubTab, setKimiCodeSubTab] = useState<KimiCodeSubTab>("instance");
   const [fullBackupImportDialog, setFullBackupImportDialog] = useState<{ open: boolean; data: FullBackupBundle | null; envCount: number; hasRedactedSecrets: boolean }>({ open: false, data: null, envCount: 0, hasRedactedSecrets: false });

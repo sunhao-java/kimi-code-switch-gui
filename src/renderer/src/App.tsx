@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { AlertTriangle, ChevronDown, ChevronsLeft, ChevronsRight, RefreshCw, Terminal, X } from "lucide-react";
 
@@ -112,19 +112,31 @@ export function App(): JSX.Element {
     runDoctor,
     openBackupRecords, deleteBackupRecord, restoreBackupRecord,
   } = app;
-  const shortcuts = normalizeShortcuts(state.panelSettings.shortcuts);
+  const shortcuts = useMemo(
+    () => normalizeShortcuts(state.panelSettings.shortcuts),
+    [state.panelSettings.shortcuts],
+  );
   const shortcutPlatform = getBrowserShortcutPlatform();
-  const tabShortcutLabels = createTabShortcutLabels(shortcuts, shortcutPlatform);
+  const tabShortcutLabels = useMemo(
+    () => createTabShortcutLabels(shortcuts, shortcutPlatform),
+    [shortcuts, shortcutPlatform],
+  );
   const isSidebarCollapsed = state.panelSettings.sidebar_collapsed;
-  const kimiCodeEnvironments = normalizeKimiCodeEnvironments(state.panelSettings.kimi_code_environments);
+  const kimiCodeEnvironments = useMemo(
+    () => normalizeKimiCodeEnvironments(state.panelSettings.kimi_code_environments),
+    [state.panelSettings.kimi_code_environments],
+  );
   const activeKimiCodeEnvironmentId = state.panelSettings.active_kimi_code_environment_id
     ?? kimiCodeEnvironments[0]?.id
     ?? "default";
-  const environmentOptions = kimiCodeEnvironments.map((environment: KimiCodeEnvironment) => ({
-    value: environment.id,
-    label: environment.name || environment.id,
-    description: environment.description || environment.id,
-  }));
+  const environmentOptions = useMemo(
+    () => kimiCodeEnvironments.map((environment: KimiCodeEnvironment) => ({
+      value: environment.id,
+      label: environment.name || environment.id,
+      description: environment.description || environment.id,
+    })),
+    [kimiCodeEnvironments],
+  );
   const toggleSidebar = useCallback(() => {
     updateImmediateState((draft) => {
       draft.panelSettings.sidebar_collapsed = !draft.panelSettings.sidebar_collapsed;
@@ -272,15 +284,21 @@ export function App(): JSX.Element {
   }, [activeTab]);
 
   const tabListRef = useRef<HTMLDivElement>(null);
-  const visibleTabItems = TAB_ITEMS.filter((item) => item.id !== "about");
-  const bottomTabItems = TAB_ITEMS.filter((item) => item.id === "about");
-  const profilesIdx = TAB_ITEMS.findIndex((i) => i.id === "profiles");
-  const mainTabIds = [
-    ...visibleTabItems.slice(0, profilesIdx + 1).map((i) => i.id),
-    ...ASSISTANT_SUB_ITEMS.map((i) => i.id),
-    ...visibleTabItems.slice(profilesIdx + 1).map((i) => i.id),
-    ...bottomTabItems.map((i) => i.id),
-  ];
+  const { visibleTabItems, bottomTabItems, mainTabIds } = useMemo(() => {
+    const visible = TAB_ITEMS.filter((item) => item.id !== "about");
+    const bottom = TAB_ITEMS.filter((item) => item.id === "about");
+    const profilesIdx = TAB_ITEMS.findIndex((item) => item.id === "profiles");
+    return {
+      visibleTabItems: visible,
+      bottomTabItems: bottom,
+      mainTabIds: [
+        ...visible.slice(0, profilesIdx + 1).map((item) => item.id),
+        ...ASSISTANT_SUB_ITEMS.map((item) => item.id),
+        ...visible.slice(profilesIdx + 1).map((item) => item.id),
+        ...bottom.map((item) => item.id),
+      ],
+    };
+  }, []);
 
   const focusTab = useCallback((tabId: string): void => {
     const button = document.getElementById(`tab-${tabId}`);
