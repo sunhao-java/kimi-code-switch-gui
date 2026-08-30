@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { AlertTriangle, ChevronDown, ChevronsLeft, ChevronsRight, RefreshCw, Terminal, X } from "lucide-react";
 
@@ -28,7 +28,7 @@ import {
   DocumentViewerDialog,
 } from "./dialogs";
 import { t } from "./i18n";
-import { McpImportDialog, formatMessage } from "./tabComponents";
+import { formatMessage } from "./tabComponents";
 import { SummaryCard } from "./summaryCard";
 import { TopbarControls } from "./topbarControls";
 import { ToastContainer } from "./Toast";
@@ -36,6 +36,11 @@ import { useToast } from "./useToast";
 import { getApi } from "./appHelpers";
 import logoLight from "./assets/logo-light.png";
 import logoDark from "./assets/logo-dark.png";
+
+const McpImportDialog = lazy(async () => {
+  const module = await import("./mcpImportDialog");
+  return { default: module.McpImportDialog };
+});
 
 export function App(): JSX.Element {
   const app = useAppHandlers();
@@ -711,43 +716,45 @@ export function App(): JSX.Element {
         />
       ) : null}
       {isMcpImportOpen ? (
-        <McpImportDialog
-          locale={locale}
-          value={mcpImportDraft}
-          onChange={setMcpImportDraft}
-          onCancel={requestCloseMcpImportDialog}
-          onImport={() => {
-            try {
-              const imported = parseMcpConfigStrict(mcpImportDraft);
-              const importedNames = Object.keys(imported.mcpServers);
-              if (!importedNames.length) {
+        <Suspense fallback={null}>
+          <McpImportDialog
+            locale={locale}
+            value={mcpImportDraft}
+            onChange={setMcpImportDraft}
+            onCancel={requestCloseMcpImportDialog}
+            onImport={() => {
+              try {
+                const imported = parseMcpConfigStrict(mcpImportDraft);
+                const importedNames = Object.keys(imported.mcpServers);
+                if (!importedNames.length) {
+                  setNotice("");
+                  setError(t(locale, "mcpImportInvalid"));
+                  return;
+                }
+
+                updateState((draft) => {
+                  draft.mcpConfig.mcpServers = {
+                    ...draft.mcpConfig.mcpServers,
+                    ...imported.mcpServers,
+                  };
+                }, {
+                  persist: false,
+                  recordHistory: true,
+                  historySummary: t(locale, "mcpImportApply"),
+                });
+                setSelectedMcpServer(importedNames[0] ?? "");
+
+                closeMcpImportDialog();
+                setError("");
+                setNotice(t(locale, "mcpImportSuccess"));
+              } catch (importError) {
+                const message = importError instanceof Error ? importError.message : String(importError);
                 setNotice("");
-                setError(t(locale, "mcpImportInvalid"));
-                return;
+                setError(`${t(locale, "mcpImportInvalid")} ${message}`);
               }
-
-              updateState((draft) => {
-                draft.mcpConfig.mcpServers = {
-                  ...draft.mcpConfig.mcpServers,
-                  ...imported.mcpServers,
-                };
-              }, {
-                persist: false,
-                recordHistory: true,
-                historySummary: t(locale, "mcpImportApply"),
-              });
-              setSelectedMcpServer(importedNames[0] ?? "");
-
-              closeMcpImportDialog();
-              setError("");
-              setNotice(t(locale, "mcpImportSuccess"));
-            } catch (importError) {
-              const message = importError instanceof Error ? importError.message : String(importError);
-              setNotice("");
-              setError(`${t(locale, "mcpImportInvalid")} ${message}`);
-            }
-          }}
-        />
+            }}
+          />
+        </Suspense>
       ) : null}
       {commandPaletteOpen ? (
         <CommandPalette
