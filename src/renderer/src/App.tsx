@@ -8,12 +8,8 @@ import type { SearchResult } from "@shared/configStore";
 import { parseMcpConfigStrict } from "@shared/mcpStore";
 import { formatAcceleratorForPlatform, getBrowserShortcutPlatform, normalizeShortcuts } from "@shared/shortcutStore";
 
-import { CommandPalette } from "./commandPalette";
-import { QuickProfileSwitcher } from "./quickProfileSwitcher";
 import { TabPanels } from "./tabs/TabPanels";
 import { ProfileCentricView } from "./views/ProfileCentricView";
-import { AddAssistantWizard } from "./wizards/AddAssistantWizard";
-import { CascadeDeleteDialog } from "./dialogs/CascadeDeleteDialog";
 import { getCascadePreview } from "@shared/configRelations";
 import type { CascadeImpact } from "@shared/configRelations";
 import { deleteProvider, deleteModel, deleteProfile } from "@shared/configStore";
@@ -40,6 +36,22 @@ import logoDark from "./assets/logo-dark.png";
 const McpImportDialog = lazy(async () => {
   const module = await import("./mcpImportDialog");
   return { default: module.McpImportDialog };
+});
+const CommandPalette = lazy(async () => {
+  const module = await import("./commandPalette");
+  return { default: module.CommandPalette };
+});
+const QuickProfileSwitcher = lazy(async () => {
+  const module = await import("./quickProfileSwitcher");
+  return { default: module.QuickProfileSwitcher };
+});
+const AddAssistantWizard = lazy(async () => {
+  const module = await import("./wizards/AddAssistantWizard");
+  return { default: module.AddAssistantWizard };
+});
+const CascadeDeleteDialog = lazy(async () => {
+  const module = await import("./dialogs/CascadeDeleteDialog");
+  return { default: module.CascadeDeleteDialog };
 });
 
 export function App(): JSX.Element {
@@ -757,43 +769,50 @@ export function App(): JSX.Element {
         </Suspense>
       ) : null}
       {commandPaletteOpen ? (
-        <CommandPalette
-          state={state}
-          locale={locale}
-          onSelect={handleCommandPaletteSelect}
-          onClose={() => setCommandPaletteOpen(false)}
-        />
+        <Suspense fallback={null}>
+          <CommandPalette
+            state={state}
+            locale={locale}
+            onSelect={handleCommandPaletteSelect}
+            onClose={() => setCommandPaletteOpen(false)}
+          />
+        </Suspense>
       ) : null}
       {quickSwitcherOpen ? (
-        <QuickProfileSwitcher
-          state={state}
-          locale={locale}
-          onActivate={handleQuickSwitchActivate}
-          onClose={() => setQuickSwitcherOpen(false)}
-        />
+        <Suspense fallback={null}>
+          <QuickProfileSwitcher
+            state={state}
+            locale={locale}
+            onActivate={handleQuickSwitchActivate}
+            onClose={() => setQuickSwitcherOpen(false)}
+          />
+        </Suspense>
       ) : null}
       {showWizard ? (
-        <AddAssistantWizard
-          locale={locale}
-          state={state}
-          onComplete={(updater, profileName) => {
-            updateState(updater, {
-              persist: true,
-              recordHistory: true,
-              historySummary: formatMessage(t(locale, "historyWizardCreate"), { name: profileName }),
-            });
-            setShowWizard(false);
-          }}
-          onCancel={() => setShowWizard(false)}
-        />
+        <Suspense fallback={null}>
+          <AddAssistantWizard
+            locale={locale}
+            state={state}
+            onComplete={(updater, profileName) => {
+              updateState(updater, {
+                persist: true,
+                recordHistory: true,
+                historySummary: formatMessage(t(locale, "historyWizardCreate"), { name: profileName }),
+              });
+              setShowWizard(false);
+            }}
+            onCancel={() => setShowWizard(false)}
+          />
+        </Suspense>
       ) : null}
       {cascadeTarget ? (
-        <CascadeDeleteDialog
-          locale={locale}
-          targetType={cascadeTarget.type}
-          targetName={cascadeTarget.name}
-          impact={cascadeTarget.impact}
-          onConfirm={(strategy) => {
+        <Suspense fallback={null}>
+          <CascadeDeleteDialog
+            locale={locale}
+            targetType={cascadeTarget.type}
+            targetName={cascadeTarget.name}
+            impact={cascadeTarget.impact}
+            onConfirm={(strategy) => {
             let newFirstProvider = "";
             let newFirstModel = "";
             let newFirstProfile = "";
@@ -826,9 +845,10 @@ export function App(): JSX.Element {
             setSelectedModel(newFirstModel);
             setSelectedProfile(newFirstProfile);
             setCascadeTarget(null);
-          }}
-          onCancel={() => setCascadeTarget(null)}
-        />
+            }}
+            onCancel={() => setCascadeTarget(null)}
+          />
+        </Suspense>
       ) : null}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
