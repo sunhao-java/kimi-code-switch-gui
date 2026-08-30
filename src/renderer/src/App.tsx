@@ -18,11 +18,6 @@ import { maybeRunScheduledBackup } from "./backupAuto";
 import { useShortcuts } from "./useShortcuts";
 import { TAB_ITEMS, LOCALE_OPTIONS, THEME_OPTIONS, ASSISTANT_SUB_ITEMS } from "./appOptions";
 import type { TabId } from "./appOptions";
-import {
-  BackupRecordsDialog,
-  ConfirmDialog,
-  DocumentViewerDialog,
-} from "./dialogs";
 import { t } from "./i18n";
 import { formatMessage } from "./tabComponents";
 import { SummaryCard } from "./summaryCard";
@@ -52,6 +47,18 @@ const AddAssistantWizard = lazy(async () => {
 const CascadeDeleteDialog = lazy(async () => {
   const module = await import("./dialogs/CascadeDeleteDialog");
   return { default: module.CascadeDeleteDialog };
+});
+const ConfirmDialog = lazy(async () => {
+  const module = await import("./dialogComponents");
+  return { default: module.ConfirmDialog };
+});
+const DocumentViewerDialog = lazy(async () => {
+  const module = await import("./dialogComponents");
+  return { default: module.DocumentViewerDialog };
+});
+const BackupRecordsDialog = lazy(async () => {
+  const module = await import("./dialogComponents");
+  return { default: module.BackupRecordsDialog };
 });
 
 export function App(): JSX.Element {
@@ -705,27 +712,33 @@ export function App(): JSX.Element {
         </div>
       </main>
       {confirmDialog ? (
-        <ConfirmDialog
-          {...confirmDialog}
-          onConfirm={() => closeConfirmDialog(true)}
-          onCancel={() => closeConfirmDialog(false)}
-        />
+        <Suspense fallback={null}>
+          <ConfirmDialog
+            {...confirmDialog}
+            onConfirm={() => closeConfirmDialog(true)}
+            onCancel={() => closeConfirmDialog(false)}
+          />
+        </Suspense>
       ) : null}
       {documentViewer ? (
-        <DocumentViewerDialog
-          locale={locale}
-          {...documentViewer}
-          onClose={() => setDocumentViewer(null)}
-        />
+        <Suspense fallback={null}>
+          <DocumentViewerDialog
+            locale={locale}
+            {...documentViewer}
+            onClose={() => setDocumentViewer(null)}
+          />
+        </Suspense>
       ) : null}
       {backupRecordsDialog ? (
-        <BackupRecordsDialog
-          locale={locale}
-          {...backupRecordsDialog}
-          onDelete={deleteBackupRecord}
-          onRestore={restoreBackupRecord}
-          onClose={() => setBackupRecordsDialog(null)}
-        />
+        <Suspense fallback={null}>
+          <BackupRecordsDialog
+            locale={locale}
+            {...backupRecordsDialog}
+            onDelete={deleteBackupRecord}
+            onRestore={restoreBackupRecord}
+            onClose={() => setBackupRecordsDialog(null)}
+          />
+        </Suspense>
       ) : null}
       {isMcpImportOpen ? (
         <Suspense fallback={null}>
