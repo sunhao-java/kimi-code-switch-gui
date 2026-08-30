@@ -4,6 +4,8 @@ export interface StartupTimingEntry {
   at: number;
 }
 
+const MAX_STARTUP_TIMING_ENTRIES = 100;
+
 function now(): number {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
 }
@@ -19,13 +21,10 @@ export function startupTimingNow(): number {
 export function recordStartupTiming(label: string, startedAt: number): number {
   const durationMs = Math.round((now() - startedAt) * 10) / 10;
   const sink = timingSink();
-  sink.__kimiStartupTimings = [
-    ...(sink.__kimiStartupTimings ?? []),
-    {
-      label,
-      durationMs,
-      at: Date.now(),
-    },
-  ];
+  const entries = sink.__kimiStartupTimings ?? (sink.__kimiStartupTimings = []);
+  entries.push({ label, durationMs, at: Date.now() });
+  if (entries.length > MAX_STARTUP_TIMING_ENTRIES) {
+    entries.splice(0, entries.length - MAX_STARTUP_TIMING_ENTRIES);
+  }
   return durationMs;
 }
