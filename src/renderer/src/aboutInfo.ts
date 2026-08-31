@@ -1,5 +1,5 @@
 export const ABOUT_INFO = {
-  version: "2.2.5",
+  version: "2.2.6",
   author: "Hulk Sun",
   license: "MIT",
   repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",

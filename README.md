@@ -313,7 +313,7 @@ npm run dist:win     # Windows nsis
 
 ## 当前版本
 
-- 应用版本：`2.2.5`
+- 应用版本：`2.2.6`
 - 变更记录：[CHANGELOG.md](CHANGELOG.md)（按语言分文件维护，详见 [`CHANGELOGS/`](CHANGELOGS/)）
 
 ## 参与开发

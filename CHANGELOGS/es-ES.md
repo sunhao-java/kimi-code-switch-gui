@@ -2,6 +2,17 @@
 
 Este archivo recoge los cambios relevantes del proyecto. El formato sigue Keep a Changelog y el proyecto adopta el esquema de versiones `major.minor.patch`.
 
+## [2.2.6] - 2026-08-31
+
+### Añadido
+
+- **Inicio de sesión de cuenta oficial cancelable**: el inicio de sesión mediante código de dispositivo de Kimi se puede cancelar mientras espera autorización, lo que finaliza el proceso local `kimi login`.
+
+### Corregido
+
+- **Limpieza del estado de inicio de sesión**: al cancelar el inicio de sesión de una cuenta oficial se borran de inmediato la URL de autorización, el código de usuario y el vencimiento para no conservar datos de autorización obsoletos.
+- **Estabilidad y flujo de UI**: se corrigió que acciones repetidas omitieran la confirmación de cambios sin guardar; se añadieron superposiciones de carga y recuperación de errores a los diálogos lazy, y la página Overview ya no depende del gran módulo About durante el inicio.
+
 ## [2.2.5] - 2026-06-17
 
 ### Cambiado

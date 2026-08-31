@@ -2,6 +2,17 @@
 
 This file records the project's notable changes. Format follows Keep a Changelog; the project uses `major.minor.patch` versioning.
 
+## [2.2.6] - 2026-08-31
+
+### Added
+
+- **Cancellable official-account login**: Kimi device-code login can now be cancelled while waiting for authorization, which terminates the local `kimi login` process.
+
+### Fixed
+
+- **Login state cleanup**: cancelling official-account login now immediately clears the authorization URL, user code, and expiry time so stale authorization details are not retained.
+- **Stability and UI flow**: fixed repeated actions bypassing the unsaved-changes confirmation; added loading overlays and error recovery for lazy dialogs; and removed the Overview page's startup dependency on the large About module.
+
 ## [2.2.5] - 2026-06-17
 
 ### Changed

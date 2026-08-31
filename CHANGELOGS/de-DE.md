@@ -2,6 +2,17 @@
 
 Diese Datei dokumentiert die wesentlichen Änderungen des Projekts. Das Format folgt Keep a Changelog; verwendet wird das `major.minor.patch`-Versionsschema.
 
+## [2.2.6] - 2026-08-31
+
+### Hinzugefügt
+
+- **Abbrechbare Anmeldung eines offiziellen Kontos**: Die Kimi-Device-Code-Anmeldung kann während des Wartens auf die Autorisierung abgebrochen werden; dadurch wird der lokale Prozess `kimi login` beendet.
+
+### Behoben
+
+- **Bereinigung des Anmeldestatus**: Beim Abbrechen der Anmeldung eines offiziellen Kontos werden Autorisierungs-URL, Benutzercode und Ablaufzeit sofort gelöscht, sodass keine veralteten Autorisierungsdaten verbleiben.
+- **Stabilität und UI-Ablauf**: Behoben wurde, dass wiederholte Aktionen während der Bestätigung ungespeicherter Änderungen die Bestätigung umgehen konnten; Lazy-Dialoge erhielten Lade-Overlays und Fehlerwiederherstellung, und die Overview-Seite lädt das große About-Modul nicht mehr beim Start.
+
 ## [2.2.5] - 2026-06-17
 
 ### Geändert
