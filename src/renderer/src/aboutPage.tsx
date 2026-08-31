@@ -11,6 +11,7 @@ import { MarkdownView } from "./markdownView";
 import { extractReleaseNotes, getBundledChangelog } from "./releaseNotes";
 import logoLight from "./assets/logo-light.png";
 import logoDark from "./assets/logo-dark.png";
+import "./aboutPage.css";
 
 type InstallSource = "homebrew" | "manual" | "development";
 type UpdateDialogPreviewKind = "error" | "available-homebrew" | "available-manual" | "current";
