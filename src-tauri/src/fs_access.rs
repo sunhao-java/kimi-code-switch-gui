@@ -313,11 +313,21 @@ pub fn write_text(path: String, content: String) -> Result<(), String> {
         file.sync_all()?;
         drop(file);
 
-        // Unix rename 覆盖目标是原子的；Windows 需要先删除目标再重命名。
+        // Unix rename 覆盖目标是原子的；Windows 需要先移走目标再落位新文件。
         if let Err(rename_error) = std::fs::rename(&temp_path, &resolved) {
             if cfg!(windows) && resolved.exists() {
-                std::fs::remove_file(&resolved)?;
-                std::fs::rename(&temp_path, &resolved)?;
+                // 不直接删除目标：先把旧文件改名到同目录备份，落位失败时还原，
+                // 避免重试再失败（杀软/文件锁）导致原配置永久丢失。
+                let backup_path = parent.join(format!(
+                    ".{file_name}.bak-{}-{nonce}",
+                    std::process::id()
+                ));
+                std::fs::rename(&resolved, &backup_path)?;
+                if let Err(second_error) = std::fs::rename(&temp_path, &resolved) {
+                    let _ = std::fs::rename(&backup_path, &resolved);
+                    return Err(second_error);
+                }
+                let _ = std::fs::remove_file(&backup_path);
             } else {
                 return Err(rename_error);
             }
