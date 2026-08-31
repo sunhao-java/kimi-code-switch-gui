@@ -11,6 +11,7 @@ import { WizardStep1Source } from "./WizardStep1Source";
 import { WizardStep2Connect } from "./WizardStep2Connect";
 import { WizardStep3Name } from "./WizardStep3Name";
 import { t } from "../i18n";
+import "../wizard.css";
 
 interface WizardProps {
   locale: Locale;
