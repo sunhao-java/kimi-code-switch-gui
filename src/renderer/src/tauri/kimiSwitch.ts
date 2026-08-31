@@ -717,6 +717,7 @@ export const kimiSwitchTauri = {
     cli.upgradeTargetCli(target ?? "kimi-code", options),
   startKimiOAuthLogin: (target: AppState["configTarget"], onEvent?: (event: cli.KimiOAuthLoginEvent) => void, options?: { accountId?: string; activate?: boolean }) =>
     cli.startKimiOAuthLogin(target, onEvent, options),
+  cancelKimiOAuthLogin: () => cli.cancelKimiOAuthLogin(),
   startKimiCodeOAuthLogin: (onEvent?: (event: cli.KimiOAuthLoginEvent) => void) =>
     cli.startKimiOAuthLogin("kimi-code", onEvent),
   listOfficialAccounts: () => officialAccounts.listOfficialAccounts(),

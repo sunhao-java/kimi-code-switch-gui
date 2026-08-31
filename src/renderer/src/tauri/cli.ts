@@ -163,7 +163,7 @@ export interface KimiTargetDetectionResult {
 }
 
 export interface KimiOAuthLoginEvent {
-  kind: "start" | "device-code" | "user-code" | "expires-in" | "output" | "success" | "error" | "complete" | "failed" | "account-required";
+  kind: "start" | "device-code" | "user-code" | "expires-in" | "output" | "success" | "error" | "complete" | "failed" | "cancelled" | "account-required";
   target: ConfigTarget;
   stream?: "stdout" | "stderr";
   line?: string;
@@ -518,6 +518,10 @@ export async function startKimiOAuthLogin(
   } finally {
     unlisten?.();
   }
+}
+
+export function cancelKimiOAuthLogin(): Promise<boolean> {
+  return invoke<boolean>("cancel_kimi_oauth_login");
 }
 
 export async function runKimiMcpServerTest(

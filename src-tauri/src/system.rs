@@ -5,14 +5,18 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::process::{Command as StdCommand, Stdio};
+use std::process::{Child as StdChild, Command as StdCommand, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader as TokioBufReader};
 
 static KIMI_OAUTH_LOGIN_RUNNING: AtomicBool = AtomicBool::new(false);
+static KIMI_OAUTH_LOGIN_CANCELLED: AtomicBool = AtomicBool::new(false);
+static KIMI_OAUTH_LOGIN_CHILD: Mutex<Option<StdChild>> = Mutex::new(None);
+const KIMI_OAUTH_LOGIN_CANCELLED_MESSAGE: &str = "Kimi OAuth login was cancelled.";
 
 /// 验证命令的 **program 名** 是否在白名单中。
 ///
@@ -547,6 +551,58 @@ fn summarize_oauth_login_failure(result: &ExecResult) -> String {
         .unwrap_or_else(|| format!("Kimi OAuth login failed with exit code {}.", result.code))
 }
 
+fn wait_for_oauth_login_process() -> Result<ExitStatus, String> {
+    loop {
+        if KIMI_OAUTH_LOGIN_CANCELLED.load(Ordering::SeqCst) {
+            let mut child = KIMI_OAUTH_LOGIN_CHILD
+                .lock()
+                .map_err(|_| "Kimi OAuth login process lock is unavailable.".to_string())?;
+            if let Some(mut process) = child.take() {
+                let _ = process.wait();
+            }
+            return Err(KIMI_OAUTH_LOGIN_CANCELLED_MESSAGE.to_string());
+        }
+
+        let status = {
+            let mut child = KIMI_OAUTH_LOGIN_CHILD
+                .lock()
+                .map_err(|_| "Kimi OAuth login process lock is unavailable.".to_string())?;
+            let Some(process) = child.as_mut() else {
+                return Err("Kimi OAuth login process is unavailable.".to_string());
+            };
+            process
+                .try_wait()
+                .map_err(|error| format!("wait Kimi OAuth login: {error}"))?
+        };
+
+        if let Some(status) = status {
+            let mut child = KIMI_OAUTH_LOGIN_CHILD
+                .lock()
+                .map_err(|_| "Kimi OAuth login process lock is unavailable.".to_string())?;
+            child.take();
+            return Ok(status);
+        }
+
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+#[tauri::command]
+pub fn cancel_kimi_oauth_login() -> Result<bool, String> {
+    if !KIMI_OAUTH_LOGIN_RUNNING.load(Ordering::SeqCst) {
+        return Ok(false);
+    }
+
+    KIMI_OAUTH_LOGIN_CANCELLED.store(true, Ordering::SeqCst);
+    let mut child = KIMI_OAUTH_LOGIN_CHILD
+        .lock()
+        .map_err(|_| "Kimi OAuth login process lock is unavailable.".to_string())?;
+    if let Some(process) = child.as_mut() {
+        let _ = process.kill();
+    }
+    Ok(true)
+}
+
 /// 执行外部命令，拿 stdout/stderr/退出码。覆盖 kimi/open/osascript 等调用。
 /// timeout_ms <= 0 表示不超时（依赖系统）。
 #[tauri::command]
@@ -611,6 +667,7 @@ pub async fn start_kimi_oauth_login(
     {
         return Err("Kimi OAuth login is already running.".to_string());
     }
+    KIMI_OAUTH_LOGIN_CANCELLED.store(false, Ordering::SeqCst);
 
     emit_oauth_login_event(
         &app,
@@ -627,44 +684,83 @@ pub async fn start_kimi_oauth_login(
     );
 
     let app_for_task = app.clone();
-    let result =
-        tauri::async_runtime::spawn_blocking(move || {
-            let login_command = find_oauth_login_command(target);
-            let mut child = StdCommand::new(&login_command.program)
-                .args(&login_command.args)
-                .env("PATH", augmented_path())
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .map_err(|e| format!("spawn {}: {e}", target.label()))?;
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let login_command = find_oauth_login_command(target);
+        let child = StdCommand::new(&login_command.program)
+            .args(&login_command.args)
+            .env("PATH", augmented_path())
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("spawn {}: {e}", target.label()))?;
 
+        {
+            let mut running_child = KIMI_OAUTH_LOGIN_CHILD
+                .lock()
+                .map_err(|_| "Kimi OAuth login process lock is unavailable.".to_string())?;
+            *running_child = Some(child);
+        }
+
+        if KIMI_OAUTH_LOGIN_CANCELLED.load(Ordering::SeqCst) {
+            let _ = cancel_kimi_oauth_login();
+        }
+
+        let (stdout, stderr) = {
+            let mut running_child = KIMI_OAUTH_LOGIN_CHILD
+                .lock()
+                .map_err(|_| "Kimi OAuth login process lock is unavailable.".to_string())?;
+            let child = running_child
+                .as_mut()
+                .ok_or_else(|| "Kimi OAuth login process is unavailable.".to_string())?;
             let stdout_handle = child.stdout.take().map(|stdout| {
                 read_oauth_login_stream(app_for_task.clone(), target, "stdout", stdout)
             });
             let stderr_handle = child.stderr.take().map(|stderr| {
                 read_oauth_login_stream(app_for_task.clone(), target, "stderr", stderr)
             });
+            (stdout_handle, stderr_handle)
+        };
 
-            let status = child
-                .wait()
-                .map_err(|e| format!("wait {}: {e}", target.label()))?;
-            let stdout = stdout_handle
-                .map(|handle| handle.join().unwrap_or_default())
-                .unwrap_or_default();
-            let stderr = stderr_handle
-                .map(|handle| handle.join().unwrap_or_default())
-                .unwrap_or_default();
-            Ok(ExecResult {
-                code: status.code().unwrap_or(-1),
-                stdout,
-                stderr,
-            })
+        let status = wait_for_oauth_login_process();
+        let stdout = stdout
+            .map(|handle| handle.join().unwrap_or_default())
+            .unwrap_or_default();
+        let stderr = stderr
+            .map(|handle| handle.join().unwrap_or_default())
+            .unwrap_or_default();
+        let status = status?;
+        Ok(ExecResult {
+            code: status.code().unwrap_or(-1),
+            stdout,
+            stderr,
         })
+    })
         .await
         .map_err(|e| format!("join error: {e}"));
 
     KIMI_OAUTH_LOGIN_RUNNING.store(false, Ordering::SeqCst);
+    let cancelled = KIMI_OAUTH_LOGIN_CANCELLED.swap(false, Ordering::SeqCst);
+    if let Ok(mut child) = KIMI_OAUTH_LOGIN_CHILD.lock() {
+        child.take();
+    }
+
+    if cancelled {
+        emit_oauth_login_event(
+            &app,
+            KimiOAuthLoginEvent {
+                kind: "cancelled".to_string(),
+                target: target.as_config_target().to_string(),
+                stream: None,
+                line: None,
+                url: None,
+                user_code: None,
+                expires_in: None,
+                message: Some(KIMI_OAUTH_LOGIN_CANCELLED_MESSAGE.to_string()),
+            },
+        );
+        return Err(KIMI_OAUTH_LOGIN_CANCELLED_MESSAGE.to_string());
+    }
 
     match result {
         Ok(Ok(exec_result)) => {
@@ -1328,6 +1424,14 @@ mod tests {
             KimiOAuthTarget::from_config_target("unknown"),
             KimiOAuthTarget::KimiCode
         ));
+    }
+
+    #[test]
+    fn cancelling_without_a_running_login_is_a_noop() {
+        KIMI_OAUTH_LOGIN_RUNNING.store(false, Ordering::SeqCst);
+        KIMI_OAUTH_LOGIN_CANCELLED.store(false, Ordering::SeqCst);
+        assert_eq!(cancel_kimi_oauth_login().unwrap(), false);
+        assert!(!KIMI_OAUTH_LOGIN_CANCELLED.load(Ordering::SeqCst));
     }
 
     #[test]

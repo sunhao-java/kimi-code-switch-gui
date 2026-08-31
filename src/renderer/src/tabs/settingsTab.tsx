@@ -1,7 +1,7 @@
 import { lazy, Suspense } from "react";
 import {
   Bug, CircleCheckBig, Download, ExternalLink, FolderOpen, History, LoaderCircle,
-  LogIn, Plus, Power, RotateCcw, Save, Trash2, Upload,
+  LogIn, Plus, Power, RotateCcw, Save, Trash2, Upload, X,
 } from "lucide-react";
 
 import {
@@ -74,7 +74,7 @@ type SettingsTabProps = TabPanelsProps & {
   kimiCodeSubTab: KimiCodeSubTab;
   setKimiCodeSubTab: (value: KimiCodeSubTab) => void;
   kimiCodeOAuthLogin: {
-    status: "idle" | "running" | "success" | "failed" | "account-required";
+    status: "idle" | "running" | "cancelling" | "cancelled" | "success" | "failed" | "account-required";
     url: string;
     userCode: string;
     expiresIn: number | null;
@@ -90,6 +90,7 @@ type SettingsTabProps = TabPanelsProps & {
   officialAccounts: OfficialAccount[];
   officialAccountsLoading: boolean;
   startKimiOAuthLogin: () => void;
+  cancelKimiOAuthLogin: () => void;
   activateOfficialAccount: (id: string) => void;
   deleteOfficialAccount: (account: OfficialAccount) => void;
   kimiCodeEnvironments: KimiCodeEnvironment[];
@@ -138,6 +139,7 @@ export function SettingsTab(props: SettingsTabProps): JSX.Element {
     officialAccounts,
     officialAccountsLoading,
     startKimiOAuthLogin,
+    cancelKimiOAuthLogin,
     activateOfficialAccount,
     deleteOfficialAccount,
     kimiCodeEnvironments,
@@ -269,14 +271,25 @@ export function SettingsTab(props: SettingsTabProps): JSX.Element {
                       </div>
                       <div className="oauth-login-actions">
                         <button
-                          className={kimiCodeOAuthLogin.status === "running" ? "action-button is-loading" : "action-button"}
+                          className={kimiCodeOAuthLogin.status === "running" || kimiCodeOAuthLogin.status === "cancelling" ? "action-button is-loading" : "action-button"}
                           type="button"
-                          disabled={kimiCodeOAuthLogin.status === "running"}
+                          disabled={kimiCodeOAuthLogin.status === "running" || kimiCodeOAuthLogin.status === "cancelling"}
                           onClick={startKimiOAuthLogin}
                         >
-                          {kimiCodeOAuthLogin.status === "running" ? <LoaderCircle size={14} className="button-spinner" /> : <LogIn size={14} />}
-                          <span>{formatMessage(t(locale, kimiCodeOAuthLogin.status === "running" ? "kimiOauthRunning" : "kimiOauthLogin"), { target: currentConfigTargetLabel })}</span>
+                          {kimiCodeOAuthLogin.status === "running" || kimiCodeOAuthLogin.status === "cancelling" ? <LoaderCircle size={14} className="button-spinner" /> : <LogIn size={14} />}
+                          <span>{formatMessage(t(locale, kimiCodeOAuthLogin.status === "cancelling" ? "kimiOauthCancelling" : kimiCodeOAuthLogin.status === "running" ? "kimiOauthRunning" : "kimiOauthLogin"), { target: currentConfigTargetLabel })}</span>
                         </button>
+                        {kimiCodeOAuthLogin.status === "running" || kimiCodeOAuthLogin.status === "cancelling" ? (
+                          <button
+                            className="action-button secondary"
+                            type="button"
+                            disabled={kimiCodeOAuthLogin.status === "cancelling"}
+                            onClick={cancelKimiOAuthLogin}
+                          >
+                            <X size={14} />
+                            <span>{t(locale, "kimiOauthCancel")}</span>
+                          </button>
+                        ) : null}
                         {kimiCodeOAuthLogin.url ? (
                           <button
                             className="action-button secondary"

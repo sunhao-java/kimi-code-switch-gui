@@ -175,7 +175,7 @@ type SettingsSubTab = "general" | "kimi-code" | "shortcuts" | "backup" | "doctor
 type KimiCodeSubTab = "instance" | "accounts" | "environment";
 
 type KimiOAuthLoginState = {
-  status: "idle" | "running" | "success" | "failed" | "account-required";
+  status: "idle" | "running" | "cancelling" | "cancelled" | "success" | "failed" | "account-required";
   url: string;
   userCode: string;
   expiresIn: number | null;
@@ -206,6 +206,9 @@ function oauthStatusForEvent(event: KimiOAuthLoginEvent): KimiOAuthLoginState["s
   if (event.kind === "failed" || event.kind === "error") {
     return "failed";
   }
+  if (event.kind === "cancelled") {
+    return "cancelled";
+  }
   if (event.kind === "success" || event.kind === "complete") {
     return "success";
   }
@@ -229,6 +232,8 @@ function oauthMessageKeyForEvent(event: KimiOAuthLoginEvent): string {
     case "failed":
     case "error":
       return oauthFailureMessageKey(event.message ?? event.line);
+    case "cancelled":
+      return "kimiOauthCancelled";
     default:
       return "kimiOauthWaiting";
   }
@@ -351,6 +356,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     message: "",
     messageKey: "kimiOauthReady",
   });
+  const kimiCodeOAuthLoginAttemptRef = useRef(0);
   const currentConfigTarget = "kimi-code" as const;
   const currentConfigTargetLabel = "Kimi Code";
   const targetDetection = state.kimiTargetDetection;
@@ -645,6 +651,8 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
       setError(formatMessage(t(locale, "kimiOauthUnavailable"), { target: loginTargetLabel }));
       return;
     }
+    const loginAttempt = kimiCodeOAuthLoginAttemptRef.current + 1;
+    kimiCodeOAuthLoginAttemptRef.current = loginAttempt;
     setError("");
     setNotice("");
     setKimiCodeOAuthLogin({
@@ -657,10 +665,10 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
     });
     void api.startKimiOAuthLogin(loginTarget, (event) => {
       console.debug("[kimi-oauth-login]", event);
-      if (event.target !== loginTarget) {
+      if (event.target !== loginTarget || loginAttempt !== kimiCodeOAuthLoginAttemptRef.current) {
         return;
       }
-      setKimiCodeOAuthLogin((current) => ({
+      setKimiCodeOAuthLogin((current) => current.status === "cancelling" ? current : ({
         status: oauthStatusForEvent(event),
         url: event.url ?? current.url,
         userCode: event.user_code ?? current.userCode,
@@ -670,6 +678,9 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
       }));
     })
       .then(async () => {
+        if (loginAttempt !== kimiCodeOAuthLoginAttemptRef.current) {
+          return;
+        }
         setKimiCodeOAuthLogin((current) => ({
           ...current,
           status: "success",
@@ -681,6 +692,9 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
         await loadState();
       })
       .catch((error) => {
+        if (loginAttempt !== kimiCodeOAuthLoginAttemptRef.current) {
+          return;
+        }
         const message = error instanceof Error ? error.message : String(error);
         const messageKey = oauthFailureMessageKey(message);
         setKimiCodeOAuthLogin((current) => ({
@@ -691,6 +705,57 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
         }));
         console.debug("[kimi-oauth-login]", { kind: "failed", target: loginTarget, message });
         setError(formatMessage(t(locale, messageKey), { target: loginTargetLabel, message }));
+      });
+  };
+
+  const cancelKimiOAuthLogin = (): void => {
+    const api = getApi();
+    const loginAttempt = kimiCodeOAuthLoginAttemptRef.current;
+    if (!api?.cancelKimiOAuthLogin || kimiCodeOAuthLogin.status !== "running") {
+      return;
+    }
+    setKimiCodeOAuthLogin((current) => ({
+      ...current,
+      status: "cancelling",
+      message: formatMessage(t(locale, "kimiOauthCancelling"), { target: currentConfigTargetLabel }),
+      messageKey: "kimiOauthCancelling",
+    }));
+    void api.cancelKimiOAuthLogin()
+      .then((cancelled) => {
+        if (loginAttempt !== kimiCodeOAuthLoginAttemptRef.current) {
+          return;
+        }
+        if (!cancelled) {
+          setKimiCodeOAuthLogin((current) => ({
+            ...current,
+            status: "running",
+            message: formatMessage(t(locale, "kimiOauthWaiting"), { target: currentConfigTargetLabel }),
+            messageKey: "kimiOauthWaiting",
+          }));
+          return;
+        }
+        kimiCodeOAuthLoginAttemptRef.current += 1;
+        setKimiCodeOAuthLogin((current) => ({
+          ...current,
+          status: "cancelled",
+          url: "",
+          userCode: "",
+          expiresIn: null,
+          message: formatMessage(t(locale, "kimiOauthCancelled"), { target: currentConfigTargetLabel }),
+          messageKey: "kimiOauthCancelled",
+        }));
+      })
+      .catch((error) => {
+        if (loginAttempt !== kimiCodeOAuthLoginAttemptRef.current) {
+          return;
+        }
+        setKimiCodeOAuthLogin((current) => ({
+          ...current,
+          status: "running",
+          message: error instanceof Error ? error.message : String(error),
+          messageKey: "kimiOauthWaiting",
+        }));
+        setError(error instanceof Error ? error.message : String(error));
       });
   };
 
@@ -922,6 +987,7 @@ export function TabPanels(props: TabPanelsProps): JSX.Element {
               officialAccounts={officialAccounts}
               officialAccountsLoading={officialAccountsLoading}
               startKimiOAuthLogin={startKimiOAuthLogin}
+              cancelKimiOAuthLogin={cancelKimiOAuthLogin}
               activateOfficialAccount={activateOfficialAccount}
               deleteOfficialAccount={deleteOfficialAccount}
               kimiCodeEnvironments={kimiCodeEnvironments}

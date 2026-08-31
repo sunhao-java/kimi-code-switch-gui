@@ -5,7 +5,7 @@ import type { AppState } from "@shared/types";
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 import { invoke } from "@tauri-apps/api/core";
-import { callKimiMcpServerTool, classifyKimiTargetFromSignals, evaluateCliCompatibility, getCliVersion, getTargetCliVersion, listKimiMcpServerTools, MIN_CLI_VERSION, runKimiConnectivityTest, runKimiMcpServerTest, runProvidersHealthCheck, upgradeKimiCli, upgradeTargetCli } from "./cli";
+import { callKimiMcpServerTool, cancelKimiOAuthLogin, classifyKimiTargetFromSignals, evaluateCliCompatibility, getCliVersion, getTargetCliVersion, listKimiMcpServerTools, MIN_CLI_VERSION, runKimiConnectivityTest, runKimiMcpServerTest, runProvidersHealthCheck, upgradeKimiCli, upgradeTargetCli } from "./cli";
 
 const mockedInvoke = vi.mocked(invoke);
 
@@ -32,6 +32,15 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("cancelKimiOAuthLogin", () => {
+  it("invokes the native cancellation command", async () => {
+    mockedInvoke.mockResolvedValue(true as never);
+
+    await expect(cancelKimiOAuthLogin()).resolves.toBe(true);
+    expect(mockedInvoke).toHaveBeenCalledWith("cancel_kimi_oauth_login");
+  });
 });
 
 describe("classifyKimiTargetFromSignals", () => {
