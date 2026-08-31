@@ -106,6 +106,35 @@ function createSnapshot(label: string): FileSnapshotBundle {
   };
 }
 
+type PersistenceHookProps = Parameters<typeof useAppPersistence>[0];
+
+function createProps(overrides: Partial<PersistenceHookProps> = {}): PersistenceHookProps {
+  const state = createState();
+  return {
+    state,
+    savedState: state,
+    locale: "zh-CN",
+    setState: vi.fn(),
+    setSavedState: vi.fn(),
+    setPreview: vi.fn(),
+    setError: vi.fn(),
+    setNotice: vi.fn(),
+    setDiagnostics: vi.fn(),
+    fileSnapshot: null,
+    setFileSnapshot: vi.fn(),
+    setDoctorReport: vi.fn(),
+    confirmExternalOverwrite: vi.fn(),
+    refreshPreview: vi.fn(),
+    refreshSkills: vi.fn(),
+    currentSelections: { provider: "", model: "", profile: "", mcpServer: "" },
+    setSelectedProvider: vi.fn(),
+    setSelectedModel: vi.fn(),
+    setSelectedProfile: vi.fn(),
+    setSelectedMcpServer: vi.fn(),
+    ...overrides,
+  };
+}
+
 describe("useAppPersistence", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -276,5 +305,125 @@ describe("useAppPersistence", () => {
     });
     expect(saveStateSafe).toHaveBeenCalledTimes(1);
     expect(saveStateSafe.mock.calls[0]?.[0].mainConfig.default_thinking).toBe(false);
+  });
+
+  it("keeps the debounced save pending across re-renders that change callback identities", async () => {
+    vi.useFakeTimers();
+    const first = createState();
+    const saveStateSafe = vi.fn().mockResolvedValue({ ok: true });
+    const previewState = vi.fn().mockResolvedValue({});
+    vi.stubGlobal("kimiSwitch", { saveStateSafe, previewState });
+
+    const { result, rerender } = renderHook(
+      (props: PersistenceHookProps) => useAppPersistence(props),
+      { initialProps: createProps({ state: first }) },
+    );
+
+    act(() => {
+      void result.current.persistState(first);
+    });
+    // App 状态更新触发重渲染，ctx 里的回调身份全部变化——debounce 不能被冲掉。
+    rerender(createProps());
+    rerender(createProps());
+    expect(saveStateSafe).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+    });
+    expect(saveStateSafe).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not resolve waiters registered during an in-flight save until their own save completes", async () => {
+    vi.useFakeTimers();
+    const first = createState();
+    const latest = createState();
+    latest.mainConfig.default_thinking = false;
+    let resolveFirstSave!: () => void;
+    const saveStateSafe = vi.fn()
+      .mockImplementationOnce(() => new Promise<{ ok: true }>((resolve) => {
+        resolveFirstSave = () => resolve({ ok: true });
+      }))
+      .mockResolvedValue({ ok: true });
+    const previewState = vi.fn().mockResolvedValue({});
+    vi.stubGlobal("kimiSwitch", { saveStateSafe, previewState });
+
+    const { result } = renderHook(() => useAppPersistence(createProps()));
+
+    let firstRequest!: Promise<void>;
+    act(() => {
+      firstRequest = result.current.persistState(first);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+    });
+    // 第一轮保存已在途（挂起在 resolveFirstSave 上）。
+    expect(saveStateSafe).toHaveBeenCalledTimes(1);
+
+    let secondDone = false;
+    let secondRequest!: Promise<void>;
+    act(() => {
+      secondRequest = result.current.persistState(latest).then(() => {
+        secondDone = true;
+      });
+    });
+    await act(async () => {
+      resolveFirstSave();
+      await firstRequest;
+    });
+    // 第一轮完成只放行第一轮的 waiter；在途期间注册的 waiter 属于下一轮。
+    expect(secondDone).toBe(false);
+    expect(saveStateSafe).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+      await secondRequest;
+    });
+    expect(secondDone).toBe(true);
+    expect(saveStateSafe).toHaveBeenCalledTimes(2);
+    expect(saveStateSafe.mock.calls[1]?.[0].mainConfig.default_thinking).toBe(false);
+  });
+
+  it("waits for an in-flight debounced save before starting an immediate save", async () => {
+    vi.useFakeTimers();
+    const first = createState();
+    const immediate = createState();
+    let resolveFirstSave!: () => void;
+    const saveStateSafe = vi.fn()
+      .mockImplementationOnce(() => new Promise<{ ok: true }>((resolve) => {
+        resolveFirstSave = () => resolve({ ok: true });
+      }))
+      .mockResolvedValue({ ok: true });
+    const previewState = vi.fn().mockResolvedValue({});
+    vi.stubGlobal("kimiSwitch", { saveStateSafe, previewState });
+
+    const { result } = renderHook(() => useAppPersistence(createProps()));
+
+    act(() => {
+      void result.current.persistState(first);
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(150);
+    });
+    expect(saveStateSafe).toHaveBeenCalledTimes(1);
+
+    let immediateDone = false;
+    let immediateRequest!: Promise<void>;
+    await act(async () => {
+      immediateRequest = result.current.persistImmediateState(immediate).then(() => {
+        immediateDone = true;
+      });
+      // 排空微任务：若 flush 不等待在途保存，第二个 saveStateSafe 会在此处并发发出。
+      await Promise.resolve();
+    });
+    // 防抖保存在途时，立即保存必须排队等待，不能并发发起第二个 saveStateSafe。
+    expect(saveStateSafe).toHaveBeenCalledTimes(1);
+    expect(immediateDone).toBe(false);
+
+    await act(async () => {
+      resolveFirstSave();
+      await immediateRequest;
+    });
+    expect(immediateDone).toBe(true);
+    expect(saveStateSafe).toHaveBeenCalledTimes(2);
   });
 });

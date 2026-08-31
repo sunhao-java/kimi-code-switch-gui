@@ -70,6 +70,7 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
   const pendingPersistRef = useRef<AppState | null>(null);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const persistWaitersRef = useRef<Array<() => void>>([]);
+  const inFlightPersistRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     const onKimiTargetDetection = (event: Event): void => {
@@ -303,6 +304,47 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     setState,
   ]);
 
+  // persistStateNow 的依赖（confirmExternalOverwrite、savedState 等）几乎每次
+  // 渲染都会变化；通过 ref 间接调用可以让 flushPendingPersist / persistState
+  // 保持引用稳定，否则卸载 cleanup 会在每次渲染后执行，把 debounce 队列立即冲掉。
+  const persistStateNowRef = useRef(persistStateNow);
+  useEffect(() => {
+    persistStateNowRef.current = persistStateNow;
+  }, [persistStateNow]);
+
+  // pending 与 waiter 在同一周期内原子取走：本周期保存完成只 resolve 本周期
+  // 注册的 waiter，保存期间新注册的属于下一轮，不会被在途保存提前放行。
+  // 同时用 in-flight promise 链串行化，保证任一时刻至多一个 saveStateSafe
+  // 在途，避免并发写把彼此的落盘误判为外部变更。
+  const flushPendingPersist = useCallback(async (): Promise<void> => {
+    if (persistTimerRef.current) {
+      clearTimeout(persistTimerRef.current);
+      persistTimerRef.current = null;
+    }
+    const previous = inFlightPersistRef.current;
+    const run = (async () => {
+      await previous;
+      const pending = pendingPersistRef.current;
+      pendingPersistRef.current = null;
+      const waiters = persistWaitersRef.current.splice(0);
+      try {
+        if (pending) {
+          await persistStateNowRef.current(pending);
+        }
+      } finally {
+        waiters.forEach((resolve) => resolve());
+      }
+    })();
+    inFlightPersistRef.current = run;
+    try {
+      await run;
+    } finally {
+      if (inFlightPersistRef.current === run) {
+        inFlightPersistRef.current = null;
+      }
+    }
+  }, []);
+
   // 普通编辑采用尾部 debounce，连续修改只落盘最后一个状态；需要立即落盘的
   // 删除、环境切换等操作仍通过 persistImmediateState 执行，不受此队列影响。
   const persistState = useCallback((nextState: AppState): Promise<void> => {
@@ -315,34 +357,10 @@ export function useAppPersistence(ctx: AppPersistenceContext) {
     });
     persistTimerRef.current = setTimeout(() => {
       persistTimerRef.current = null;
-      const pending = pendingPersistRef.current;
-      pendingPersistRef.current = null;
-      if (!pending) {
-        const waiters = persistWaitersRef.current.splice(0);
-        waiters.forEach((resolve) => resolve());
-        return;
-      }
-      void persistStateNow(pending).finally(() => {
-        const waiters = persistWaitersRef.current.splice(0);
-        waiters.forEach((resolve) => resolve());
-      });
+      void flushPendingPersist();
     }, 150);
     return promise;
-  }, [persistStateNow]);
-
-  const flushPendingPersist = useCallback(async (): Promise<void> => {
-    if (persistTimerRef.current) {
-      clearTimeout(persistTimerRef.current);
-      persistTimerRef.current = null;
-    }
-    const pending = pendingPersistRef.current;
-    pendingPersistRef.current = null;
-    if (pending) {
-      await persistStateNow(pending);
-    }
-    const waiters = persistWaitersRef.current.splice(0);
-    waiters.forEach((resolve) => resolve());
-  }, [persistStateNow]);
+  }, [flushPendingPersist]);
 
   useEffect(() => () => {
     // 组件卸载（例如窗口关闭）时仍把最后一次编辑写入磁盘，避免 debounce 丢失。
