@@ -1,0 +1,581 @@
+.update-dialog {
+  width: min(760px, calc(100vw - 56px));
+  padding: 18px;
+  border-radius: 36px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top left, rgba(114, 204, 255, 0.12), transparent 24%),
+    radial-gradient(circle at right 18%, rgba(255, 186, 122, 0.1), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.012)),
+    var(--panel-strong);
+}
+
+.update-dialog.update-dialog-compact {
+  width: min(420px, calc(100vw - 48px));
+  padding: 18px;
+  border-radius: 28px;
+}
+
+.update-dialog-current {
+  background:
+    radial-gradient(circle at 18% 12%, rgba(132, 247, 211, 0.16), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.015)),
+    var(--panel-strong);
+}
+
+.update-dialog-error {
+  background:
+    radial-gradient(circle at top left, rgba(255, 170, 121, 0.2), transparent 28%),
+    radial-gradient(circle at 84% 18%, rgba(255, 115, 151, 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.012)),
+    var(--panel-strong);
+}
+
+.update-dialog-available {
+  background:
+    radial-gradient(circle at top left, rgba(114, 204, 255, 0.18), transparent 24%),
+    radial-gradient(circle at 84% 18%, rgba(132, 247, 211, 0.12), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.012)),
+    var(--panel-strong);
+}
+
+.update-dialog-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px 16px;
+}
+
+.update-dialog-topline-label,
+.update-dialog-topline-version {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.update-dialog-topline-label {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(219, 235, 255, 0.82);
+  border: 1px solid rgba(129, 186, 255, 0.16);
+}
+
+.update-dialog-topline-version {
+  color: var(--muted);
+  border: 1px solid rgba(129, 186, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.update-dialog-header {
+  padding: 26px;
+  border-radius: 28px;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
+    rgba(7, 16, 29, 0.26);
+  border: 1px solid rgba(124, 179, 255, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 20px 40px rgba(8, 18, 36, 0.08);
+}
+
+.update-dialog-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(87, 177, 255, 0.24), rgba(132, 247, 211, 0.24));
+  box-shadow:
+    inset 0 0 0 1px rgba(132, 247, 211, 0.18),
+    0 14px 34px rgba(46, 118, 191, 0.14);
+}
+
+.update-dialog-icon-error {
+  color: #ffd5c8;
+  background:
+    linear-gradient(135deg, rgba(255, 140, 87, 0.28), rgba(255, 104, 145, 0.22)),
+    rgba(56, 18, 24, 0.62);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 170, 121, 0.24),
+    0 16px 34px rgba(110, 35, 53, 0.18);
+}
+
+.update-dialog-icon-current {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  color: #dffdf3;
+  background:
+    linear-gradient(135deg, rgba(72, 211, 154, 0.42), rgba(87, 177, 255, 0.24)),
+    rgba(16, 39, 42, 0.72);
+  box-shadow:
+    inset 0 0 0 1px rgba(210, 255, 240, 0.22),
+    0 14px 30px rgba(27, 143, 105, 0.18);
+}
+
+.update-dialog-copy {
+  display: grid;
+  gap: 16px;
+}
+
+.update-dialog-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.update-dialog-title-row h3 {
+  margin: 0;
+  font-size: 2rem;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.update-dialog-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(132, 247, 211, 0.14);
+  color: var(--primary-2);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  border: 1px solid rgba(132, 247, 211, 0.18);
+}
+
+.update-dialog-badge-error {
+  background: rgba(255, 162, 117, 0.14);
+  color: #ffcbaf;
+  border-color: rgba(255, 162, 117, 0.2);
+}
+
+.update-dialog-version-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+}
+
+.update-dialog-version-card {
+  display: grid;
+  gap: 6px;
+  min-height: 110px;
+  padding: 18px 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(124, 179, 255, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
+    rgba(255, 255, 255, 0.035);
+}
+
+.update-dialog-version-card span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+}
+
+.update-dialog-version-card strong {
+  font-size: 1.8rem;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.update-dialog-version-separator {
+  color: rgba(198, 228, 255, 0.72);
+  font-size: 1.35rem;
+  font-weight: 700;
+}
+
+.update-dialog-body {
+  padding: 2px 0 0;
+}
+
+.update-dialog-release-notes {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.update-dialog-release-notes-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.update-dialog-release-notes .markdown-view {
+  max-height: 280px;
+}
+
+.update-dialog-copy p {
+  margin: 0;
+  max-width: 58ch;
+  font-size: 1.02rem;
+  line-height: 1.75;
+  color: rgba(228, 239, 250, 0.9);
+}
+
+.update-dialog-command-block {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px 18px;
+  border-radius: 22px;
+  border: 1px solid rgba(98, 167, 255, 0.2);
+  background:
+    linear-gradient(135deg, rgba(47, 94, 169, 0.2), rgba(35, 152, 123, 0.12)),
+    rgba(7, 16, 29, 0.82);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 16px 28px rgba(5, 16, 29, 0.2);
+}
+
+.update-dialog-command-label {
+  color: rgba(198, 228, 255, 0.78);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.update-dialog-command-block code {
+  display: block;
+  overflow-x: auto;
+  font-size: 0.98rem;
+  line-height: 1.6;
+  color: #f3fbff;
+}
+
+.update-dialog-error-tip {
+  padding: 16px 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 179, 123, 0.18);
+  background:
+    linear-gradient(135deg, rgba(255, 188, 122, 0.12), rgba(255, 255, 255, 0.04)),
+    rgba(255, 168, 112, 0.06);
+  color: rgba(236, 226, 216, 0.88);
+  line-height: 1.65;
+}
+
+.update-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 0 8px 8px;
+}
+
+.update-dialog-actions .update-dialog-button {
+  flex: 0 0 auto;
+}
+
+.update-dialog-compact .update-dialog-copy {
+  gap: 8px;
+}
+
+.update-dialog-compact .update-dialog-header {
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 22px;
+}
+
+.update-dialog-compact .update-dialog-title-row h3 {
+  font-size: 1.22rem;
+  letter-spacing: -0.01em;
+}
+
+.update-dialog-compact .update-dialog-copy p {
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+.update-dialog-compact .update-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.update-dialog-compact .update-dialog-button {
+  min-width: 108px;
+  min-height: 42px;
+  padding-inline: 18px;
+  font-size: 0.92rem;
+}
+
+.update-dialog-button {
+  justify-content: center;
+  min-height: 52px;
+  padding-inline: 22px;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  border-radius: 18px;
+}
+
+.update-dialog-button-primary {
+  color: #081521;
+  border-color: rgba(132, 247, 211, 0.24);
+  background: linear-gradient(135deg, #8be4ff 0%, #87f5d3 54%, #f4ffbe 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 14px 30px rgba(57, 184, 179, 0.22);
+}
+
+.update-dialog-button-primary:hover {
+  transform: translateY(-2px);
+  border-color: rgba(132, 247, 211, 0.36);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.68),
+    0 18px 34px rgba(57, 184, 179, 0.28);
+}
+
+.update-dialog-button-secondary {
+  color: rgba(228, 239, 250, 0.94);
+  border-color: rgba(129, 186, 255, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03)),
+    rgba(8, 17, 31, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 10px 24px rgba(6, 15, 28, 0.12);
+}
+
+.update-dialog-button-secondary:hover {
+  transform: translateY(-2px);
+  border-color: rgba(129, 186, 255, 0.28);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04)),
+    rgba(8, 17, 31, 0.28);
+}
+
+.update-dialog-button-ghost {
+  color: var(--muted);
+  border-color: rgba(129, 186, 255, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.update-dialog-button-ghost:hover {
+  transform: translateY(-1px);
+  color: var(--text);
+  border-color: rgba(129, 186, 255, 0.22);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.update-dialog-error .update-dialog-button-primary {
+  color: #23130a;
+  border-color: rgba(255, 181, 133, 0.26);
+  background: linear-gradient(135deg, #ffd39d 0%, #ffb7a2 46%, #ff99b6 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.58),
+    0 16px 32px rgba(163, 78, 58, 0.22);
+}
+
+.update-dialog-error .update-dialog-button-primary:hover {
+  border-color: rgba(255, 181, 133, 0.36);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.64),
+    0 18px 36px rgba(163, 78, 58, 0.28);
+}
+
+:root[data-theme="light"] .update-dialog-version-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 251, 255, 0.88)),
+    rgba(255, 255, 255, 0.82);
+  border-color: rgba(54, 124, 206, 0.14);
+}
+
+:root[data-theme="light"] .update-dialog-command-block {
+  background:
+    linear-gradient(135deg, rgba(220, 239, 255, 0.92), rgba(220, 247, 239, 0.88)),
+    rgba(255, 255, 255, 0.9);
+  border-color: rgba(54, 124, 206, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 14px 24px rgba(41, 73, 114, 0.08);
+}
+
+:root[data-theme="light"] .update-dialog-command-label {
+  color: rgba(30, 83, 148, 0.72);
+}
+
+:root[data-theme="light"] .update-dialog-command-block code {
+  color: #16365f;
+}
+
+:root[data-theme="light"] .update-dialog-error-tip {
+  background:
+    linear-gradient(135deg, rgba(214, 128, 26, 0.08), rgba(255, 255, 255, 0.45)),
+    rgba(214, 128, 26, 0.05);
+  border-color: rgba(214, 128, 26, 0.16);
+  color: rgba(110, 82, 47, 0.88);
+}
+
+:root[data-theme="light"] .update-dialog-current {
+  background:
+    radial-gradient(circle at 18% 12%, rgba(72, 211, 154, 0.16), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(244, 249, 255, 0.95)),
+    var(--panel-strong);
+}
+
+:root[data-theme="light"] .update-dialog-icon-current {
+  color: #0c8c61;
+  background:
+    linear-gradient(135deg, rgba(210, 255, 239, 0.96), rgba(221, 239, 255, 0.9)),
+    rgba(255, 255, 255, 0.92);
+  box-shadow:
+    inset 0 0 0 1px rgba(50, 153, 115, 0.18),
+    0 14px 26px rgba(38, 111, 84, 0.12);
+}
+
+:root[data-theme="light"] .update-dialog {
+  background:
+    radial-gradient(circle at top left, rgba(143, 206, 255, 0.24), transparent 24%),
+    radial-gradient(circle at right 18%, rgba(255, 207, 163, 0.18), transparent 28%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(244, 249, 255, 0.95)),
+    var(--panel-strong);
+}
+
+:root[data-theme="light"] .update-dialog-error {
+  background:
+    radial-gradient(circle at top left, rgba(255, 199, 151, 0.28), transparent 28%),
+    radial-gradient(circle at 84% 18%, rgba(255, 169, 188, 0.18), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(248, 244, 244, 0.96)),
+    var(--panel-strong);
+}
+
+:root[data-theme="light"] .update-dialog-header {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 250, 255, 0.82)),
+    rgba(255, 255, 255, 0.8);
+  border-color: rgba(54, 124, 206, 0.1);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 18px 38px rgba(41, 73, 114, 0.08);
+}
+
+:root[data-theme="light"] .update-dialog-topline-label {
+  color: rgba(34, 76, 130, 0.8);
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(54, 124, 206, 0.14);
+}
+
+:root[data-theme="light"] .update-dialog-topline-version {
+  color: rgba(68, 91, 122, 0.8);
+  border-color: rgba(54, 124, 206, 0.12);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+:root[data-theme="light"] .update-dialog-copy p {
+  color: rgba(47, 73, 109, 0.9);
+}
+
+:root[data-theme="light"] .update-dialog-badge-error {
+  color: #b45c2a;
+  border-color: rgba(214, 128, 26, 0.18);
+  background: rgba(255, 218, 188, 0.62);
+}
+
+:root[data-theme="light"] .update-dialog-icon-error {
+  color: #c8563d;
+  background:
+    linear-gradient(135deg, rgba(255, 230, 214, 0.98), rgba(255, 214, 226, 0.9)),
+    rgba(255, 255, 255, 0.92);
+  box-shadow:
+    inset 0 0 0 1px rgba(208, 104, 66, 0.16),
+    0 14px 28px rgba(176, 82, 58, 0.1);
+}
+
+:root[data-theme="light"] .update-dialog-button-primary {
+  color: #11324e;
+  border-color: rgba(87, 177, 255, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 14px 26px rgba(87, 177, 255, 0.18);
+}
+
+:root[data-theme="light"] .update-dialog-button-secondary {
+  color: rgba(41, 73, 114, 0.92);
+  border-color: rgba(54, 124, 206, 0.12);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(247, 250, 255, 0.82)),
+    rgba(255, 255, 255, 0.84);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    0 10px 22px rgba(41, 73, 114, 0.08);
+}
+
+:root[data-theme="light"] .update-dialog-button-secondary:hover {
+  border-color: rgba(54, 124, 206, 0.22);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(243, 248, 255, 0.88)),
+    rgba(255, 255, 255, 0.9);
+}
+
+:root[data-theme="light"] .update-dialog-button-ghost {
+  color: rgba(76, 100, 132, 0.8);
+  border-color: rgba(54, 124, 206, 0.1);
+  background: rgba(255, 255, 255, 0.52);
+}
+
+:root[data-theme="light"] .update-dialog-button-ghost:hover {
+  color: rgba(41, 73, 114, 0.96);
+  border-color: rgba(54, 124, 206, 0.18);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+:root[data-theme="light"] .update-dialog-error .update-dialog-button-primary {
+  color: #7f3418;
+  border-color: rgba(214, 128, 26, 0.18);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    0 14px 28px rgba(214, 128, 26, 0.14);
+}
+
+@media (max-width: 768px) {
+  .update-dialog {
+    width: min(100vw - 32px, 560px);
+    padding: 14px;
+    border-radius: 28px;
+  }
+
+  .update-dialog-topline {
+    padding: 4px 4px 14px;
+  }
+
+  .update-dialog-header {
+    padding: 22px;
+  }
+
+  .update-dialog-title-row h3 {
+    font-size: 1.45rem;
+  }
+
+  .update-dialog-version-row {
+    grid-template-columns: 1fr;
+  }
+
+  .update-dialog-version-separator {
+    display: none;
+  }
+
+  .update-dialog-actions {
+    justify-content: stretch;
+  }
+
+  .update-dialog-actions .update-dialog-button {
+    width: 100%;
+  }
+}
