@@ -807,6 +807,14 @@ textarea:focus-visible {
     inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
+/* DocumentViewerDialog 与 Skills 详情弹窗共用的动作按钮行，须常载
+ * （dialogComponents.css 仅在通用对话框首次挂载时才按需加载）。 */
+.document-viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .confirm-dialog {
   width: min(460px, calc(100vw - 48px));
   padding: 26px;

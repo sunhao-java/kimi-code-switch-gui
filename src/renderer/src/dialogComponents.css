@@ -19,12 +19,6 @@
   gap: 16px;
 }
 
-.document-viewer-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .document-viewer-title {
   display: flex;
   align-items: center;
