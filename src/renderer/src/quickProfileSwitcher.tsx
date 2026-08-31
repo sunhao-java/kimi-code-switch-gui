@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import type { AppState, Locale, Profile } from "@shared/types";
 
 import { t } from "./i18n";
+import "./commandPalette.css";
 
 interface QuickProfileSwitcherProps {
   state: AppState;

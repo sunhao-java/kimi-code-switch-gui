@@ -7,6 +7,7 @@ import type { SearchResult } from "@shared/configStore";
 import type { AppState, Locale } from "@shared/types";
 
 import { t } from "./i18n";
+import "./commandPalette.css";
 
 interface CommandPaletteProps {
   state: AppState;
