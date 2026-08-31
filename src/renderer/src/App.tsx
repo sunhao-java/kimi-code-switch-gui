@@ -48,16 +48,23 @@ const CascadeDeleteDialog = lazy(async () => {
   const module = await import("./dialogs/CascadeDeleteDialog");
   return { default: module.CascadeDeleteDialog };
 });
+const loadDialogComponents = async () => {
+  const [module] = await Promise.all([
+    import("./dialogComponents"),
+    import("./dialogComponents.css"),
+  ]);
+  return module;
+};
 const ConfirmDialog = lazy(async () => {
-  const module = await import("./dialogComponents");
+  const module = await loadDialogComponents();
   return { default: module.ConfirmDialog };
 });
 const DocumentViewerDialog = lazy(async () => {
-  const module = await import("./dialogComponents");
+  const module = await loadDialogComponents();
   return { default: module.DocumentViewerDialog };
 });
 const BackupRecordsDialog = lazy(async () => {
-  const module = await import("./dialogComponents");
+  const module = await loadDialogComponents();
   return { default: module.BackupRecordsDialog };
 });
 
