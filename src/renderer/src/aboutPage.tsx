@@ -9,6 +9,7 @@ import { t } from "./i18n";
 import { toTraditionalChinese } from "./localeText";
 import { MarkdownView } from "./markdownView";
 import { extractReleaseNotes, getBundledChangelog } from "./releaseNotes";
+import { ABOUT_INFO } from "./aboutInfo";
 import logoLight from "./assets/logo-light.png";
 import logoDark from "./assets/logo-dark.png";
 import "./aboutPage.css";
@@ -30,15 +31,7 @@ interface UpdateCheckResult {
   errorMessage?: string;
 }
 
-export const ABOUT_INFO = {
-  version: "2.2.5",
-  author: "Hulk Sun",
-  license: "MIT",
-  repositoryUrl: "https://github.com/sunhao-java/kimi-code-switch-gui",
-  issuesUrl: "https://github.com/sunhao-java/kimi-code-switch-gui/issues",
-  authorBlogUrl: "https://www.crazy-coder.cn",
-  contactEmail: "sunhao.java@gmail.com",
-};
+export { ABOUT_INFO } from "./aboutInfo";
 
 const PENDING_UPDATE_VERSION_STORAGE_KEY = "kimi-switch.pending-update-version";
 const UPDATE_CHECK_COOLDOWN_MS = 30 * 1000;

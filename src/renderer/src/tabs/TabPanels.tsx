@@ -48,10 +48,6 @@ const AboutPage = lazy(async () => {
   const module = await import("../aboutPage");
   return { default: module.AboutPage };
 });
-const InsightsSettingsPanel = lazy(async () => {
-  const module = await import("../insightsComponents");
-  return { default: module.InsightsSettingsPanel };
-});
 const OverviewDashboard = lazy(async () => {
   const module = await import("../overviewDashboard");
   return { default: module.OverviewDashboard };

@@ -76,4 +76,18 @@ describe("ErrorBoundary", () => {
     expect(screen.getByText("Child rendered")).toBeDefined();
     consoleSpy.mockRestore();
   });
+
+  it("calls onReset when retrying a failed section", () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const onReset = vi.fn();
+    render(
+      <ErrorBoundary locale="en-US" onReset={onReset}>
+        <ThrowingComponent shouldThrow={true} />
+      </ErrorBoundary>,
+    );
+
+    fireEvent.click(screen.getByText("Try Again"));
+    expect(onReset).toHaveBeenCalledOnce();
+    consoleSpy.mockRestore();
+  });
 });

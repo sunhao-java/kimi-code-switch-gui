@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { AlertTriangle, ChevronDown, ChevronsLeft, ChevronsRight, RefreshCw, Terminal, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronsLeft, ChevronsRight, LoaderCircle, RefreshCw, Terminal, X } from "lucide-react";
 
 import type { KimiCodeEnvironment, McpServerConfig, ShortcutAction, ShortcutBinding } from "@shared/types";
 import { applyProfile, normalizeKimiCodeEnvironments } from "@shared/configStore";
@@ -25,6 +25,7 @@ import { TopbarControls } from "./topbarControls";
 import { ToastContainer } from "./Toast";
 import { useToast } from "./useToast";
 import { getApi } from "./appHelpers";
+import { ErrorBoundary } from "./ErrorBoundary";
 import logoLight from "./assets/logo-light.png";
 import logoDark from "./assets/logo-dark.png";
 
@@ -736,8 +737,9 @@ export function App(): JSX.Element {
           />
         </div>
       </main>
+      <ErrorBoundary locale={locale} onReset={() => window.location.reload()}>
       {confirmDialog ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<DialogLoadingFallback locale={locale} />}>
           <ConfirmDialog
             {...confirmDialog}
             onConfirm={() => closeConfirmDialog(true)}
@@ -746,7 +748,7 @@ export function App(): JSX.Element {
         </Suspense>
       ) : null}
       {documentViewer ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<DialogLoadingFallback locale={locale} />}>
           <DocumentViewerDialog
             locale={locale}
             {...documentViewer}
@@ -755,7 +757,7 @@ export function App(): JSX.Element {
         </Suspense>
       ) : null}
       {backupRecordsDialog ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<DialogLoadingFallback locale={locale} />}>
           <BackupRecordsDialog
             locale={locale}
             {...backupRecordsDialog}
@@ -766,7 +768,7 @@ export function App(): JSX.Element {
         </Suspense>
       ) : null}
       {isMcpImportOpen ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<DialogLoadingFallback locale={locale} />}>
           <McpImportDialog
             locale={locale}
             value={mcpImportDraft}
@@ -807,7 +809,7 @@ export function App(): JSX.Element {
         </Suspense>
       ) : null}
       {commandPaletteOpen ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<DialogLoadingFallback locale={locale} />}>
           <CommandPalette
             state={state}
             locale={locale}
@@ -817,7 +819,7 @@ export function App(): JSX.Element {
         </Suspense>
       ) : null}
       {quickSwitcherOpen ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<DialogLoadingFallback locale={locale} />}>
           <QuickProfileSwitcher
             state={state}
             locale={locale}
@@ -827,7 +829,7 @@ export function App(): JSX.Element {
         </Suspense>
       ) : null}
       {showWizard ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<DialogLoadingFallback locale={locale} />}>
           <AddAssistantWizard
             locale={locale}
             state={state}
@@ -844,7 +846,7 @@ export function App(): JSX.Element {
         </Suspense>
       ) : null}
       {cascadeTarget ? (
-        <Suspense fallback={null}>
+        <Suspense fallback={<DialogLoadingFallback locale={locale} />}>
           <CascadeDeleteDialog
             locale={locale}
             targetType={cascadeTarget.type}
@@ -888,7 +890,18 @@ export function App(): JSX.Element {
           />
         </Suspense>
       ) : null}
+      </ErrorBoundary>
       <ToastContainer toasts={toasts} onRemove={removeToast} />
+    </div>
+  );
+}
+
+function DialogLoadingFallback({ locale }: { locale: Parameters<typeof t>[0] }): JSX.Element {
+  return (
+    <div className="confirm-dialog-backdrop" role="status" aria-live="polite" aria-busy="true">
+      <section className="confirm-dialog" aria-label={t(locale, "loading")}>
+        <LoaderCircle size={28} className="button-spinner" aria-hidden="true" />
+      </section>
     </div>
   );
 }

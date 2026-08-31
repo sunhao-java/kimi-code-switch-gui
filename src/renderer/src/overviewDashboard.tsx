@@ -3,7 +3,7 @@ import { Boxes, Check, Download, FileText, Globe, Layers3, LoaderCircle, Refresh
 
 import type { AppState, KimiCodeInstallSource, Locale } from "@shared/types";
 
-import { ABOUT_INFO } from "./aboutPage";
+import { ABOUT_INFO } from "./aboutInfo";
 import { APPEARANCE_THEME_OPTIONS, labelForLocale } from "./appOptions";
 import { t } from "./i18n";
 

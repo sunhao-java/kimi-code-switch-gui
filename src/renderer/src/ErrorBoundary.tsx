@@ -7,6 +7,7 @@ interface ErrorBoundaryProps {
   fallback?: ReactNode;
   locale?: Locale;
   onError?: (error: Error, info: ErrorInfo) => void;
+  onReset?: () => void;
   children: ReactNode;
 }
 
@@ -32,6 +33,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   handleReset = (): void => {
+    this.props.onReset?.();
     this.setState({ hasError: false, error: null, showDetails: false });
   };
 

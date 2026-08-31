@@ -25,6 +25,7 @@ export function useUnsavedChangesGuard(ctx: UnsavedChangesGuardContext) {
     restoreSavedState,
   } = ctx;
   const unsavedResolutionRef = useRef(false);
+  const unsavedResolutionPromiseRef = useRef<Promise<void> | null>(null);
   const hasUnsavedChanges = Boolean(state && savedState) && !areManagedDocumentsEqual(state, savedState);
   const dirtyProviders = state && savedState
     ? collectDirtyKeys(state.mainConfig.providers, savedState.mainConfig.providers)
@@ -41,27 +42,35 @@ export function useUnsavedChangesGuard(ctx: UnsavedChangesGuardContext) {
 
   const resolveUnsavedChanges = useCallback(async (): Promise<void> => {
     const currentState = state;
-    if (!currentState || !hasUnsavedChanges || !savedState || unsavedResolutionRef.current) {
+    if (!currentState || !hasUnsavedChanges || !savedState) {
       return;
     }
-    unsavedResolutionRef.current = true;
-    try {
-      const shouldSave = await requestConfirm({
-        title: t(locale, "unsavedChangesTitle"),
-        description: t(locale, "unsavedChangesDescription"),
-        confirmLabel: t(locale, "save"),
-        cancelLabel: t(locale, "discardChanges"),
-        tone: "primary",
-        kind: "save",
-      });
-      if (shouldSave) {
-        await persistState(currentState);
-      } else {
-        restoreSavedState(savedState);
-      }
-    } finally {
-      unsavedResolutionRef.current = false;
+    if (unsavedResolutionPromiseRef.current) {
+      return unsavedResolutionPromiseRef.current;
     }
+    unsavedResolutionRef.current = true;
+    const resolution = (async (): Promise<void> => {
+      try {
+        const shouldSave = await requestConfirm({
+          title: t(locale, "unsavedChangesTitle"),
+          description: t(locale, "unsavedChangesDescription"),
+          confirmLabel: t(locale, "save"),
+          cancelLabel: t(locale, "discardChanges"),
+          tone: "primary",
+          kind: "save",
+        });
+        if (shouldSave) {
+          await persistState(currentState);
+        } else {
+          restoreSavedState(savedState);
+        }
+      } finally {
+        unsavedResolutionRef.current = false;
+        unsavedResolutionPromiseRef.current = null;
+      }
+    })();
+    unsavedResolutionPromiseRef.current = resolution;
+    return resolution;
   }, [
     hasUnsavedChanges,
     locale,
@@ -73,6 +82,9 @@ export function useUnsavedChangesGuard(ctx: UnsavedChangesGuardContext) {
   ]);
 
   const runAfterUnsavedHandled = useCallback((action: () => void | Promise<void>): void => {
+    if (unsavedResolutionRef.current) {
+      return;
+    }
     void (async () => {
       await resolveUnsavedChanges();
       await action();

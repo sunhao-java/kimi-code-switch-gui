@@ -708,7 +708,7 @@ export function SettingsTab(props: SettingsTabProps): JSX.Element {
                                   actions: conflict.actions.map((action) => shortcutLabels[action]).join(" / "),
                                 })
                               : "";
-    
+
                             return (
                               <div
                                 key={definition.action}
