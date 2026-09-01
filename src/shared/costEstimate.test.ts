@@ -1,9 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { estimateMonthlyCost } from "./costEstimate";
 import type { UsageEvent } from "./usageTypes";
 import type { ModelConfig } from "./types";
 
 describe("costEstimate", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 7, 15, 12));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   const mockModels: Record<string, ModelConfig> = {
     "gpt-4o": {
       provider: "openai",
@@ -23,8 +32,8 @@ describe("costEstimate", () => {
   ): UsageEvent {
     return {
       request_id: `req-${Date.now()}-${Math.random()}`,
-      ts: new Date(`${date}T12:00:00Z`).getTime(),
-      ts_end: new Date(`${date}T12:00:01Z`).getTime(),
+      ts: new Date(`${date}T00:00:00`).getTime(),
+      ts_end: new Date(`${date}T00:00:01`).getTime(),
       profile: "default",
       provider: "openai",
       model,
@@ -70,7 +79,11 @@ describe("costEstimate", () => {
     // 生成本月前 min(5, today) 天的数据，每天固定成本
     const daysToCreate = Math.min(5, today);
     const events: UsageEvent[] = Array.from({ length: daysToCreate }, (_, i) =>
-      createEvent(`${year}-${month}-${String(i + 1).padStart(2, "0")}`, 100_000, 50_000)
+      createEvent(
+        `${year}-${month}-${String(i + 1).padStart(2, "0")}`,
+        100_000,
+        50_000,
+      ),
     );
 
     const result = estimateMonthlyCost(events, mockModels);
@@ -85,7 +98,8 @@ describe("costEstimate", () => {
       expect(avgDaily).toBeGreaterThan(0);
 
       expect(result!.estimatedMonthTotal).toBeCloseTo(
-        result!.monthToDate + result!.estimatedRemaining, 2
+        result!.monthToDate + result!.estimatedRemaining,
+        2,
       );
     }
   });
