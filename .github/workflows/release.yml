@@ -44,7 +44,8 @@ jobs:
             curl \
             wget \
             file \
-            patchelf
+            patchelf \
+            xdg-utils
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -241,7 +242,8 @@ jobs:
             wget \
             file \
             patchelf \
-            rpm
+            rpm \
+            xdg-utils
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
