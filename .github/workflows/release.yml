@@ -8,15 +8,6 @@ on:
   push:
     tags:
       - "v*"
-  workflow_dispatch:
-    inputs:
-      release_tag:
-        description: "Existing release tag to build and upload, for example v2.2.6"
-        required: true
-        type: string
-
-env:
-  RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
 
 permissions:
   contents: write
@@ -87,7 +78,7 @@ jobs:
       - name: Build bilingual release notes from CHANGELOGS
         id: notes
         env:
-          VERSION: ${{ env.RELEASE_TAG }}
+          VERSION: ${{ github.ref_name }}
         shell: bash
         run: |
           VERSION_NO_V="${VERSION#v}"
@@ -133,7 +124,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          VERSION: ${{ env.RELEASE_TAG }}
+          VERSION: ${{ github.ref_name }}
           HAS_NOTES: ${{ steps.notes.outputs.has_notes }}
           NOTES_FILE: ${{ steps.notes.outputs.notes_file }}
         shell: bash
@@ -264,7 +255,7 @@ jobs:
 
       - name: Rename bundle to canonical asset name
         env:
-          VERSION: ${{ env.RELEASE_TAG }}
+          VERSION: ${{ github.ref_name }}
           TARGET: ${{ matrix.target }}
           OS_NAME: ${{ matrix.os-name }}
           ARCH: ${{ matrix.arch }}
@@ -297,7 +288,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          VERSION: ${{ env.RELEASE_TAG }}
+          VERSION: ${{ github.ref_name }}
         shell: bash
         run: |
           test -n "$(find dist-release -maxdepth 1 -type f -print -quit)"
@@ -332,7 +323,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          VERSION: ${{ env.RELEASE_TAG }}
+          VERSION: ${{ github.ref_name }}
         run: |
           mkdir -p artifacts
           gh release download "${VERSION}" --pattern "*.dmg" --dir artifacts
@@ -340,7 +331,7 @@ jobs:
       - name: Compute release checksums
         id: checksums
         env:
-          VERSION: ${{ env.RELEASE_TAG }}
+          VERSION: ${{ github.ref_name }}
         run: |
           VERSION_NO_V="${VERSION#v}"
           ARM64_FILE="artifacts/kimi-code-switch-gui-${VERSION_NO_V}-mac-arm64.dmg"
@@ -358,7 +349,7 @@ jobs:
 
       - name: Render cask
         env:
-          VERSION: ${{ env.RELEASE_TAG }}
+          VERSION: ${{ github.ref_name }}
           GITHUB_REPO: ${{ github.repository }}
           ARM64_SHA256: ${{ steps.checksums.outputs.arm64 }}
           AMD64_SHA256: ${{ steps.checksums.outputs.amd64 }}
@@ -374,7 +365,7 @@ jobs:
       - name: Commit and push tap update
         working-directory: ${{ env.TAP_REPO_DIR }}
         env:
-          VERSION: ${{ env.RELEASE_TAG }}
+          VERSION: ${{ github.ref_name }}
           CASK_PATH: ${{ env.CASK_PATH }}
         run: |
           git config user.name "github-actions[bot]"
